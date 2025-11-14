@@ -1,4 +1,5 @@
 #include "GradioClient.h"
+#include "../Frontends/Shared/GradioUtilities.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 
 GradioClient::GradioClient()
@@ -280,133 +281,10 @@ juce::Result GradioClient::getResponseFromEventID(const juce::String& callID,
         // Don't fail immediately - SSE might still work
     }
 
-    // Stream the response line by line with proper SSE parsing
-    juce::String lastDataLine;
-    juce::String currentEventType;
-    int lineCount = 0;
-    
-    DBG("GradioClient: Starting to read SSE stream...");
-    
-    while (!stream->isExhausted())
-    {
-        juce::String line = stream->readNextLine();
-        lineCount++;
-        
-        // Skip empty lines (SSE uses blank lines as message separators)
-        if (line.trim().isEmpty())
-        {
-            DBG("GradioClient: Empty line (message separator)");
-            continue;
-        }
-        
-        DBG("GradioClient: SSE line #" + juce::String(lineCount) + ": " + line);
-
-        // Check for event type
-        if (line.startsWith("event:"))
-        {
-            currentEventType = line.substring(6).trim();
-            DBG("GradioClient: Event type: " + currentEventType);
-        }
-        else if (line.startsWith("data:"))
-        {
-            juce::String dataContent = line.substring(5).trim();
-            lastDataLine = line;
-            
-            DBG("GradioClient: Data content: " + dataContent.substring(0, juce::jmin(200, dataContent.length())) + "...");
-            
-            // Check if we just got a complete or error event
-            if (currentEventType == "complete")
-            {
-                response = line;
-                DBG("GradioClient: Got complete event with data");
-                break;
-            }
-            else if (currentEventType == "error")
-            {
-                DBG("GradioClient: Got error event with data: " + dataContent);
-                
-                // Try to read any additional error details
-                juce::String additionalInfo;
-                while (!stream->isExhausted())
-                {
-                    juce::String extraLine = stream->readNextLine();
-                    if (extraLine.isNotEmpty())
-                    {
-                        additionalInfo += extraLine + "\n";
-                        DBG("GradioClient: Additional error info: " + extraLine);
-                    }
-                    if (additionalInfo.length() > 1000) break; // Don't read too much
-                }
-                
-                // Try to extract detailed error message
-                juce::String detailedMessage;
-                if (dataContent != "null" && dataContent.isNotEmpty())
-                {
-                    juce::var parsedError;
-                    auto parseResult = juce::JSON::parse(dataContent, parsedError);
-                    if (parseResult.wasOk())
-                    {
-                        // Try to extract meaningful error text
-                        if (parsedError.isString())
-                            detailedMessage = parsedError.toString();
-                        else if (parsedError.isObject())
-                        {
-                            if (auto* obj = parsedError.getDynamicObject())
-                            {
-                                if (obj->hasProperty("detail"))
-                                    detailedMessage = obj->getProperty("detail").toString();
-                                else if (obj->hasProperty("error"))
-                                    detailedMessage = obj->getProperty("error").toString();
-                                else if (obj->hasProperty("message"))
-                                    detailedMessage = obj->getProperty("message").toString();
-                            }
-                        }
-                    }
-                }
-                
-                juce::String errorMsg = "Gradio API returned error";
-                if (!detailedMessage.isEmpty())
-                    errorMsg += ": " + detailedMessage;
-                else if (dataContent != "null" && dataContent.isNotEmpty())
-                    errorMsg += ": " + dataContent;
-                if (additionalInfo.isNotEmpty())
-                    errorMsg += "\nAdditional info: " + additionalInfo;
-                    
-                return juce::Result::fail(errorMsg);
-            }
-            
-            // Clear the event type after processing
-            currentEventType = "";
-        }
-        // Legacy: check if the line itself contains complete/error for backwards compatibility
-        else if (line.contains("complete"))
-        {
-            response = stream->readNextLine();
-            DBG("GradioClient: Complete response line (legacy): " + response);
-            break;
-        }
-        else if (line.contains("error"))
-        {
-            juce::String errorPayload = stream->readEntireStreamAsString();
-            DBG("GradioClient: Error payload (legacy): " + errorPayload);
-            return juce::Result::fail("Gradio API error: " + errorPayload);
-        }
-    }
-    
-    DBG("GradioClient: Finished reading SSE stream. Total lines: " + juce::String(lineCount));
-    
-    // If we didn't get response from event:complete, use the last data line
-    if (response.isEmpty() && lastDataLine.isNotEmpty())
-    {
-        response = lastDataLine;
-        DBG("GradioClient: Using last data line as response");
-    }
-    
-    if (response.isEmpty())
-    {
-        DBG("GradioClient: No valid response received from stream");
-        return juce::Result::fail("No response received from Gradio API");
-    }
+    // Use shared SSE parsing utility
+    auto parseResult = Shared::parseSSEStream(stream.get(), response);
+    if (parseResult.failed())
+        return parseResult;
 
     return juce::Result::ok();
 }

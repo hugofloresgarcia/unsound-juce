@@ -63,6 +63,7 @@ target_sources(TapeLooper PRIVATE
     Source/Frontends/Shared/ParameterKnobs.cpp
     Source/Frontends/Shared/LevelControl.cpp
     Source/Frontends/Shared/OutputSelector.cpp
+    Source/Frontends/Shared/GradioUtilities.cpp
 )
 
 # Shared frontend components headers
@@ -72,6 +73,7 @@ target_sources(TapeLooper PRIVATE
     Source/Frontends/Shared/ParameterKnobs.h
     Source/Frontends/Shared/LevelControl.h
     Source/Frontends/Shared/OutputSelector.h
+    Source/Frontends/Shared/GradioUtilities.h
 )
 
 # Basic frontend source files

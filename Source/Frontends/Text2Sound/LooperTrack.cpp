@@ -1,5 +1,6 @@
 #include "LooperTrack.h"
 #include "../Shared/ModelParameterDialog.h"
+#include "../Shared/GradioUtilities.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 
 using namespace Text2Sound;
@@ -72,97 +73,7 @@ void GradioWorkerThread::run()
 
 juce::Result GradioWorkerThread::saveBufferToFile(int trackIndex, juce::File& outputFile)
 {
-    auto& track = looperEngine.getTrack(trackIndex);
-    
-    const juce::ScopedLock sl(track.tapeLoop.lock);
-    const auto& buffer = track.tapeLoop.getBuffer();
-    
-    if (buffer.empty())
-    {
-        return juce::Result::fail("Buffer is empty");
-    }
-
-    // Get wrapPos to determine how much to save
-    size_t wrapPos = track.writeHead.getWrapPos();
-    if (wrapPos == 0)
-    {
-        wrapPos = track.tapeLoop.recordedLength.load();
-    }
-    if (wrapPos == 0)
-    {
-        wrapPos = buffer.size(); // Fallback to full buffer
-    }
-    
-    // Clamp wrapPos to buffer size
-    wrapPos = juce::jmin(wrapPos, buffer.size());
-    
-    if (wrapPos == 0)
-    {
-        return juce::Result::fail("No audio data to save");
-    }
-
-    // Get sample rate
-    double sampleRate = track.writeHead.getSampleRate();
-    if (sampleRate <= 0)
-    {
-        sampleRate = 44100.0; // Default sample rate
-    }
-
-    // Create temporary file
-    juce::File tempDir = juce::File::getSpecialLocation(juce::File::tempDirectory);
-    outputFile = tempDir.getChildFile("gradio_input_" + juce::Uuid().toString() + ".wav");
-
-    // Create output stream
-    outputFile.deleteFile();
-    std::unique_ptr<juce::OutputStream> fileStream(outputFile.createOutputStream());
-    if (fileStream == nullptr)
-    {
-        return juce::Result::fail("Failed to create output file: " + outputFile.getFullPathName());
-    }
-    
-    // Check if it's a FileOutputStream and verify it opened successfully
-    auto* fileOutputStream = dynamic_cast<juce::FileOutputStream*>(fileStream.get());
-    if (fileOutputStream != nullptr && !fileOutputStream->openedOk())
-    {
-        return juce::Result::fail("Failed to open output file: " + outputFile.getFullPathName());
-    }
-
-    // Create WAV writer
-    juce::WavAudioFormat wavFormat;
-    using Opts = juce::AudioFormatWriterOptions;
-    auto options = Opts{}.withSampleRate(sampleRate)
-                          .withNumChannels(1)  // Mono
-                          .withBitsPerSample(16);
-
-    // Writer takes ownership of the stream (pass by reference)
-    std::unique_ptr<juce::AudioFormatWriter> writer(wavFormat.createWriterFor(fileStream, options));
-    if (writer == nullptr)
-    {
-        return juce::Result::fail("Failed to create WAV writer");
-    }
-
-    // Write audio data (cropped to wrapPos)
-    // Convert float buffer to AudioBuffer for writing
-    juce::AudioBuffer<float> audioBuffer(1, static_cast<int>(wrapPos));
-    const float* source = buffer.data();
-    float* dest = audioBuffer.getWritePointer(0);
-    
-    for (size_t i = 0; i < wrapPos; ++i)
-    {
-        dest[i] = source[i];
-    }
-
-    // Write the buffer
-    if (!writer->writeFromAudioSampleBuffer(audioBuffer, 0, audioBuffer.getNumSamples()))
-    {
-        return juce::Result::fail("Failed to write audio data to file");
-    }
-
-    // Writer will flush and close when destroyed
-    writer.reset();
-
-    DBG("GradioWorkerThread: Saved " + juce::String(wrapPos) + " samples to " + outputFile.getFullPathName());
-    return juce::Result::ok();
+    return Shared::saveTrackBufferToWavFile(looperEngine, trackIndex, outputFile, "gradio_input");
 }
 
 // LooperTrack implementation

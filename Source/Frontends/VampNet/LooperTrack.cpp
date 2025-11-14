@@ -1,5 +1,6 @@
 #include "LooperTrack.h"
 #include "../Shared/ModelParameterDialog.h"
+#include "../Shared/GradioUtilities.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 
 using namespace VampNet;
@@ -47,65 +48,7 @@ void VampNetWorkerThread::run()
 
 juce::Result VampNetWorkerThread::saveBufferToFile(int trackIndex, juce::File& outputFile)
 {
-    auto& track = looperEngine.getTrack(trackIndex);
-    
-    const juce::ScopedLock sl(track.tapeLoop.lock);
-    const auto& buffer = track.tapeLoop.getBuffer();
-    
-    if (buffer.empty())
-        return juce::Result::fail("Buffer is empty");
-
-    size_t wrapPos = track.writeHead.getWrapPos();
-    if (wrapPos == 0)
-        wrapPos = track.tapeLoop.recordedLength.load();
-    if (wrapPos == 0)
-        wrapPos = buffer.size();
-    
-    wrapPos = juce::jmin(wrapPos, buffer.size());
-    
-    if (wrapPos == 0)
-        return juce::Result::fail("No audio data to save");
-
-    double sampleRate = track.writeHead.getSampleRate();
-    if (sampleRate <= 0)
-        sampleRate = 44100.0;
-
-    juce::File tempDir = juce::File::getSpecialLocation(juce::File::tempDirectory);
-    outputFile = tempDir.getChildFile("vampnet_input_" + juce::Uuid().toString() + ".wav");
-
-    outputFile.deleteFile();
-    std::unique_ptr<juce::OutputStream> fileStream(outputFile.createOutputStream());
-    if (fileStream == nullptr)
-        return juce::Result::fail("Failed to create output file");
-    
-    auto* fileOutputStream = dynamic_cast<juce::FileOutputStream*>(fileStream.get());
-    if (fileOutputStream != nullptr && !fileOutputStream->openedOk())
-        return juce::Result::fail("Failed to open output file");
-
-    juce::WavAudioFormat wavFormat;
-    using Opts = juce::AudioFormatWriterOptions;
-    auto options = Opts{}.withSampleRate(sampleRate)
-                          .withNumChannels(1)
-                          .withBitsPerSample(16);
-
-    std::unique_ptr<juce::AudioFormatWriter> writer(wavFormat.createWriterFor(fileStream, options));
-    if (writer == nullptr)
-        return juce::Result::fail("Failed to create WAV writer");
-
-    juce::AudioBuffer<float> audioBuffer(1, static_cast<int>(wrapPos));
-    const float* source = buffer.data();
-    float* dest = audioBuffer.getWritePointer(0);
-    
-    for (size_t i = 0; i < wrapPos; ++i)
-        dest[i] = source[i];
-
-    if (!writer->writeFromAudioSampleBuffer(audioBuffer, 0, audioBuffer.getNumSamples()))
-        return juce::Result::fail("Failed to write audio data");
-
-    writer.reset();
-
-    DBG("VampNetWorkerThread: Saved " + juce::String(wrapPos) + " samples to " + outputFile.getFullPathName());
-    return juce::Result::ok();
+    return Shared::saveTrackBufferToWavFile(looperEngine, trackIndex, outputFile, "vampnet_input");
 }
 
 juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFile, float periodicPrompt, const juce::var& customParams, juce::File& outputFile)
@@ -129,51 +72,10 @@ juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFil
     
     if (hasAudio)
     {
-        juce::URL uploadEndpoint = gradioEndpoint.getChildURL("gradio_api").getChildURL("upload");
+        auto uploadResult = Shared::uploadFileToGradio(configuredUrl, inputAudioFile, uploadedFilePath);
+        if (uploadResult.failed())
+            return juce::Result::fail("Failed to upload audio file: " + uploadResult.getErrorMessage());
         
-        // Print curl equivalent for upload request
-        DBG("=== CURL EQUIVALENT FOR UPLOAD ===");
-        DBG("curl -X POST \\");
-        DBG("  -H \"User-Agent: JUCE-VampNet/1.0\" \\");
-        DBG("  -F \"files=@" + inputAudioFile.getFullPathName() + "\" \\");
-        DBG("  \"" + uploadEndpoint.toString(false) + "\"");
-        DBG("===================================");
-        
-        juce::StringPairArray responseHeaders;
-        int statusCode = 0;
-        juce::String mimeType = "audio/wav";
-
-        auto postEndpoint = uploadEndpoint.withFileToUpload("files", inputAudioFile, mimeType);
-
-        auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inPostData)
-                           .withExtraHeaders("User-Agent: JUCE-VampNet/1.0\r\n")
-                           .withConnectionTimeoutMs(30000)
-                           .withResponseHeaders(&responseHeaders)
-                           .withStatusCode(&statusCode)
-                           .withNumRedirectsToFollow(5)
-                           .withHttpRequestCmd("POST");
-
-        std::unique_ptr<juce::InputStream> stream(postEndpoint.createInputStream(options));
-
-        if (stream == nullptr || statusCode != 200)
-            return juce::Result::fail("Failed to upload audio file. Status: " + juce::String(statusCode));
-
-        juce::String response = stream->readEntireStreamAsString();
-        DBG("VampNetWorkerThread: Upload response: " + response);
-
-        juce::var parsedResponse;
-        auto parseResult = juce::JSON::parse(response, parsedResponse);
-        if (parseResult.failed() || !parsedResponse.isArray())
-            return juce::Result::fail("Failed to parse upload response: " + parseResult.getErrorMessage());
-
-        juce::Array<juce::var>* responseArray = parsedResponse.getArray();
-        if (responseArray == nullptr || responseArray->isEmpty())
-            return juce::Result::fail("Upload response is empty");
-
-        uploadedFilePath = responseArray->getFirst().toString();
-        if (uploadedFilePath.isEmpty())
-            return juce::Result::fail("Uploaded file path is empty");
-
         DBG("VampNetWorkerThread: File uploaded successfully. Path: " + uploadedFilePath);
     }
 
@@ -342,111 +244,13 @@ juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFil
         // Don't fail immediately - SSE might still work
     }
 
+    // Use shared SSE parsing utility
     juce::String eventResponse;
-    juce::String lastDataLine;
-    juce::String currentEventType;
-    int lineCount = 0;
+    auto sseParseResult = Shared::parseSSEStream(getStream.get(), eventResponse, 
+        [this]() { return threadShouldExit(); });
     
-    DBG("VampNetWorkerThread: Starting to read SSE stream...");
-    
-    while (!getStream->isExhausted())
-    {
-        if (threadShouldExit())
-        {
-            DBG("VampNetWorkerThread: Thread exit requested");
-            return juce::Result::fail("Thread was stopped");
-        }
-        
-        juce::String line = getStream->readNextLine();
-        lineCount++;
-        
-        // Skip empty lines (SSE uses blank lines as message separators)
-        if (line.trim().isEmpty())
-        {
-            DBG("VampNetWorkerThread: Empty line (message separator)");
-            continue;
-        }
-        
-        DBG("VampNetWorkerThread: SSE line #" + juce::String(lineCount) + ": " + line);
-
-        // Check for event type
-        if (line.startsWith("event:"))
-        {
-            currentEventType = line.substring(6).trim();
-            DBG("VampNetWorkerThread: Event type: " + currentEventType);
-        }
-        else if (line.startsWith("data:"))
-        {
-            juce::String dataContent = line.substring(5).trim();
-            lastDataLine = line;
-            
-            DBG("VampNetWorkerThread: Data content: " + dataContent.substring(0, juce::jmin(200, dataContent.length())) + "...");
-            
-            // Check if we just got a complete or error event
-            if (currentEventType == "complete")
-            {
-                eventResponse = line;
-                DBG("VampNetWorkerThread: Got complete event with data");
-                break;
-            }
-            else if (currentEventType == "error")
-            {
-                DBG("VampNetWorkerThread: Got error event with data: " + dataContent);
-                
-                // Try to read any additional error details
-                juce::String additionalInfo;
-                while (!getStream->isExhausted())
-                {
-                    juce::String extraLine = getStream->readNextLine();
-                    if (extraLine.isNotEmpty())
-                    {
-                        additionalInfo += extraLine + "\n";
-                        DBG("VampNetWorkerThread: Additional error info: " + extraLine);
-                    }
-                    if (additionalInfo.length() > 1000) break; // Don't read too much
-                }
-                
-                juce::String errorMsg = "VampNet API returned error";
-                if (dataContent != "null" && dataContent.isNotEmpty())
-                    errorMsg += ": " + dataContent;
-                if (additionalInfo.isNotEmpty())
-                    errorMsg += "\nAdditional info: " + additionalInfo;
-                    
-                return juce::Result::fail(errorMsg);
-            }
-            
-            // Clear the event type after processing
-            currentEventType = "";
-        }
-        // Legacy: check if the line itself contains complete/error
-        else if (line.contains("complete"))
-        {
-            eventResponse = getStream->readNextLine();
-            DBG("VampNetWorkerThread: Complete response line (legacy): " + eventResponse);
-            break;
-        }
-        else if (line.contains("error"))
-        {
-            juce::String errorPayload = getStream->readEntireStreamAsString();
-            DBG("VampNetWorkerThread: Error payload (legacy): " + errorPayload);
-            return juce::Result::fail("VampNet API error: " + errorPayload);
-        }
-    }
-    
-    DBG("VampNetWorkerThread: Finished reading SSE stream. Total lines: " + juce::String(lineCount));
-    
-    // If we didn't get eventResponse from event:complete, use the last data line
-    if (eventResponse.isEmpty() && lastDataLine.isNotEmpty())
-    {
-        eventResponse = lastDataLine;
-        DBG("VampNetWorkerThread: Using last data line as response");
-    }
-    
-    if (eventResponse.isEmpty())
-    {
-        DBG("VampNetWorkerThread: No valid response received from stream");
-        return juce::Result::fail("No response received from VampNet API");
-    }
+    if (sseParseResult.failed())
+        return sseParseResult;
 
     // Step 5: Extract data from response
     if (!eventResponse.contains("data:"))
@@ -478,44 +282,9 @@ juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFil
 
     // Step 6: Download the output file
     juce::URL outputURL(fileURL);
-    
-    juce::File tempDir = juce::File::getSpecialLocation(juce::File::tempDirectory);
-    juce::String fileName = outputURL.getFileName();
-    juce::String baseName = juce::File::createFileWithoutCheckingPath(fileName).getFileNameWithoutExtension();
-    juce::String extension = juce::File::createFileWithoutCheckingPath(fileName).getFileExtension();
-    if (extension.isEmpty())
-        extension = ".wav";
-    
-    outputFile = tempDir.getChildFile(baseName + "_" + juce::Uuid().toString() + extension);
-
-    // Print curl equivalent for download request
-    DBG("=== CURL EQUIVALENT FOR DOWNLOAD REQUEST ===");
-    DBG("curl -X GET \\");
-    DBG("  -H \"User-Agent: JUCE-VampNet/1.0\" \\");
-    DBG("  -o \"" + outputFile.getFullPathName() + "\" \\");
-    DBG("  \"" + outputURL.toString(false) + "\"");
-    DBG("=============================================");
-
-    juce::StringPairArray downloadResponseHeaders;
-    int downloadStatusCode = 0;
-    auto downloadOptions = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
-                       .withExtraHeaders("User-Agent: JUCE-VampNet/1.0\r\n")
-                       .withConnectionTimeoutMs(30000)
-                       .withResponseHeaders(&downloadResponseHeaders)
-                       .withStatusCode(&downloadStatusCode)
-                       .withNumRedirectsToFollow(5);
-
-    std::unique_ptr<juce::InputStream> downloadStream(outputURL.createInputStream(downloadOptions));
-
-    if (downloadStream == nullptr || downloadStatusCode != 200)
-        return juce::Result::fail("Failed to download output file. Status: " + juce::String(downloadStatusCode));
-
-    outputFile.deleteFile();
-    std::unique_ptr<juce::FileOutputStream> fileOutput(outputFile.createOutputStream());
-    if (fileOutput == nullptr || !fileOutput->openedOk())
-        return juce::Result::fail("Failed to create output file: " + outputFile.getFullPathName());
-
-    fileOutput->writeFromInputStream(*downloadStream, downloadStream->getTotalLength());
+    auto downloadResult = Shared::downloadFileFromURL(outputURL, outputFile);
+    if (downloadResult.failed())
+        return juce::Result::fail("Failed to download output file: " + downloadResult.getErrorMessage());
 
     DBG("VampNetWorkerThread: File downloaded to: " + outputFile.getFullPathName());
     return juce::Result::ok();
