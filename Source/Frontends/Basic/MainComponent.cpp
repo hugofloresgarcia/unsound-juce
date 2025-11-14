@@ -15,12 +15,18 @@ using namespace Basic;
 MainComponent::MainComponent(int numTracks)
     : syncButton("sync all"),
       audioSettingsButton("audio settings"),
-      titleLabel("Title", "tape looper")
+      midiSettingsButton("midi settings"),
+      titleLabel("Title", "tape looper"),
+      midiLearnOverlay(midiLearnManager)
 {
     DBG_SEGFAULT("ENTRY: MainComponent::MainComponent, numTracks=" + juce::String(numTracks));
     // Apply custom look and feel
     DBG_SEGFAULT("Setting look and feel");
     setLookAndFeel(&customLookAndFeel);
+    
+    // Initialize MIDI learn
+    DBG_SEGFAULT("Initializing MIDI learn");
+    midiLearnManager.setMidiInputEnabled(true);
 
     // Create looper tracks (limit to available engines, max 4 for now)
     DBG_SEGFAULT("Creating tracks, numTracks=" + juce::String(numTracks));
@@ -29,11 +35,18 @@ MainComponent::MainComponent(int numTracks)
     for (int i = 0; i < actualNumTracks; ++i)
     {
         DBG_SEGFAULT("Creating LooperTrack " + juce::String(i));
-        tracks.push_back(std::make_unique<LooperTrack>(looperEngine, i));
+        tracks.push_back(std::make_unique<LooperTrack>(looperEngine, i, &midiLearnManager));
         DBG_SEGFAULT("Adding LooperTrack " + juce::String(i) + " to view");
         addAndMakeVisible(tracks[i].get());
     }
     DBG_SEGFAULT("All tracks created");
+    
+    // Load MIDI mappings AFTER tracks are created (so parameters are registered)
+    auto appDataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                        .getChildFile("TapeLooper");
+    auto midiMappingsFile = appDataDir.getChildFile("midi_mappings.xml");
+    if (midiMappingsFile.existsAsFile())
+        midiLearnManager.loadMappings(midiMappingsFile);
     
     // Set size based on number of tracks
     // Each track has a fixed width, and window adjusts to fit all tracks
@@ -57,6 +70,10 @@ MainComponent::MainComponent(int numTracks)
     // Setup audio settings button
     audioSettingsButton.onClick = [this] { audioSettingsButtonClicked(); };
     addAndMakeVisible(audioSettingsButton);
+    
+    // Setup MIDI settings button
+    midiSettingsButton.onClick = [this] { midiSettingsButtonClicked(); };
+    addAndMakeVisible(midiSettingsButton);
 
     // Setup title label
     titleLabel.setJustificationType(juce::Justification::centred);
@@ -64,6 +81,10 @@ MainComponent::MainComponent(int numTracks)
                                   .withName(juce::Font::getDefaultMonospacedFontName())
                                   .withHeight(20.0f))); // Monospaced, slightly smaller, no bold
     addAndMakeVisible(titleLabel);
+    
+    // Setup MIDI learn overlay (covers entire window when active)
+    addAndMakeVisible(midiLearnOverlay);
+    addKeyListener(&midiLearnOverlay);
 
     // Note: Audio processing will be started by MainWindow after setup is complete
 
@@ -74,6 +95,16 @@ MainComponent::MainComponent(int numTracks)
 MainComponent::~MainComponent()
 {
     stopTimer();
+    
+    removeKeyListener(&midiLearnOverlay);
+    
+    // Save MIDI mappings
+    auto appDataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                        .getChildFile("TapeLooper");
+    appDataDir.createDirectory();
+    auto midiMappingsFile = appDataDir.getChildFile("midi_mappings.xml");
+    midiLearnManager.saveMappings(midiMappingsFile);
+    
     setLookAndFeel(nullptr);
 }
 
@@ -90,11 +121,13 @@ void MainComponent::resized()
     titleLabel.setBounds(bounds.removeFromTop(40));
     bounds.removeFromTop(10);
 
-    // Control buttons (no Gradio settings button)
+    // Control buttons
     auto controlArea = bounds.removeFromTop(40);
     syncButton.setBounds(controlArea.removeFromLeft(120));
     controlArea.removeFromLeft(10);
     audioSettingsButton.setBounds(controlArea.removeFromLeft(150));
+    controlArea.removeFromLeft(10);
+    midiSettingsButton.setBounds(controlArea.removeFromLeft(120));
     bounds.removeFromTop(10);
 
     // Tracks arranged horizontally (columns) with fixed width
@@ -113,6 +146,9 @@ void MainComponent::resized()
             }
         }
     }
+    
+    // MIDI learn overlay covers entire window
+    midiLearnOverlay.setBounds(getLocalBounds());
 }
 
 void MainComponent::timerCallback()
@@ -162,5 +198,30 @@ void MainComponent::showAudioSettings()
     {
         audioSettingsWindow->enterModalState(true, nullptr, true);
     }
+}
+
+void MainComponent::midiSettingsButtonClicked()
+{
+    showMidiSettings();
+}
+
+void MainComponent::showMidiSettings()
+{
+    auto devices = midiLearnManager.getAvailableMidiDevices();
+    
+    juce::AlertWindow::showMessageBoxAsync(
+        juce::AlertWindow::InfoIcon,
+        "MIDI Learn",
+        "MIDI Learn is enabled!\n\n"
+        "How to use:\n"
+        "1. Right-click any control (transport, level, knobs)\n"
+        "2. Select 'MIDI Learn...' from the menu\n"
+        "3. Move a MIDI controller to assign it\n"
+        "   (or click/press ESC to cancel)\n\n"
+        "Available MIDI devices:\n" + 
+        (devices.isEmpty() ? "  (none)" : "  " + devices.joinIntoString("\n  ")) + "\n\n"
+        "Current mappings: " + juce::String(midiLearnManager.getAllMappings().size()),
+        "OK"
+    );
 }
 

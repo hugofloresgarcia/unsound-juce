@@ -3,10 +3,17 @@
 using namespace Shared;
 
 LevelControl::LevelControl(MultiTrackLooperEngine& engine, int index)
+    : LevelControl(engine, index, nullptr, "")
+{
+}
+
+LevelControl::LevelControl(MultiTrackLooperEngine& engine, int index, MidiLearnManager* midiManager, const juce::String& trackPrefix)
     : looperEngine(engine),
       trackIndex(index),
       levelSlider(juce::Slider::LinearVertical, juce::Slider::TextBoxBelow),
-      levelLabel("Level", "level")
+      levelLabel("Level", "level"),
+      midiLearnManager(midiManager),
+      trackIdPrefix(trackPrefix)
 {
     // Setup level slider (dB)
     levelSlider.setRange(-60.0, 12.0, 0.1);
@@ -20,6 +27,46 @@ LevelControl::LevelControl(MultiTrackLooperEngine& engine, int index)
     
     addAndMakeVisible(levelSlider);
     addAndMakeVisible(levelLabel);
+    
+    // Setup MIDI learn
+    if (midiLearnManager)
+    {
+        levelLearnable = std::make_unique<MidiLearnable>(*midiLearnManager, trackIdPrefix + "_level");
+        
+        // Create mouse listener for right-click handling
+        levelMouseListener = std::make_unique<MidiLearnMouseListener>(*levelLearnable, this);
+        levelSlider.addMouseListener(levelMouseListener.get(), false);
+        
+        // Register parameter - convert normalized 0-1 to dB range
+        midiLearnManager->registerParameter({
+            trackIdPrefix + "_level",
+            [this](float normalizedValue) {
+                // Map 0.0-1.0 to -60.0 to +12.0 dB
+                double dbValue = -60.0 + normalizedValue * 72.0;
+                levelSlider.setValue(dbValue, juce::dontSendNotification);
+                if (onLevelChange) onLevelChange(dbValue);
+            },
+            [this]() {
+                // Map -60.0 to +12.0 dB back to 0.0-1.0
+                double dbValue = levelSlider.getValue();
+                return static_cast<float>((dbValue + 60.0) / 72.0);
+            },
+            trackIdPrefix + " Level",
+            false  // Continuous control
+        });
+    }
+}
+
+LevelControl::~LevelControl()
+{
+    // Remove mouse listener first
+    if (levelMouseListener)
+        levelSlider.removeMouseListener(levelMouseListener.get());
+    
+    if (midiLearnManager)
+    {
+        midiLearnManager->unregisterParameter(trackIdPrefix + "_level");
+    }
 }
 
 void LevelControl::paint(juce::Graphics& g)
@@ -41,6 +88,14 @@ void LevelControl::paint(juce::Graphics& g)
     vuMeterArea.removeFromTop(levelLabelHeight + spacingTiny);
     
     drawVUMeter(g, vuMeterArea);
+    
+    // Draw MIDI indicator on slider if mapped
+    if (levelLearnable && levelLearnable->hasMidiMapping())
+    {
+        auto sliderBounds = levelSlider.getBounds();
+        g.setColour(juce::Colour(0xffed1683));  // Pink
+        g.fillEllipse(sliderBounds.getRight() - 8.0f, sliderBounds.getY() + 2.0f, 6.0f, 6.0f);
+    }
 }
 
 void LevelControl::resized()

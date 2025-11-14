@@ -10,6 +10,8 @@
 #include "../Shared/ParameterKnobs.h"
 #include "../Shared/LevelControl.h"
 #include "../Shared/OutputSelector.h"
+#include "../Shared/MidiLearnManager.h"
+#include "../Shared/MidiLearnComponent.h"
 #include <memory>
 #include <functional>
 #include <utility>
@@ -61,7 +63,7 @@ private:
 class LooperTrack : public juce::Component, public juce::Timer
 {
 public:
-    LooperTrack(MultiTrackLooperEngine& engine, int trackIndex, std::function<juce::String()> gradioUrlProvider);
+    LooperTrack(MultiTrackLooperEngine& engine, int trackIndex, std::function<juce::String()> gradioUrlProvider, Shared::MidiLearnManager* midiManager = nullptr);
     ~LooperTrack() override;
 
     void paint(juce::Graphics& g) override;
@@ -115,6 +117,12 @@ private:
     void onGradioComplete(juce::Result result, juce::File outputFile);
     
     void timerCallback() override;
+    
+    // MIDI learn support
+    Shared::MidiLearnManager* midiLearnManager = nullptr;
+    std::unique_ptr<Shared::MidiLearnable> generateButtonLearnable;
+    std::unique_ptr<Shared::MidiLearnMouseListener> generateButtonMouseListener;
+    juce::String trackIdPrefix;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LooperTrack)
 };

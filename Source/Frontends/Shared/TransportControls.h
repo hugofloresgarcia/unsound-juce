@@ -3,6 +3,8 @@
 #include <juce_core/juce_core.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <functional>
+#include "MidiLearnManager.h"
+#include "MidiLearnComponent.h"
 
 namespace Shared
 {
@@ -21,6 +23,7 @@ class TransportControls : public juce::Component
 {
 public:
     TransportControls();
+    TransportControls(MidiLearnManager* midiManager, const juce::String& trackPrefix);
     ~TransportControls() override;
 
     void paint(juce::Graphics& g) override;
@@ -44,10 +47,21 @@ private:
     juce::TextButton resetButton;
     
     EmptyToggleLookAndFeel emptyToggleLookAndFeel;
+    
+    // MIDI learn support
+    MidiLearnManager* midiLearnManager = nullptr;
+    juce::String trackIdPrefix;
+    std::unique_ptr<MidiLearnable> recordLearnable;
+    std::unique_ptr<MidiLearnable> playLearnable;
+    std::unique_ptr<MidiLearnable> muteLearnable;
+    std::unique_ptr<MidiLearnMouseListener> recordMouseListener;
+    std::unique_ptr<MidiLearnMouseListener> playMouseListener;
+    std::unique_ptr<MidiLearnMouseListener> muteMouseListener;
 
     void drawCustomToggleButton(juce::Graphics& g, juce::ToggleButton& button, 
                                 const juce::String& letter, juce::Rectangle<int> bounds,
-                                juce::Colour onColor, juce::Colour offColor);
+                                juce::Colour onColor, juce::Colour offColor,
+                                bool showMidiIndicator = false);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TransportControls)
 };

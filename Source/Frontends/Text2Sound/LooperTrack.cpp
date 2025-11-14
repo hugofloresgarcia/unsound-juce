@@ -77,19 +77,21 @@ juce::Result GradioWorkerThread::saveBufferToFile(int trackIndex, juce::File& ou
 }
 
 // LooperTrack implementation
-LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::function<juce::String()> gradioUrlGetter)
+LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::function<juce::String()> gradioUrlGetter, Shared::MidiLearnManager* midiManager)
     : looperEngine(engine), 
       trackIndex(index),
       waveformDisplay(engine, index),
-      transportControls(),
-      parameterKnobs(),
-      levelControl(engine, index),
+      transportControls(midiManager, "track" + juce::String(index)),
+      parameterKnobs(midiManager, "track" + juce::String(index)),
+      levelControl(engine, index, midiManager, "track" + juce::String(index)),
       outputSelector(),
       trackLabel("Track", "track " + juce::String(index + 1)),
       resetButton("x"),
       generateButton("generate"),
       textPromptLabel("TextPrompt", "text prompt"),
-      gradioUrlProvider(std::move(gradioUrlGetter))
+      gradioUrlProvider(std::move(gradioUrlGetter)),
+      midiLearnManager(midiManager),
+      trackIdPrefix("track" + juce::String(index))
 {
     // Initialize custom params with defaults
     customText2SoundParams = getDefaultText2SoundParams();
@@ -115,6 +117,27 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     // Setup generate button
     generateButton.onClick = [this] { generateButtonClicked(); };
     addAndMakeVisible(generateButton);
+    
+    // Setup MIDI learn for generate button
+    if (midiLearnManager)
+    {
+        generateButtonLearnable = std::make_unique<Shared::MidiLearnable>(*midiLearnManager, trackIdPrefix + "_generate");
+        
+        // Create mouse listener for right-click handling
+        generateButtonMouseListener = std::make_unique<Shared::MidiLearnMouseListener>(*generateButtonLearnable, this);
+        generateButton.addMouseListener(generateButtonMouseListener.get(), false);
+        
+        midiLearnManager->registerParameter({
+            trackIdPrefix + "_generate",
+            [this](float value) {
+                if (value > 0.5f && generateButton.isEnabled())
+                    generateButtonClicked();
+            },
+            [this]() { return 0.0f; },
+            trackIdPrefix + " Generate",
+            true  // Toggle control
+        });
+    }
     
     // Setup configure params button
     configureParamsButton.setButtonText("configure other model parameters...");
@@ -145,7 +168,8 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
         "x",
         [this](double value) {
             looperEngine.getTrack(trackIndex).readHead.setSpeed(static_cast<float>(value));
-        }
+        },
+        ""  // parameterId - will be auto-generated
     });
     
     parameterKnobs.addKnob({
@@ -154,7 +178,8 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
         "",
         [this](double value) {
             looperEngine.getTrack(trackIndex).writeHead.setOverdubMix(static_cast<float>(value));
-        }
+        },
+        ""  // parameterId - will be auto-generated
     });
     addAndMakeVisible(parameterKnobs);
     
@@ -213,6 +238,14 @@ void LooperTrack::paint(juce::Graphics& g)
     {
         g.setColour(juce::Colour(0xff1eb19d).withAlpha(0.15f)); // Teal
         g.fillRect(getLocalBounds());
+    }
+    
+    // Draw MIDI indicator on generate button if mapped
+    if (generateButtonLearnable && generateButtonLearnable->hasMidiMapping())
+    {
+        auto buttonBounds = generateButton.getBounds();
+        g.setColour(juce::Colour(0xffed1683));  // Pink
+        g.fillEllipse(buttonBounds.getRight() - 8.0f, buttonBounds.getY() + 2.0f, 6.0f, 6.0f);
     }
 }
 
@@ -524,6 +557,16 @@ void LooperTrack::resetButtonClicked()
 LooperTrack::~LooperTrack()
 {
     stopTimer();
+    
+    // Remove mouse listener first
+    if (generateButtonMouseListener)
+        generateButton.removeMouseListener(generateButtonMouseListener.get());
+    
+    // Unregister MIDI parameters
+    if (midiLearnManager)
+    {
+        midiLearnManager->unregisterParameter(trackIdPrefix + "_generate");
+    }
     
     // Stop and wait for background thread to finish
     if (gradioWorkerThread != nullptr)
