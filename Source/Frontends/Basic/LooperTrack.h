@@ -9,6 +9,7 @@
 #include "../Shared/ParameterKnobs.h"
 #include "../Shared/LevelControl.h"
 #include "../Shared/OutputSelector.h"
+#include "../Shared/MidiLearnManager.h"
 #include <memory>
 
 namespace Basic
@@ -17,7 +18,7 @@ namespace Basic
 class LooperTrack : public juce::Component, public juce::Timer
 {
 public:
-    LooperTrack(MultiTrackLooperEngine& engine, int trackIndex);
+    LooperTrack(MultiTrackLooperEngine& engine, int trackIndex, Shared::MidiLearnManager* midiManager = nullptr);
     ~LooperTrack() override;
 
     void paint(juce::Graphics& g) override;

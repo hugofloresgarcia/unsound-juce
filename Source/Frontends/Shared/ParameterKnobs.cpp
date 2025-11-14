@@ -3,12 +3,47 @@
 using namespace Shared;
 
 ParameterKnobs::ParameterKnobs()
+    : ParameterKnobs(nullptr, "")
 {
+}
+
+ParameterKnobs::ParameterKnobs(MidiLearnManager* midiManager, const juce::String& trackPrefix)
+    : midiLearnManager(midiManager), trackIdPrefix(trackPrefix)
+{
+}
+
+ParameterKnobs::~ParameterKnobs()
+{
+    // Remove mouse listeners first
+    for (auto& knob : knobs)
+    {
+        if (knob.mouseListener && knob.slider)
+            knob.slider->removeMouseListener(knob.mouseListener.get());
+    }
+    
+    if (midiLearnManager)
+    {
+        for (const auto& knob : knobs)
+        {
+            if (knob.parameterId.isNotEmpty())
+                midiLearnManager->unregisterParameter(knob.parameterId);
+        }
+    }
 }
 
 void ParameterKnobs::addKnob(const KnobConfig& config)
 {
     KnobControl control;
+    
+    // Store parameter info for MIDI learn
+    control.minValue = config.minValue;
+    control.maxValue = config.maxValue;
+    
+    // Generate parameter ID if not provided
+    if (config.parameterId.isNotEmpty())
+        control.parameterId = config.parameterId;
+    else if (midiLearnManager && trackIdPrefix.isNotEmpty())
+        control.parameterId = trackIdPrefix + "_" + config.label.toLowerCase().replaceCharacter(' ', '_');
     
     // Create slider
     control.slider = std::make_unique<juce::Slider>(
@@ -39,6 +74,39 @@ void ParameterKnobs::addKnob(const KnobConfig& config)
     addAndMakeVisible(control.slider.get());
     addAndMakeVisible(control.label.get());
     
+    // Setup MIDI learn for this knob
+    if (midiLearnManager && control.parameterId.isNotEmpty())
+    {
+        control.learnable = std::make_unique<MidiLearnable>(*midiLearnManager, control.parameterId);
+        
+        // Create mouse listener for right-click handling
+        control.mouseListener = std::make_unique<MidiLearnMouseListener>(*control.learnable, this);
+        control.slider->addMouseListener(control.mouseListener.get(), false);
+        
+        // Capture values needed for lambda
+        auto slider = control.slider.get();
+        auto minVal = config.minValue;
+        auto maxVal = config.maxValue;
+        auto onChange = config.onChange;
+        
+        midiLearnManager->registerParameter({
+            control.parameterId,
+            [slider, minVal, maxVal, onChange](float normalizedValue) {
+                // Map 0.0-1.0 to knob range
+                double value = minVal + normalizedValue * (maxVal - minVal);
+                slider->setValue(value, juce::dontSendNotification);
+                if (onChange) onChange(value);
+            },
+            [slider, minVal, maxVal]() {
+                // Map knob range back to 0.0-1.0
+                double value = slider->getValue();
+                return static_cast<float>((value - minVal) / (maxVal - minVal));
+            },
+            trackIdPrefix + " " + config.label,
+            false  // Continuous control
+        });
+    }
+    
     knobs.push_back(std::move(control));
     
     resized();
@@ -55,6 +123,20 @@ void ParameterKnobs::setKnobValue(int index, double value, juce::NotificationTyp
 {
     if (index >= 0 && index < static_cast<int>(knobs.size()))
         knobs[index].slider->setValue(value, notification);
+}
+
+void ParameterKnobs::paint(juce::Graphics& g)
+{
+    // Draw MIDI indicators on knobs that have mappings
+    for (const auto& knob : knobs)
+    {
+        if (knob.learnable && knob.learnable->hasMidiMapping())
+        {
+            auto sliderBounds = knob.slider->getBounds();
+            g.setColour(juce::Colour(0xffed1683));  // Pink
+            g.fillEllipse(sliderBounds.getRight() - 8.0f, sliderBounds.getY() + 2.0f, 6.0f, 6.0f);
+        }
+    }
 }
 
 void ParameterKnobs::resized()

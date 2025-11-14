@@ -7,6 +7,8 @@
 #include "../../Engine/MultiTrackLooperEngine.h"
 #include "LooperTrack.h"
 #include "../../CustomLookAndFeel.h"
+#include "../Shared/MidiLearnManager.h"
+#include "../Shared/MidiLearnComponent.h"
 
 namespace VampNet
 {
@@ -26,17 +28,24 @@ public:
 
 private:
     MultiTrackLooperEngine looperEngine;
+    
+    // MIDI learn support - must be declared before tracks so it's destroyed after them
+    Shared::MidiLearnManager midiLearnManager;
+    
     std::vector<std::unique_ptr<VampNet::LooperTrack>> tracks;
     
     juce::TextButton syncButton;
     juce::TextButton audioSettingsButton;
     juce::TextButton gradioSettingsButton;
+    juce::TextButton midiSettingsButton;
     juce::Label titleLabel;
 
     juce::DialogWindow* audioSettingsWindow = nullptr;
     CustomLookAndFeel customLookAndFeel;
     juce::String gradioUrl { "https://hugggof-vampnet-music.hf.space/" };
     mutable juce::CriticalSection gradioSettingsLock;
+    
+    Shared::MidiLearnOverlay midiLearnOverlay;
 
     void syncButtonClicked();
     void audioSettingsButtonClicked();
@@ -45,6 +54,8 @@ private:
     void showGradioSettings();
     void setGradioUrl(const juce::String& newUrl);
     juce::String getGradioUrl() const;
+    void midiSettingsButtonClicked();
+    void showMidiSettings();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

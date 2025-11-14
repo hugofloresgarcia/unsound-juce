@@ -3,13 +3,13 @@
 
 using namespace Basic;
 
-LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index)
+LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, Shared::MidiLearnManager* midiManager)
     : looperEngine(engine), 
       trackIndex(index),
       waveformDisplay(engine, index),
-      transportControls(),
-      parameterKnobs(),
-      levelControl(engine, index),
+      transportControls(midiManager, "track" + juce::String(index)),
+      parameterKnobs(midiManager, "track" + juce::String(index)),
+      levelControl(engine, index, midiManager, "track" + juce::String(index)),
       outputSelector(),
       trackLabel("Track", "track " + juce::String(index + 1)),
       resetButton("x")
@@ -39,7 +39,8 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index)
         "x",
         [this](double value) {
             looperEngine.getTrack(trackIndex).readHead.setSpeed(static_cast<float>(value));
-        }
+        },
+        ""  // parameterId - will be auto-generated
     });
     
     parameterKnobs.addKnob({
@@ -48,7 +49,8 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index)
         "",
         [this](double value) {
             looperEngine.getTrack(trackIndex).writeHead.setOverdubMix(static_cast<float>(value));
-        }
+        },
+        ""  // parameterId - will be auto-generated
     });
     addAndMakeVisible(parameterKnobs);
     

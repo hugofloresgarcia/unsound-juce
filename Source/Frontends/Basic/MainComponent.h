@@ -7,6 +7,8 @@
 #include "../../Engine/MultiTrackLooperEngine.h"
 #include "LooperTrack.h"
 #include "../../CustomLookAndFeel.h"
+#include "../Shared/MidiLearnManager.h"
+#include "../Shared/MidiLearnComponent.h"
 
 namespace Basic
 {
@@ -26,18 +28,27 @@ public:
 
 private:
     MultiTrackLooperEngine looperEngine;
+    
+    // MIDI learn support - must be declared before tracks so it's destroyed after them
+    Shared::MidiLearnManager midiLearnManager;
+    
     std::vector<std::unique_ptr<Basic::LooperTrack>> tracks;
     
     juce::TextButton syncButton;
     juce::TextButton audioSettingsButton;
+    juce::TextButton midiSettingsButton;
     juce::Label titleLabel;
 
     juce::DialogWindow* audioSettingsWindow = nullptr;
     CustomLookAndFeel customLookAndFeel;
+    
+    Shared::MidiLearnOverlay midiLearnOverlay;
 
     void syncButtonClicked();
     void audioSettingsButtonClicked();
     void showAudioSettings();
+    void midiSettingsButtonClicked();
+    void showMidiSettings();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

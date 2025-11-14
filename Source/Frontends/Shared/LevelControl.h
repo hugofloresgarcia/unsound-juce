@@ -3,6 +3,8 @@
 #include <juce_core/juce_core.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../../Engine/MultiTrackLooperEngine.h"
+#include "MidiLearnManager.h"
+#include "MidiLearnComponent.h"
 #include <functional>
 
 namespace Shared
@@ -12,7 +14,8 @@ class LevelControl : public juce::Component
 {
 public:
     LevelControl(MultiTrackLooperEngine& engine, int trackIndex);
-    ~LevelControl() override = default;
+    LevelControl(MultiTrackLooperEngine& engine, int trackIndex, MidiLearnManager* midiManager, const juce::String& trackPrefix);
+    ~LevelControl() override;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -30,6 +33,12 @@ private:
 
     juce::Slider levelSlider;
     juce::Label levelLabel;
+    
+    // MIDI learn support
+    MidiLearnManager* midiLearnManager = nullptr;
+    juce::String trackIdPrefix;
+    std::unique_ptr<MidiLearnable> levelLearnable;
+    std::unique_ptr<MidiLearnMouseListener> levelMouseListener;
 
     void drawVUMeter(juce::Graphics& g, juce::Rectangle<int> area);
 

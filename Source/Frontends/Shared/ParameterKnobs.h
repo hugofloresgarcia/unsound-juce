@@ -2,6 +2,8 @@
 
 #include <juce_core/juce_core.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "MidiLearnManager.h"
+#include "MidiLearnComponent.h"
 #include <functional>
 #include <vector>
 
@@ -17,14 +19,17 @@ struct KnobConfig
     double interval;
     juce::String suffix;
     std::function<void(double)> onChange;
+    juce::String parameterId;  // Optional: for MIDI learn
 };
 
 class ParameterKnobs : public juce::Component
 {
 public:
     ParameterKnobs();
-    ~ParameterKnobs() override = default;
+    ParameterKnobs(MidiLearnManager* midiManager, const juce::String& trackPrefix);
+    ~ParameterKnobs() override;
 
+    void paint(juce::Graphics& g) override;
     void resized() override;
 
     // Add a knob with configuration
@@ -41,9 +46,18 @@ private:
     {
         std::unique_ptr<juce::Slider> slider;
         std::unique_ptr<juce::Label> label;
+        juce::String parameterId;
+        double minValue;
+        double maxValue;
+        std::unique_ptr<MidiLearnable> learnable;
+        std::unique_ptr<MidiLearnMouseListener> mouseListener;
     };
     
     std::vector<KnobControl> knobs;
+    
+    // MIDI learn support
+    MidiLearnManager* midiLearnManager = nullptr;
+    juce::String trackIdPrefix;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ParameterKnobs)
 };

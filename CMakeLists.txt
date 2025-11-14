@@ -64,6 +64,7 @@ target_sources(TapeLooper PRIVATE
     Source/Frontends/Shared/LevelControl.cpp
     Source/Frontends/Shared/OutputSelector.cpp
     Source/Frontends/Shared/GradioUtilities.cpp
+    Source/Frontends/Shared/MidiLearnManager.cpp
 )
 
 # Shared frontend components headers
@@ -74,6 +75,8 @@ target_sources(TapeLooper PRIVATE
     Source/Frontends/Shared/LevelControl.h
     Source/Frontends/Shared/OutputSelector.h
     Source/Frontends/Shared/GradioUtilities.h
+    Source/Frontends/Shared/MidiLearnManager.h
+    Source/Frontends/Shared/MidiLearnComponent.h
 )
 
 # Basic frontend source files
