@@ -27,11 +27,13 @@ public:
         {
             juce::PopupMenu menu;
             
-            int currentCC = midiLearnManager.getMappingForParameter(paramId);
+            MidiMapping currentMapping = midiLearnManager.getMappingForParameter(paramId);
             
-            if (currentCC >= 0)
+            if (currentMapping.number >= 0)
             {
-                menu.addItem(1, "MIDI Learn... (Currently CC " + juce::String(currentCC) + ")");
+                juce::String mappingLabel = MidiMapping::getTypeName(currentMapping.type) +
+                                            " " + juce::String(currentMapping.number);
+                menu.addItem(1, "MIDI Learn... (Currently " + mappingLabel + ")");
                 menu.addItem(2, "Clear MIDI Mapping");
             }
             else
@@ -68,7 +70,7 @@ public:
     // Check if this component has a MIDI mapping
     bool hasMidiMapping() const
     {
-        return midiLearnManager.getMappingForParameter(paramId) >= 0;
+        return midiLearnManager.getMappingForParameter(paramId).number >= 0;
     }
     
 protected:
