@@ -121,16 +121,40 @@ void MultiTrackLooperEngine::audioDeviceIOCallbackWithContext(const float* const
     DBG_SEGFAULT("Processing tracks, numTracks=" + juce::String(numTracks));
     if (shouldDebug)
     {
+        auto* device = audioDeviceManager.getCurrentAudioDevice();
         DBG("[MultiTrackLooperEngine] Processing " << numTracks << " tracks");
         DBG("  numInputChannels: " << numInputChannels);
         DBG("  numOutputChannels: " << numOutputChannels);
         DBG("  numSamples: " << numSamples);
+        if (device != nullptr)
+        {
+            auto activeOutputChannels = device->getActiveOutputChannels();
+            DBG("  Active output channels: " << activeOutputChannels.toString(2));
+            DBG("  Number of active output channels: " << activeOutputChannels.countNumberOfSetBits());
+            auto outputChannelNames = device->getOutputChannelNames();
+            DBG("  Output channel names count: " << outputChannelNames.size());
+            for (int i = 0; i < juce::jmin(6, outputChannelNames.size()); ++i)
+            {
+                DBG("    Channel " << i << ": " << outputChannelNames[i] 
+                    << " (active: " << (activeOutputChannels[i] ? "YES" : "NO") << ")");
+            }
+        }
         // Check output buffer pointers
-        for (int ch = 0; ch < juce::jmin(3, numOutputChannels); ++ch)
+        for (int ch = 0; ch < juce::jmin(6, numOutputChannels); ++ch)
         {
             DBG("  outputChannelData[" << ch << "]: " << (outputChannelData[ch] != nullptr ? "valid" : "null"));
             if (outputChannelData[ch] != nullptr && numSamples > 0)
-                DBG("    First sample value: " << outputChannelData[ch][0]);
+            {
+                // Check a few samples to see if there's any signal
+                float maxSample = 0.0f;
+                float minSample = 0.0f;
+                for (int s = 0; s < juce::jmin(10, numSamples); ++s)
+                {
+                    maxSample = juce::jmax(maxSample, std::abs(outputChannelData[ch][s]));
+                    minSample = juce::jmin(minSample, outputChannelData[ch][s]);
+                }
+                DBG("    First 10 samples - max abs: " << maxSample << ", min: " << minSample);
+            }
         }
     }
     for (int i = 0; i < numTracks; ++i)
@@ -151,6 +175,52 @@ void MultiTrackLooperEngine::audioDeviceIOCallbackWithContext(const float* const
             }
         }
     }
+    
+    // Check output buffers RIGHT BEFORE callback returns (after all processing)
+    if (shouldDebug)
+    {
+        DBG("[MultiTrackLooperEngine] Final output buffer check (before callback returns):");
+        auto* device = audioDeviceManager.getCurrentAudioDevice();
+        if (device != nullptr)
+        {
+            auto activeOutputChannels = device->getActiveOutputChannels();
+            DBG("  Active output channels bitmask: " << activeOutputChannels.toString(2));
+        }
+        for (int ch = 0; ch < juce::jmin(6, numOutputChannels); ++ch)
+        {
+            if (outputChannelData[ch] != nullptr && numSamples > 0)
+            {
+                // Check multiple samples across the buffer
+                float maxAbs = 0.0f;
+                float minVal = 0.0f;
+                float maxVal = 0.0f;
+                int nonZeroCount = 0;
+                for (int s = 0; s < numSamples; s += 64) // Check every 64th sample
+                {
+                    float val = outputChannelData[ch][s];
+                    maxAbs = juce::jmax(maxAbs, std::abs(val));
+                    minVal = juce::jmin(minVal, val);
+                    maxVal = juce::jmax(maxVal, val);
+                    if (std::abs(val) > 1e-6f) nonZeroCount++;
+                }
+                bool isActive = false;
+                if (device != nullptr)
+                {
+                    auto activeChannels = device->getActiveOutputChannels();
+                    isActive = activeChannels[ch];
+                }
+                DBG("  Channel " << ch << ": maxAbs=" << maxAbs << ", range=[" << minVal << ", " << maxVal << "], nonZero samples=" << nonZeroCount << "/" << (numSamples/64) << ", active=" << (isActive ? "YES" : "NO"));
+                
+                // If channel 0 has signal but is not producing output, inject a test tone
+                if (ch == 0 && maxAbs > 0.001f && isActive)
+                {
+                    DBG("  WARNING: Channel 0 has signal (" << maxAbs << ") but no output detected. This might indicate a device routing issue.");
+                }
+            }
+        }
+    }
+    
+    
     DBG_SEGFAULT("EXIT: audioDeviceIOCallbackWithContext");
 }
 

@@ -167,6 +167,15 @@ bool LooperTrackEngine::processBlock(const float* const* inputChannelData,
 
     bool isPlaying = track.isPlaying.load();
     bool hasExistingAudio = track.tapeLoop.hasRecorded.load();
+    
+    if (isFirstCall && shouldDebug)
+    {
+        DBG("[LooperTrackEngine] Track state check:");
+        DBG("  isPlaying: " << (isPlaying ? "YES" : "NO"));
+        DBG("  hasExistingAudio: " << (hasExistingAudio ? "YES" : "NO"));
+        DBG("  recordedLength: " << track.tapeLoop.recordedLength.load());
+        DBG("  recordEnable: " << (track.writeHead.getRecordEnable() ? "YES" : "NO"));
+    }
     size_t recordedLength = track.tapeLoop.recordedLength.load();
     float playheadPos = track.readHead.getPos();
 
@@ -270,10 +279,20 @@ bool LooperTrackEngine::processBlock(const float* const* inputChannelData,
 
             // Playback (read head processes the sample)
             if (isFirstCall && sample == 0)
+            {
                 DBG_SEGFAULT("Calling readHead.processSample");
+                DBG("[LooperTrackEngine] Track playback state:");
+                DBG("  isPlaying: " << (track.isPlaying.load() ? "YES" : "NO"));
+                DBG("  hasRecordedAudio: " << (track.tapeLoop.recordedLength.load() > 0 ? "YES" : "NO"));
+                DBG("  recordedLength: " << track.tapeLoop.recordedLength.load());
+                DBG("  readHead position: " << track.readHead.getPos());
+            }
             float sampleValue = track.readHead.processSample();
             if (isFirstCall && sample == 0)
+            {
                 DBG_SEGFAULT("readHead.processSample completed, value=" + juce::String(sampleValue));
+                DBG("[LooperTrackEngine] Track sampleValue: " << sampleValue);
+            }
 
             // Configure output bus from read head's channel setting
             int outputChannel = track.readHead.getOutputChannel();
@@ -294,7 +313,9 @@ bool LooperTrackEngine::processBlock(const float* const* inputChannelData,
             // Route to selected output channel(s)
             if (isFirstCall && sample == 0)
                 DBG_SEGFAULT("Calling outputBus.processSample");
-            track.outputBus.processSample(outputChannelData, numOutputChannels, sample, sampleValue);
+            // Note: activeChannels check is done in MultiTrackLooperEngine, so we pass nullptr here
+            // The active channels are verified at the callback level
+            track.outputBus.processSample(outputChannelData, numOutputChannels, sample, sampleValue, nullptr);
             if (isFirstCall && sample == 0)
             {
                 DBG_SEGFAULT("outputBus.processSample completed");

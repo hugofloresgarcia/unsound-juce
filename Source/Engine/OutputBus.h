@@ -20,7 +20,8 @@ public:
     // numOutputChannels: total number of output channels available
     // sample: sample index within the buffer
     // sampleValue: the audio sample value to route
-    void processSample(float* const* outputChannelData, int numOutputChannels, int sample, float sampleValue) const
+    void processSample(float* const* outputChannelData, int numOutputChannels, int sample, float sampleValue, 
+                       const juce::BigInteger* activeChannels = nullptr) const
     {
         static int callCount = 0;
         static bool firstCall = true;
@@ -33,18 +34,41 @@ public:
             DBG("  outputChannel setting: " << outputChannel);
             DBG("  numOutputChannels: " << numOutputChannels);
             DBG("  sampleValue: " << sampleValue);
+            if (activeChannels != nullptr)
+            {
+                DBG("  Active channels: " << activeChannels->toString(2));
+                DBG("  Number of active channels: " << activeChannels->countNumberOfSetBits());
+            }
         }
         
         if (outputChannel >= 0 && outputChannel < numOutputChannels)
         {
             // Route to specific channel
             if (isFirstCall)
+            {
                 DBG("[OutputBus] Routing to specific channel: " << outputChannel);
+                if (activeChannels != nullptr)
+                {
+                    bool isActive = activeChannels->getBitRangeAsInt(outputChannel, 1) != 0;
+                    DBG("  Channel " << outputChannel << " is " << (isActive ? "ACTIVE" : "INACTIVE"));
+                }
+            }
             if (outputChannelData[outputChannel] != nullptr)
             {
-                outputChannelData[outputChannel][sample] += sampleValue;
-                if (isFirstCall)
-                    DBG("[OutputBus] Sample added to channel " << outputChannel << ", new value: " << outputChannelData[outputChannel][sample]);
+                // Check if channel is active (if activeChannels provided)
+                bool shouldWrite = true;
+                if (activeChannels != nullptr)
+                {
+                    shouldWrite = activeChannels->getBitRangeAsInt(outputChannel, 1) != 0;
+                    if (isFirstCall && !shouldWrite)
+                        DBG("[OutputBus] WARNING: Attempting to write to inactive channel " << outputChannel);
+                }
+                if (shouldWrite)
+                {
+                    outputChannelData[outputChannel][sample] += sampleValue;
+                    if (isFirstCall)
+                        DBG("[OutputBus] Sample added to channel " << outputChannel << ", new value: " << outputChannelData[outputChannel][sample]);
+                }
             }
             else
             {
@@ -59,7 +83,12 @@ public:
                 DBG("[OutputBus] Routing to all " << numOutputChannels << " channels");
             for (int channel = 0; channel < numOutputChannels; ++channel)
             {
-                if (outputChannelData[channel] != nullptr)
+                bool shouldWrite = true;
+                if (activeChannels != nullptr)
+                {
+                    shouldWrite = activeChannels->getBitRangeAsInt(channel, 1) != 0;
+                }
+                if (outputChannelData[channel] != nullptr && shouldWrite)
                 {
                     outputChannelData[channel][sample] += sampleValue;
                     if (isFirstCall && channel < 3) // Only log first 3 channels
@@ -67,8 +96,13 @@ public:
                 }
                 else
                 {
-                    if (isFirstCall)
-                        DBG("[OutputBus] WARNING: outputChannelData[" << channel << "] is null!");
+                    if (isFirstCall && channel < 3)
+                    {
+                        if (outputChannelData[channel] == nullptr)
+                            DBG("[OutputBus] WARNING: outputChannelData[" << channel << "] is null!");
+                        else if (!shouldWrite)
+                            DBG("[OutputBus] Skipping inactive channel " << channel);
+                    }
                 }
             }
         }

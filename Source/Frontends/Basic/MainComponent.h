@@ -25,7 +25,7 @@ public:
     void timerCallback() override;
     
     MultiTrackLooperEngine& getLooperEngine() { return looperEngine; }
-    
+
     // Update channel selectors for all tracks (call after device is initialized)
     void updateAllChannelSelectors();
 
