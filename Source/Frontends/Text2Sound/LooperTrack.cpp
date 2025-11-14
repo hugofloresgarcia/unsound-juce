@@ -524,7 +524,7 @@ void LooperTrack::resetButtonClicked()
     track.writeHead.setRecordEnable(false);
     transportControls.setRecordState(false);
     
-    // Clear the tape loop buffer
+    // Clear buffer
     const juce::ScopedLock sl(track.tapeLoop.lock);
     track.tapeLoop.clearBuffer();
     track.writeHead.reset();

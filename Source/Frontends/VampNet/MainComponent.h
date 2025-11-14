@@ -24,10 +24,10 @@ public:
     void resized() override;
     void timerCallback() override;
     
-    MultiTrackLooperEngine& getLooperEngine() { return looperEngine; }
+    VampNetMultiTrackLooperEngine& getLooperEngine() { return looperEngine; }
 
 private:
-    MultiTrackLooperEngine looperEngine;
+    VampNetMultiTrackLooperEngine looperEngine;
     
     // MIDI learn support - must be declared before tracks so it's destroyed after them
     Shared::MidiLearnManager midiLearnManager;

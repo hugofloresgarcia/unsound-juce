@@ -139,7 +139,6 @@ bool LooperTrackEngine::processBlock(const float* const* inputChannelData,
                                      bool shouldDebug)
 {
     static int callCount = 0;
-    static bool firstCall = true;
     callCount++;
     bool isFirstCall = (callCount == 1);
     
@@ -148,22 +147,22 @@ bool LooperTrackEngine::processBlock(const float* const* inputChannelData,
     
     auto& track = trackState;
     if (isFirstCall)
-        DBG_SEGFAULT("Got track reference, acquiring lock");
-    const juce::ScopedLock sl(track.tapeLoop.lock);
-    if (isFirstCall)
-        DBG_SEGFAULT("Lock acquired");
+        DBG_SEGFAULT("Got track reference");
 
     // Safety check: if buffer is not allocated, return early
-    if (isFirstCall)
-        DBG_SEGFAULT("Checking if buffer is empty");
-    if (track.tapeLoop.getBuffer().empty()) {
-        juce::Logger::writeToLog("WARNING: TapeLoop buffer is empty in processBlock");
+    {
+        const juce::ScopedLock sl(track.tapeLoop.lock);
         if (isFirstCall)
-            DBG_SEGFAULT("Buffer is empty, returning false");
-        return false;
+            DBG_SEGFAULT("Checking if buffer is empty");
+        if (track.tapeLoop.getBuffer().empty()) {
+            juce::Logger::writeToLog("WARNING: TapeLoop buffer is empty in processBlock");
+            if (isFirstCall)
+                DBG_SEGFAULT("Buffer is empty, returning false");
+            return false;
+        }
+        if (isFirstCall)
+            DBG_SEGFAULT("Buffer is not empty, size=" + juce::String(track.tapeLoop.getBuffer().size()));
     }
-    if (isFirstCall)
-        DBG_SEGFAULT("Buffer is not empty, size=" + juce::String(track.tapeLoop.getBuffer().size()));
 
     bool isPlaying = track.isPlaying.load();
     bool hasExistingAudio = track.tapeLoop.hasRecorded.load();
@@ -212,28 +211,21 @@ bool LooperTrackEngine::processBlock(const float* const* inputChannelData,
     // Check if we just started recording (wasn't recording before, but are now)
     bool thisBlockIsFirstTimeRecording = !wasRecording && track.writeHead.getRecordEnable() && !hasExistingAudio;
 
-    // If we just stopped recording (record enable turned off), finalize the loop
+    // Check for recording finalization
     bool recordingFinalized = false;
-    if (wasRecording && !track.writeHead.getRecordEnable() && isPlaying && !hasExistingAudio)
-    {
-        track.writeHead.finalizeRecording(track.writeHead.getPos());
-        track.readHead.reset(); // Reset playhead to start of loop
-        recordingFinalized = true;
-        juce::Logger::writeToLog("~~~ Finalized initial recording");
-    }
-
+    bool shouldFinalize = finalizeRecordingIfNeeded(track, wasRecording, isPlaying, hasExistingAudio, recordingFinalized);
+    
     // Update wasRecording for next callback
     wasRecording = track.writeHead.getRecordEnable();
-
-    bool firstTimePlaying = !wasPlaying && isPlaying;
     bool playbackJustStopped = wasPlaying && !isPlaying;
-
+    wasPlaying = isPlaying;
 
     if (isPlaying)
     {
         // If we just started recording, reset everything to 0 BEFORE processing
         if (thisBlockIsFirstTimeRecording) // REC_INIT state
         {
+            const juce::ScopedLock sl(track.tapeLoop.lock);
             track.tapeLoop.clearBuffer(); // TODO: should NOT be in callback.
             track.writeHead.reset();
             track.readHead.reset();
@@ -253,46 +245,10 @@ bool LooperTrackEngine::processBlock(const float* const* inputChannelData,
             float currentPosition = track.readHead.getPos();
 
             // Handle recording (overdub or new)
-            if (track.writeHead.getRecordEnable() && numInputChannels > 0)
-            {
-                int inputChannel = track.writeHead.getInputChannel();
-                float inputSample = 0.0f;
-                
-                // Get input sample from selected channel
-                if (inputChannel == -1)
-                {
-                    // All channels: use channel 0 (mono sum could be added later)
-                    if (inputChannelData[0] != nullptr)
-                        inputSample = inputChannelData[0][sample];
-                }
-                else if (inputChannel >= 0 && inputChannel < numInputChannels && inputChannelData[inputChannel] != nullptr)
-                {
-                    inputSample = inputChannelData[inputChannel][sample];
-                }
-                
-                if (isFirstCall && sample == 0)
-                    DBG_SEGFAULT("Calling writeHead.processSample");
-                track.writeHead.processSample(inputSample, currentPosition);
-                if (isFirstCall && sample == 0)
-                    DBG_SEGFAULT("writeHead.processSample completed");
-            }
+            processRecording(track, inputChannelData, numInputChannels, currentPosition, sample, isFirstCall && sample == 0);
 
             // Playback (read head processes the sample)
-            if (isFirstCall && sample == 0)
-            {
-                DBG_SEGFAULT("Calling readHead.processSample");
-                DBG("[LooperTrackEngine] Track playback state:");
-                DBG("  isPlaying: " << (track.isPlaying.load() ? "YES" : "NO"));
-                DBG("  hasRecordedAudio: " << (track.tapeLoop.recordedLength.load() > 0 ? "YES" : "NO"));
-                DBG("  recordedLength: " << track.tapeLoop.recordedLength.load());
-                DBG("  readHead position: " << track.readHead.getPos());
-            }
-            float sampleValue = track.readHead.processSample();
-            if (isFirstCall && sample == 0)
-            {
-                DBG_SEGFAULT("readHead.processSample completed, value=" + juce::String(sampleValue));
-                DBG("[LooperTrackEngine] Track sampleValue: " << sampleValue);
-            }
+            float sampleValue = processPlayback(track, isFirstCall && sample == 0);
 
             // Configure output bus from read head's channel setting
             int outputChannel = track.readHead.getOutputChannel();
@@ -368,5 +324,75 @@ bool LooperTrackEngine::processBlock(const float* const* inputChannelData,
     }
 
     return recordingFinalized;
+}
+
+// Helper method: Process recording for a single sample
+void LooperTrackEngine::processRecording(TrackState& track, const float* const* inputChannelData, 
+                                         int numInputChannels, float currentPosition, int sample, bool isFirstCall)
+{
+    // Note: writeHead.processSample() locks the buffer internally, so we don't hold the lock here
+    if (track.writeHead.getRecordEnable() && numInputChannels > 0)
+    {
+        int inputChannel = track.writeHead.getInputChannel();
+        float inputSample = 0.0f;
+        
+        // Get input sample from selected channel
+        if (inputChannel == -1)
+        {
+            // All channels: use channel 0 (mono sum could be added later)
+            if (inputChannelData[0] != nullptr)
+                inputSample = inputChannelData[0][sample];
+        }
+        else if (inputChannel >= 0 && inputChannel < numInputChannels && inputChannelData[inputChannel] != nullptr)
+        {
+            inputSample = inputChannelData[inputChannel][sample];
+        }
+        
+        if (isFirstCall)
+            DBG_SEGFAULT("Calling writeHead.processSample");
+        track.writeHead.processSample(inputSample, currentPosition);
+        if (isFirstCall)
+            DBG_SEGFAULT("writeHead.processSample completed");
+    }
+}
+
+// Helper method: Process playback for a single sample
+float LooperTrackEngine::processPlayback(TrackState& track, bool isFirstCall)
+{
+    const juce::ScopedLock sl(track.tapeLoop.lock);
+    
+    if (isFirstCall)
+    {
+        DBG_SEGFAULT("Calling readHead.processSample");
+        DBG("[LooperTrackEngine] Track playback state:");
+        DBG("  isPlaying: " << (track.isPlaying.load() ? "YES" : "NO"));
+        DBG("  hasRecordedAudio: " << (track.tapeLoop.recordedLength.load() > 0 ? "YES" : "NO"));
+        DBG("  recordedLength: " << track.tapeLoop.recordedLength.load());
+        DBG("  readHead position: " << track.readHead.getPos());
+    }
+    float sampleValue = track.readHead.processSample();
+    if (isFirstCall)
+    {
+        DBG_SEGFAULT("readHead.processSample completed, value=" + juce::String(sampleValue));
+        DBG("[LooperTrackEngine] Track sampleValue: " << sampleValue);
+    }
+    
+    return sampleValue;
+}
+
+// Helper method: Check if recording should be finalized
+bool LooperTrackEngine::finalizeRecordingIfNeeded(TrackState& track, bool wasRecording, bool isPlaying, 
+                                                   bool hasExistingAudio, bool& recordingFinalized)
+{
+    // If we just stopped recording (record enable turned off), finalize the loop
+    if (wasRecording && !track.writeHead.getRecordEnable() && isPlaying && !hasExistingAudio)
+    {
+        track.writeHead.finalizeRecording(track.writeHead.getPos());
+        track.readHead.reset(); // Reset playhead to start of loop
+        recordingFinalized = true;
+        juce::Logger::writeToLog("~~~ Finalized initial recording");
+        return true;
+    }
+    return false;
 }
 
