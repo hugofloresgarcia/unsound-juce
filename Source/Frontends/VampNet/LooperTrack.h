@@ -13,6 +13,11 @@
 #include <functional>
 #include <utility>
 
+namespace Shared
+{
+    class ModelParameterDialog;
+}
+
 namespace VampNet
 {
 
@@ -91,6 +96,9 @@ private:
     
     // Custom VampNet parameters (excluding periodic prompt which is in UI)
     juce::var customVampNetParams;
+    
+    // Parameter configuration dialog
+    std::unique_ptr<Shared::ModelParameterDialog> parameterDialog;
     
     void applyLookAndFeel();
 

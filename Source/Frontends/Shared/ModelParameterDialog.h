@@ -20,12 +20,24 @@ public:
         auto* content = new ContentComponent(currentParams, [this](const juce::var& params) {
             if (onAcceptCallback)
                 onAcceptCallback(params);
-            exitModalState(1);
+            setVisible(false);
         });
         
         setContentOwned(content, true);
         centreWithSize(getWidth(), getHeight());
         setResizable(true, true);
+        setUsingNativeTitleBar(true);
+    }
+
+    void closeButtonPressed() override
+    {
+        setVisible(false);
+    }
+    
+    void updateParams(const juce::var& newParams)
+    {
+        if (auto* content = dynamic_cast<ContentComponent*>(getContentComponent()))
+            content->updateParams(newParams);
     }
 
 private:
@@ -46,9 +58,7 @@ private:
             jsonEditor.setPopupMenuEnabled(true);
             jsonEditor.setFont(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 14.0f, juce::Font::plain));
             
-            // Set initial JSON content
-            juce::String jsonText = juce::JSON::toString(currentParams, true);
-            jsonEditor.setText(jsonText);
+            updateParams(currentParams);
             addAndMakeVisible(jsonEditor);
             
             // Help text
@@ -67,11 +77,17 @@ private:
             cancelButton.setButtonText("Cancel");
             cancelButton.onClick = [this] { 
                 if (auto* dialog = findParentComponentOfClass<ModelParameterDialog>())
-                    dialog->exitModalState(0);
+                    dialog->setVisible(false);
             };
             addAndMakeVisible(cancelButton);
             
             setSize(500, 400);
+        }
+        
+        void updateParams(const juce::var& newParams)
+        {
+            juce::String jsonText = juce::JSON::toString(newParams, true);
+            jsonEditor.setText(jsonText);
         }
         
         void resized() override
