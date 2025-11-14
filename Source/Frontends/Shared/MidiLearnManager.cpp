@@ -59,12 +59,17 @@ void MidiLearnManager::startLearning(const juce::String& parameterId)
     }
     
     learningParameterId = parameterId;
-    juce::Logger::writeToLog("MidiLearnManager: Started learning for: " + parameterId);
+    juce::String deviceName = midiInput ? midiInput->getName() : "No device";
+    juce::Logger::writeToLog("MidiLearnManager: Started learning for: " + parameterId + " (MIDI device: " + deviceName + ", enabled: " + (midiEnabled ? "Yes" : "No") + ")");
 }
 
 void MidiLearnManager::stopLearning()
 {
     juce::ScopedLock lock(mapLock);
+    if (learningParameterId.isNotEmpty())
+    {
+        juce::Logger::writeToLog("MidiLearnManager: Stopped learning for: " + learningParameterId);
+    }
     learningParameterId = juce::String();
 }
 
@@ -139,24 +144,38 @@ void MidiLearnManager::setMidiInputDevice(int deviceIndex)
     // Stop current input
     if (midiInput)
     {
+        juce::Logger::writeToLog("MidiLearnManager: Closing MIDI device: " + midiInput->getName());
         midiInput->stop();
         midiInput.reset();
     }
     
     auto devices = juce::MidiInput::getAvailableDevices();
+    juce::Logger::writeToLog("MidiLearnManager: Available MIDI devices: " + juce::String(devices.size()));
+    for (int i = 0; i < devices.size(); ++i)
+    {
+        juce::Logger::writeToLog("  [" + juce::String(i) + "] " + devices[i].name + " (ID: " + devices[i].identifier + ")");
+    }
+    
     if (deviceIndex >= 0 && deviceIndex < devices.size())
     {
+        juce::Logger::writeToLog("MidiLearnManager: Attempting to open device index " + juce::String(deviceIndex) + ": " + devices[deviceIndex].name);
         midiInput = juce::MidiInput::openDevice(devices[deviceIndex].identifier, this);
         if (midiInput)
         {
             midiInput->start();
             midiEnabled = true;
-            juce::Logger::writeToLog("MidiLearnManager: Opened MIDI device: " + devices[deviceIndex].name);
+            juce::Logger::writeToLog("MidiLearnManager: Successfully opened and started MIDI device: " + devices[deviceIndex].name);
         }
         else
         {
-            juce::Logger::writeToLog("MidiLearnManager: Failed to open MIDI device");
+            juce::Logger::writeToLog("MidiLearnManager: Failed to open MIDI device: " + devices[deviceIndex].name);
+            midiEnabled = false;
         }
+    }
+    else
+    {
+        juce::Logger::writeToLog("MidiLearnManager: Invalid device index: " + juce::String(deviceIndex));
+        midiEnabled = false;
     }
 }
 
@@ -230,6 +249,111 @@ void MidiLearnManager::handleIncomingMidiMessage(juce::MidiInput* source, const 
     // Early exit if we're shutting down
     if (!midiEnabled)
         return;
+    
+    // Log all incoming MIDI messages for debugging
+    juce::String deviceName = source ? source->getName() : "Unknown";
+    juce::String messageType;
+    juce::String messageDetails;
+    
+    if (message.isController())
+    {
+        messageType = "CC";
+        int ccNumber = message.getControllerNumber();
+        int ccValue = message.getControllerValue();
+        int channel = message.getChannel();
+        messageDetails = "CC=" + juce::String(ccNumber) + " Value=" + juce::String(ccValue) + " Ch=" + juce::String(channel);
+    }
+    else if (message.isNoteOn())
+    {
+        messageType = "NoteOn";
+        int note = message.getNoteNumber();
+        int velocity = message.getVelocity();
+        int channel = message.getChannel();
+        messageDetails = "Note=" + juce::String(note) + " Vel=" + juce::String(velocity) + " Ch=" + juce::String(channel);
+    }
+    else if (message.isNoteOff())
+    {
+        messageType = "NoteOff";
+        int note = message.getNoteNumber();
+        int velocity = message.getVelocity();
+        int channel = message.getChannel();
+        messageDetails = "Note=" + juce::String(note) + " Vel=" + juce::String(velocity) + " Ch=" + juce::String(channel);
+    }
+    else if (message.isPitchWheel())
+    {
+        messageType = "PitchBend";
+        int value = message.getPitchWheelValue();
+        int channel = message.getChannel();
+        messageDetails = "Value=" + juce::String(value) + " Ch=" + juce::String(channel);
+    }
+    else if (message.isAftertouch())
+    {
+        messageType = "Aftertouch";
+        int value = message.getAfterTouchValue();
+        int channel = message.getChannel();
+        messageDetails = "Value=" + juce::String(value) + " Ch=" + juce::String(channel);
+    }
+    else if (message.isChannelPressure())
+    {
+        messageType = "ChannelPressure";
+        int value = message.getChannelPressureValue();
+        int channel = message.getChannel();
+        messageDetails = "Value=" + juce::String(value) + " Ch=" + juce::String(channel);
+    }
+    else if (message.isProgramChange())
+    {
+        messageType = "ProgramChange";
+        int program = message.getProgramChangeNumber();
+        int channel = message.getChannel();
+        messageDetails = "Program=" + juce::String(program) + " Ch=" + juce::String(channel);
+    }
+    else if (message.isSysEx())
+    {
+        messageType = "SysEx";
+        int size = message.getSysExDataSize();
+        messageDetails = "Size=" + juce::String(size) + " bytes";
+    }
+    else if (message.isMidiClock())
+    {
+        messageType = "Clock";
+        messageDetails = "";
+    }
+    else if (message.isMidiStart())
+    {
+        messageType = "Start";
+        messageDetails = "";
+    }
+    else if (message.isMidiStop())
+    {
+        messageType = "Stop";
+        messageDetails = "";
+    }
+    else if (message.isMidiContinue())
+    {
+        messageType = "Continue";
+        messageDetails = "";
+    }
+    else if (message.isActiveSense())
+    {
+        messageType = "ActiveSense";
+        messageDetails = "";
+    }
+    else
+    {
+        messageType = "Unknown";
+        int rawData[3] = {0, 0, 0};
+        int numBytes = message.getRawDataSize();
+        if (numBytes > 0) rawData[0] = message.getRawData()[0];
+        if (numBytes > 1) rawData[1] = message.getRawData()[1];
+        if (numBytes > 2) rawData[2] = message.getRawData()[2];
+        messageDetails = "Raw=[" + juce::String(rawData[0]) + "," + juce::String(rawData[1]) + "," + juce::String(rawData[2]) + "] Size=" + juce::String(numBytes);
+    }
+    
+    juce::String logMessage = "[MIDI] Device: " + deviceName + " | Type: " + messageType;
+    if (messageDetails.isNotEmpty())
+        logMessage += " | " + messageDetails;
+    logMessage += " | Learning: " + (learningParameterId.isNotEmpty() ? learningParameterId : "No");
+    juce::Logger::writeToLog(logMessage);
     
     if (message.isController())
     {
