@@ -16,6 +16,7 @@ MainComponent::MainComponent(int numTracks)
     : syncButton("sync all"),
       gradioSettingsButton("gradio settings"),
       midiSettingsButton("midi settings"),
+      clickSynthButton("click synth"),
       titleLabel("Title", "tape looper - vampnet"),
       audioDeviceDebugLabel("AudioDebug", ""),
       midiLearnOverlay(midiLearnManager)
@@ -76,6 +77,10 @@ MainComponent::MainComponent(int numTracks)
     // Setup MIDI settings button
     midiSettingsButton.onClick = [this] { midiSettingsButtonClicked(); };
     addAndMakeVisible(midiSettingsButton);
+    
+    // Setup click synth button
+    clickSynthButton.onClick = [this] { showClickSynthWindow(); };
+    addAndMakeVisible(clickSynthButton);
 
     // Setup title label
     titleLabel.setJustificationType(juce::Justification::centred);
@@ -95,6 +100,9 @@ MainComponent::MainComponent(int numTracks)
     // Setup MIDI learn overlay (covers entire window when active)
     addAndMakeVisible(midiLearnOverlay);
     addKeyListener(&midiLearnOverlay);
+    
+    // Setup keyboard listener for click synth
+    addKeyListener(this); // Listen for 'k' key
 
     // Start timer to update UI
     startTimer(50); // Update every 50ms
@@ -105,6 +113,7 @@ MainComponent::~MainComponent()
     stopTimer();
     
     removeKeyListener(&midiLearnOverlay);
+    removeKeyListener(this);
     
     // Save MIDI mappings
     auto appDataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
@@ -136,6 +145,8 @@ void MainComponent::resized()
     gradioSettingsButton.setBounds(controlArea.removeFromLeft(180));
     controlArea.removeFromLeft(10);
     midiSettingsButton.setBounds(controlArea.removeFromLeft(120));
+    controlArea.removeFromLeft(10);
+    clickSynthButton.setBounds(controlArea.removeFromLeft(120));
     bounds.removeFromTop(10);
 
     // Tracks arranged horizontally with fixed width
@@ -257,6 +268,64 @@ juce::String MainComponent::getGradioUrl() const
 void MainComponent::midiSettingsButtonClicked()
 {
     showMidiSettings();
+}
+
+bool MainComponent::keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent)
+{
+    // Handle 'k' key for click synth
+    if (key.getKeyCode() == 'k' || key.getKeyCode() == 'K')
+    {
+        if (clickSynthWindow != nullptr && clickSynthWindow->isEnabled())
+        {
+            int selectedTrack = clickSynthWindow->getSelectedTrack();
+            
+            // Trigger click on selected track(s)
+            if (selectedTrack >= 0 && selectedTrack < static_cast<int>(tracks.size()))
+            {
+                // Single track selected
+                auto& trackEngine = looperEngine.getTrackEngine(selectedTrack);
+                trackEngine.getClickSynth().triggerClick();
+                
+                auto& track = looperEngine.getTrack(selectedTrack);
+                if (!track.writeHead.getRecordEnable())
+                {
+                    track.writeHead.setRecordEnable(true);
+                    tracks[selectedTrack]->repaint();
+                }
+            }
+            else if (selectedTrack == -1)
+            {
+                // All tracks - trigger click on all tracks
+                for (size_t i = 0; i < tracks.size(); ++i)
+                {
+                    auto& trackEngine = looperEngine.getTrackEngine(static_cast<int>(i));
+                    trackEngine.getClickSynth().triggerClick();
+                    
+                    auto& track = looperEngine.getTrack(static_cast<int>(i));
+                    if (!track.writeHead.getRecordEnable())
+                    {
+                        track.writeHead.setRecordEnable(true);
+                        tracks[i]->repaint();
+                    }
+                }
+            }
+        }
+        return true;
+    }
+    
+    return false;
+}
+
+void MainComponent::showClickSynthWindow()
+{
+    if (clickSynthWindow == nullptr)
+    {
+        int numTracks = static_cast<int>(tracks.size());
+        clickSynthWindow = std::make_unique<ClickSynthWindow>(looperEngine, numTracks);
+    }
+    
+    clickSynthWindow->setVisible(true);
+    clickSynthWindow->toFront(true);
 }
 
 void MainComponent::showMidiSettings()

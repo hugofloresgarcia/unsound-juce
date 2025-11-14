@@ -1,5 +1,5 @@
 #include "VampNetTrackEngine.h"
-#include "LooperTrackEngine.h"
+#include "../Frontends/VampNet/ClickSynth.h"
 #include <cmath>
 
 // TODO: Remove this debug macro after fixing segmentation fault
@@ -11,6 +11,7 @@
 #endif
 
 VampNetTrackEngine::VampNetTrackEngine()
+    : clickSynth(std::make_unique<VampNet::ClickSynth>())
 {
     formatManager.registerBasicFormats();
 }
@@ -311,6 +312,14 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
                     inputSample = inputChannelData[inputChannel][sample];
                 }
                 
+                // Mix in click audio if click synth is active
+                if (clickSynth->isClickActive())
+                {
+                    double sampleRate = track.writeHead.getSampleRate();
+                    float clickSample = clickSynth->getNextSample(sampleRate);
+                    inputSample += clickSample; // Mix click into input
+                }
+                
                 if (isFirstCall && sample == 0)
                     DBG_SEGFAULT("Calling writeHead.processSample");
                 track.writeHead.processSample(inputSample, currentPosition);
@@ -423,4 +432,5 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
 
     return recordingFinalized;
 }
+
 

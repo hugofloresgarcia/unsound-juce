@@ -8,6 +8,9 @@
 #include "OutputBus.h"
 #include <atomic>
 
+// Forward declaration
+namespace VampNet { class ClickSynth; }
+
 // VampNetTrackEngine handles processing for a single VampNet track with dual buffers
 // Uses two LooperReadHead instances (one per buffer) and one LooperWriteHead
 class VampNetTrackEngine
@@ -48,6 +51,10 @@ public:
                      int numSamples,
                      bool shouldDebug = false);
 
+    // Get the click synth for this track
+    VampNet::ClickSynth& getClickSynth() { return *clickSynth; }
+    const VampNet::ClickSynth& getClickSynth() const { return *clickSynth; }
+
     // Handle audio device starting (update sample rate)
     void audioDeviceAboutToStart(double sampleRate);
 
@@ -72,5 +79,8 @@ private:
     static constexpr double maxBufferDurationSeconds = 10.0;
     
     juce::AudioFormatManager formatManager;
+    
+    // Click synth owned by this track
+    std::unique_ptr<VampNet::ClickSynth> clickSynth;
 };
 

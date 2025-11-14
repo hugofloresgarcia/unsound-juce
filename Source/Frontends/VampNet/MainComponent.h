@@ -6,6 +6,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "../../Engine/MultiTrackLooperEngine.h"
 #include "LooperTrack.h"
+#include "ClickSynth.h"
 #include "../../CustomLookAndFeel.h"
 #include "../Shared/MidiLearnManager.h"
 #include "../Shared/MidiLearnComponent.h"
@@ -14,7 +15,8 @@ namespace VampNet
 {
 
 class MainComponent : public juce::Component,
-                      public juce::Timer
+                      public juce::Timer,
+                      public juce::KeyListener
 {
 public:
     MainComponent(int numTracks = 8);
@@ -23,6 +25,7 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
     void timerCallback() override;
+    bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
     
     VampNetMultiTrackLooperEngine& getLooperEngine() { return looperEngine; }
 
@@ -37,6 +40,7 @@ private:
     juce::TextButton syncButton;
     juce::TextButton gradioSettingsButton;
     juce::TextButton midiSettingsButton;
+    juce::TextButton clickSynthButton;
     juce::Label titleLabel;
     juce::Label audioDeviceDebugLabel;
     CustomLookAndFeel customLookAndFeel;
@@ -44,8 +48,12 @@ private:
     mutable juce::CriticalSection gradioSettingsLock;
     
     Shared::MidiLearnOverlay midiLearnOverlay;
+    
+    // Click synth window
+    std::unique_ptr<ClickSynthWindow> clickSynthWindow;
 
     void syncButtonClicked();
+    void showClickSynthWindow();
     void gradioSettingsButtonClicked();
     void updateAudioDeviceDebugInfo();
     void showGradioSettings();

@@ -112,12 +112,14 @@ target_sources(TapeLooper PRIVATE
 target_sources(TapeLooper PRIVATE
     Source/Frontends/VampNet/MainComponent.cpp
     Source/Frontends/VampNet/LooperTrack.cpp
+    Source/Frontends/VampNet/ClickSynth.cpp
 )
 
 # VampNet frontend headers
 target_sources(TapeLooper PRIVATE
     Source/Frontends/VampNet/MainComponent.h
     Source/Frontends/VampNet/LooperTrack.h
+    Source/Frontends/VampNet/ClickSynth.h
 )
 
 # Application source files
