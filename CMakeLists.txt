@@ -62,6 +62,7 @@ target_sources(TapeLooper PRIVATE
     Source/Frontends/Shared/TransportControls.cpp
     Source/Frontends/Shared/ParameterKnobs.cpp
     Source/Frontends/Shared/LevelControl.cpp
+    Source/Frontends/Shared/InputSelector.cpp
     Source/Frontends/Shared/OutputSelector.cpp
     Source/Frontends/Shared/GradioUtilities.cpp
     Source/Frontends/Shared/MidiLearnManager.cpp
@@ -73,6 +74,7 @@ target_sources(TapeLooper PRIVATE
     Source/Frontends/Shared/TransportControls.h
     Source/Frontends/Shared/ParameterKnobs.h
     Source/Frontends/Shared/LevelControl.h
+    Source/Frontends/Shared/InputSelector.h
     Source/Frontends/Shared/OutputSelector.h
     Source/Frontends/Shared/GradioUtilities.h
     Source/Frontends/Shared/MidiLearnManager.h

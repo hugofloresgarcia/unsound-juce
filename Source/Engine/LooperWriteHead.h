@@ -40,6 +40,10 @@ public:
     void setSampleRate(double sampleRate) { this->sampleRate.store(sampleRate); }
     double getSampleRate() const { return sampleRate.load(); }
     
+    // Input channel selection (-1 = all channels, 0+ = specific channel)
+    void setInputChannel(int channel) { inputChannel.store(channel); }
+    int getInputChannel() const { return inputChannel.load(); }
+    
 private:
     // Write position tracking
     std::atomic<size_t> pos{0}; // Maximum position written to
@@ -50,5 +54,6 @@ private:
     std::atomic<bool> isPlaying{false};
     std::atomic<float> overdubMix{0.5f};
     std::atomic<double> sampleRate{44100.0}; // Current sample rate
+    std::atomic<int> inputChannel{-1}; // -1 = all channels, 0+ = specific channel
 };
 

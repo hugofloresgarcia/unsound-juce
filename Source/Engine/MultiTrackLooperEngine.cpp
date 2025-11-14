@@ -119,6 +119,20 @@ void MultiTrackLooperEngine::audioDeviceIOCallbackWithContext(const float* const
     }
 
     DBG_SEGFAULT("Processing tracks, numTracks=" + juce::String(numTracks));
+    if (shouldDebug)
+    {
+        DBG("[MultiTrackLooperEngine] Processing " << numTracks << " tracks");
+        DBG("  numInputChannels: " << numInputChannels);
+        DBG("  numOutputChannels: " << numOutputChannels);
+        DBG("  numSamples: " << numSamples);
+        // Check output buffer pointers
+        for (int ch = 0; ch < juce::jmin(3, numOutputChannels); ++ch)
+        {
+            DBG("  outputChannelData[" << ch << "]: " << (outputChannelData[ch] != nullptr ? "valid" : "null"));
+            if (outputChannelData[ch] != nullptr && numSamples > 0)
+                DBG("    First sample value: " << outputChannelData[ch][0]);
+        }
+    }
     for (int i = 0; i < numTracks; ++i)
     {
         DBG_SEGFAULT("Processing track " + juce::String(i));
@@ -127,6 +141,15 @@ void MultiTrackLooperEngine::audioDeviceIOCallbackWithContext(const float* const
                                     outputChannelData, numOutputChannels,
                                     numSamples, debugThisTrack);
         DBG_SEGFAULT("Track " + juce::String(i) + " processed");
+        if (shouldDebug && i == 0)
+        {
+            // Check output after processing first track
+            for (int ch = 0; ch < juce::jmin(3, numOutputChannels); ++ch)
+            {
+                if (outputChannelData[ch] != nullptr && numSamples > 0)
+                    DBG("  After track 0, outputChannelData[" << ch << "][0]: " << outputChannelData[ch][0]);
+            }
+        }
     }
     DBG_SEGFAULT("EXIT: audioDeviceIOCallbackWithContext");
 }

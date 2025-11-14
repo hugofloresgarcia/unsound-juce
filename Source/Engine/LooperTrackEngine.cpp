@@ -244,11 +244,25 @@ bool LooperTrackEngine::processBlock(const float* const* inputChannelData,
             float currentPosition = track.readHead.getPos();
 
             // Handle recording (overdub or new)
-            if (track.writeHead.getRecordEnable() && inputChannelData[0] != nullptr && numInputChannels > 0)
+            if (track.writeHead.getRecordEnable() && numInputChannels > 0)
             {
+                int inputChannel = track.writeHead.getInputChannel();
+                float inputSample = 0.0f;
+                
+                // Get input sample from selected channel
+                if (inputChannel == -1)
+                {
+                    // All channels: use channel 0 (mono sum could be added later)
+                    if (inputChannelData[0] != nullptr)
+                        inputSample = inputChannelData[0][sample];
+                }
+                else if (inputChannel >= 0 && inputChannel < numInputChannels && inputChannelData[inputChannel] != nullptr)
+                {
+                    inputSample = inputChannelData[inputChannel][sample];
+                }
+                
                 if (isFirstCall && sample == 0)
                     DBG_SEGFAULT("Calling writeHead.processSample");
-                float inputSample = inputChannelData[0][sample];
                 track.writeHead.processSample(inputSample, currentPosition);
                 if (isFirstCall && sample == 0)
                     DBG_SEGFAULT("writeHead.processSample completed");
@@ -262,14 +276,44 @@ bool LooperTrackEngine::processBlock(const float* const* inputChannelData,
                 DBG_SEGFAULT("readHead.processSample completed, value=" + juce::String(sampleValue));
 
             // Configure output bus from read head's channel setting
-            track.outputBus.setOutputChannel(track.readHead.getOutputChannel());
+            int outputChannel = track.readHead.getOutputChannel();
+            if (isFirstCall && sample == 0)
+            {
+                DBG("[LooperTrackEngine] Output routing:");
+                DBG("  ReadHead outputChannel: " << outputChannel);
+                DBG("  numOutputChannels: " << numOutputChannels);
+                DBG("  sampleValue: " << sampleValue);
+            }
+            track.outputBus.setOutputChannel(outputChannel);
+            
+            if (isFirstCall && sample == 0)
+            {
+                DBG("[LooperTrackEngine] OutputBus outputChannel after set: " << track.outputBus.getOutputChannel());
+            }
 
             // Route to selected output channel(s)
             if (isFirstCall && sample == 0)
                 DBG_SEGFAULT("Calling outputBus.processSample");
             track.outputBus.processSample(outputChannelData, numOutputChannels, sample, sampleValue);
             if (isFirstCall && sample == 0)
+            {
                 DBG_SEGFAULT("outputBus.processSample completed");
+                // Verify output was written
+                if (outputChannel >= 0 && outputChannel < numOutputChannels && outputChannelData[outputChannel] != nullptr)
+                {
+                    DBG("[LooperTrackEngine] Verified output written to channel " << outputChannel 
+                        << ", value: " << outputChannelData[outputChannel][sample]);
+                }
+                else if (outputChannel == -1)
+                {
+                    DBG("[LooperTrackEngine] Verified output written to all channels");
+                    for (int ch = 0; ch < juce::jmin(3, numOutputChannels); ++ch)
+                    {
+                        if (outputChannelData[ch] != nullptr)
+                            DBG("  Channel " << ch << " value: " << outputChannelData[ch][sample]);
+                    }
+                }
+            }
 
             // Advance read head by one sample
             if (isFirstCall && sample == 0)

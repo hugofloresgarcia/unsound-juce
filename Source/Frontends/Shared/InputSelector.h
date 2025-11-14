@@ -9,11 +9,11 @@
 namespace Shared
 {
 
-class OutputSelector : public juce::Component
+class InputSelector : public juce::Component
 {
 public:
-    OutputSelector();
-    ~OutputSelector() override = default;
+    InputSelector();
+    ~InputSelector() override = default;
 
     void resized() override;
 
@@ -28,11 +28,10 @@ public:
     void updateChannels(juce::AudioDeviceManager& deviceManager);
 
 private:
-    juce::ComboBox outputChannelCombo;
-    juce::Label outputChannelLabel;
+    juce::ComboBox inputChannelCombo;
+    juce::Label inputChannelLabel;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OutputSelector)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(InputSelector)
 };
 
 } // namespace Shared
-

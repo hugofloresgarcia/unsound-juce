@@ -1,20 +1,22 @@
-#include "OutputSelector.h"
+#include "InputSelector.h"
+#include <juce_audio_devices/juce_audio_devices.h>
+#include <juce_audio_utils/juce_audio_utils.h>
 
 using namespace Shared;
 
-OutputSelector::OutputSelector()
-    : outputChannelLabel("Out", "out")
+InputSelector::InputSelector()
+    : inputChannelLabel("In", "in")
 {
-    // Setup output channel selector
+    // Setup input channel selector
     // Note: "all" will be added last in updateChannels()
-    outputChannelCombo.onChange = [this]()
+    inputChannelCombo.onChange = [this]()
     {
         if (onChannelChange)
         {
-            int selectedId = outputChannelCombo.getSelectedId();
+            int selectedId = inputChannelCombo.getSelectedId();
             int channel = -1; // -1 means all channels
             // "all" is the last item, so if selectedId is the last one, it's "all"
-            int numItems = outputChannelCombo.getNumItems();
+            int numItems = inputChannelCombo.getNumItems();
             if (selectedId == numItems)
                 channel = -1; // "all"
             else
@@ -23,54 +25,54 @@ OutputSelector::OutputSelector()
         }
     };
     
-    addAndMakeVisible(outputChannelCombo);
-    addAndMakeVisible(outputChannelLabel);
+    addAndMakeVisible(inputChannelCombo);
+    addAndMakeVisible(inputChannelLabel);
 }
 
-void OutputSelector::resized()
+void InputSelector::resized()
 {
     auto bounds = getLocalBounds();
     
-    const int outputChannelLabelWidth = 40;
+    const int inputChannelLabelWidth = 40;
     const int spacingSmall = 5;
     
-    outputChannelLabel.setBounds(bounds.removeFromLeft(outputChannelLabelWidth));
+    inputChannelLabel.setBounds(bounds.removeFromLeft(inputChannelLabelWidth));
     bounds.removeFromLeft(spacingSmall);
-    outputChannelCombo.setBounds(bounds);
+    inputChannelCombo.setBounds(bounds);
 }
 
-int OutputSelector::getSelectedChannel() const
+int InputSelector::getSelectedChannel() const
 {
-    int selectedId = outputChannelCombo.getSelectedId();
-    int numItems = outputChannelCombo.getNumItems();
+    int selectedId = inputChannelCombo.getSelectedId();
+    int numItems = inputChannelCombo.getNumItems();
     if (selectedId == numItems) return -1; // "all" is the last item
     return selectedId - 1; // Channel 0 = id 1, channel 1 = id 2, etc.
 }
 
-void OutputSelector::setSelectedChannel(int channelId, juce::NotificationType notification)
+void InputSelector::setSelectedChannel(int channelId, juce::NotificationType notification)
 {
     if (channelId == -1)
     {
         // "all" is the last item
-        int numItems = outputChannelCombo.getNumItems();
-        outputChannelCombo.setSelectedId(numItems, notification);
+        int numItems = inputChannelCombo.getNumItems();
+        inputChannelCombo.setSelectedId(numItems, notification);
     }
     else
-        outputChannelCombo.setSelectedId(channelId + 1, notification);
+        inputChannelCombo.setSelectedId(channelId + 1, notification);
 }
 
-void OutputSelector::updateChannels(juce::AudioDeviceManager& deviceManager)
+void InputSelector::updateChannels(juce::AudioDeviceManager& deviceManager)
 {
     auto* device = deviceManager.getCurrentAudioDevice();
     
     // Clear existing items
-    int currentSelection = outputChannelCombo.getSelectedId();
-    outputChannelCombo.clear();
+    int currentSelection = inputChannelCombo.getSelectedId();
+    inputChannelCombo.clear();
     
     int numChannels = 0;
     if (device != nullptr)
     {
-        auto channelNames = device->getOutputChannelNames();
+        auto channelNames = device->getInputChannelNames();
         numChannels = channelNames.size();
         
         // Add channel options - use channel numbers (1-indexed for display)
@@ -78,18 +80,17 @@ void OutputSelector::updateChannels(juce::AudioDeviceManager& deviceManager)
         for (int i = 0; i < numChannels; ++i)
         {
             juce::String channelNumber = juce::String(i + 1); // Display as 1, 2, 3, etc.
-            outputChannelCombo.addItem(channelNumber, i + 1);
+            inputChannelCombo.addItem(channelNumber, i + 1);
         }
     }
     
     // Always add "all" as the last option (even if no device or no channels)
     int allId = numChannels + 1;
-    outputChannelCombo.addItem("all", allId);
+    inputChannelCombo.addItem("all", allId);
     
     // Restore selection if still valid, otherwise default to "all"
     if (currentSelection > 0 && currentSelection <= allId)
-        outputChannelCombo.setSelectedId(currentSelection, juce::dontSendNotification);
+        inputChannelCombo.setSelectedId(currentSelection, juce::dontSendNotification);
     else
-        outputChannelCombo.setSelectedId(allId, juce::dontSendNotification);
+        inputChannelCombo.setSelectedId(allId, juce::dontSendNotification);
 }
-
