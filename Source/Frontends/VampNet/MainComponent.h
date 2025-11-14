@@ -35,7 +35,7 @@ private:
 
     juce::DialogWindow* audioSettingsWindow = nullptr;
     CustomLookAndFeel customLookAndFeel;
-    juce::String gradioUrl { "https://hugggof-vampnet-music.hf.space/" };
+    juce::String gradioUrl { "http://127.0.0.1:7860" };
     mutable juce::CriticalSection gradioSettingsLock;
 
     void syncButtonClicked();
