@@ -193,6 +193,14 @@ void MainComponent::updateAudioDeviceDebugInfo()
     }
 }
 
+void MainComponent::updateAllChannelSelectors()
+{
+    for (auto& track : tracks)
+    {
+        track->updateChannelSelectors();
+    }
+}
+
 void MainComponent::midiSettingsButtonClicked()
 {
     showMidiSettings();

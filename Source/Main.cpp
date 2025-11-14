@@ -241,6 +241,9 @@ public:
                 DBG("[MainWindow] Starting audio...");
                 basicComponent->getLooperEngine().startAudio();
                 
+                // Update channel selectors now that device is initialized
+                basicComponent->updateAllChannelSelectors();
+                
                 // Verify device after startAudio
                 auto* finalDevice = deviceManager.getCurrentAudioDevice();
                 if (finalDevice != nullptr)

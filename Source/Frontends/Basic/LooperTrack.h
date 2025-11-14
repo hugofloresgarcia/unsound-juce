@@ -9,6 +9,7 @@
 #include "../Shared/ParameterKnobs.h"
 #include "../Shared/LevelControl.h"
 #include "../Shared/OutputSelector.h"
+#include "../Shared/InputSelector.h"
 #include "../Shared/MidiLearnManager.h"
 #include <memory>
 
@@ -26,6 +27,9 @@ public:
 
     void setPlaybackSpeed(float speed);
     float getPlaybackSpeed() const;
+    
+    // Update channel selectors based on current audio device
+    void updateChannelSelectors();
 
 private:
     MultiTrackLooperEngine& looperEngine;
@@ -36,6 +40,7 @@ private:
     Shared::TransportControls transportControls;
     Shared::ParameterKnobs parameterKnobs;
     Shared::LevelControl levelControl;
+    Shared::InputSelector inputSelector;
     Shared::OutputSelector outputSelector;
     
     // Track-specific UI
