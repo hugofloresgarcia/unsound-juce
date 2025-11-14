@@ -90,6 +90,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
       resetButton("x"),
       generateButton("generate"),
       textPromptLabel("TextPrompt", "text prompt"),
+      autogenToggle("autogen"),
       gradioUrlProvider(std::move(gradioUrlGetter)),
       midiLearnManager(midiManager),
       trackIdPrefix("track" + juce::String(index))
@@ -190,6 +191,11 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     };
     addAndMakeVisible(levelControl);
     
+    // Setup "autogen" toggle
+    autogenToggle.setButtonText("autogen");
+    autogenToggle.setToggleState(false, juce::dontSendNotification);
+    addAndMakeVisible(autogenToggle);
+    
     // Setup input selector
     inputSelector.onChannelChange = [this](int channel) {
         looperEngine.getTrack(trackIndex).writeHead.setInputChannel(channel);
@@ -226,6 +232,7 @@ void LooperTrack::applyLookAndFeel()
         configureParamsButton.setLookAndFeel(&laf);
         textPromptEditor.setLookAndFeel(&laf);
         textPromptLabel.setLookAndFeel(&laf);
+        autogenToggle.setLookAndFeel(&laf);
     }
 }
 
@@ -343,10 +350,11 @@ void LooperTrack::resized()
     parameterKnobs.setBounds(knobArea);
     bottomArea.removeFromTop(spacingSmall);
     
-    // Level control and VU meter
+    // Level control and VU meter with autogen toggle
     auto controlsArea = bottomArea.removeFromTop(controlsHeight);
     levelControl.setBounds(controlsArea.removeFromLeft(115)); // 80 + 5 + 30
     controlsArea.removeFromLeft(spacingSmall);
+    autogenToggle.setBounds(controlsArea.removeFromLeft(100)); // Toggle button width
     bottomArea.removeFromTop(spacingSmall);
     
     // Generate button
@@ -529,6 +537,17 @@ void LooperTrack::onGradioComplete(juce::Result result, juce::File outputFile)
     if (trackEngine.loadFromFile(outputFile))
     {
         repaint(); // Refresh waveform display
+        
+        // Check if autogen is enabled - if so, automatically trigger next generation
+        if (autogenToggle.getToggleState())
+        {
+            DBG("LooperTrack: Autogen enabled - automatically triggering next generation");
+            // Use MessageManager::callAsync to ensure the UI updates and the file is fully loaded
+            juce::MessageManager::callAsync([this]()
+            {
+                generateButtonClicked();
+            });
+        }
     }
     else
     {
