@@ -35,12 +35,10 @@ private:
     std::vector<std::unique_ptr<Text2Sound::LooperTrack>> tracks;
     
     juce::TextButton syncButton;
-    juce::TextButton audioSettingsButton;
     juce::TextButton gradioSettingsButton;
     juce::TextButton midiSettingsButton;
     juce::Label titleLabel;
-
-    juce::DialogWindow* audioSettingsWindow = nullptr;
+    juce::Label audioDeviceDebugLabel;
     CustomLookAndFeel customLookAndFeel;
     juce::String gradioUrl { "https://opensound-ezaudio-controlnet.hf.space/" };
     mutable juce::CriticalSection gradioSettingsLock;
@@ -48,9 +46,8 @@ private:
     Shared::MidiLearnOverlay midiLearnOverlay;
 
     void syncButtonClicked();
-    void audioSettingsButtonClicked();
-    void showAudioSettings();
     void gradioSettingsButtonClicked();
+    void updateAudioDeviceDebugInfo();
     void showGradioSettings();
     void setGradioUrl(const juce::String& newUrl);
     juce::String getGradioUrl() const;

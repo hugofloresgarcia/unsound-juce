@@ -84,13 +84,118 @@ void StartupDialog::buttonClicked(juce::Button* button)
 {
     if (button == &okButton)
     {
+        DBG("[StartupDialog] OK button clicked");
+        
         // Update numTracks and selectedFrontend from UI values when OK is clicked
         numTracks = static_cast<int>(numTracksSlider.getValue());
         selectedFrontend = frontendCombo.getText();
+        
+        DBG("[StartupDialog] numTracks=" << numTracks << ", frontend=" << selectedFrontend);
+        
+        // Get current device setup BEFORE modifying it
+        juce::AudioDeviceManager::AudioDeviceSetup setup;
+        audioDeviceManager.getAudioDeviceSetup(setup);
+        
+        DBG("[StartupDialog] Current device setup:");
+        DBG("  outputDeviceName: " << setup.outputDeviceName);
+        DBG("  inputDeviceName: " << setup.inputDeviceName);
+        DBG("  sampleRate: " << setup.sampleRate);
+        DBG("  bufferSize: " << setup.bufferSize);
+        DBG("  useDefaultInputChannels: " << (setup.useDefaultInputChannels ? "true" : "false"));
+        DBG("  useDefaultOutputChannels: " << (setup.useDefaultOutputChannels ? "true" : "false"));
+        DBG("  inputChannels bits: " << setup.inputChannels.toString(2));
+        DBG("  outputChannels bits: " << setup.outputChannels.toString(2));
+        
+        // Get current device to check available channels
+        auto* device = audioDeviceManager.getCurrentAudioDevice();
+        if (device != nullptr)
+        {
+            DBG("[StartupDialog] Current device: " << device->getName());
+            DBG("[StartupDialog] Device type: " << device->getTypeName());
+            
+            // Get the number of available channels
+            int numInputChannels = device->getInputChannelNames().size();
+            int numOutputChannels = device->getOutputChannelNames().size();
+            
+            DBG("[StartupDialog] Available channels - Input: " << numInputChannels << ", Output: " << numOutputChannels);
+            
+            // Enable all input channels
+            if (numInputChannels > 0)
+            {
+                setup.inputChannels.clear();
+                for (int i = 0; i < numInputChannels; ++i)
+                {
+                    setup.inputChannels.setBit(i, true);
+                }
+                setup.useDefaultInputChannels = false;
+                DBG("[StartupDialog] Enabled all " << numInputChannels << " input channels");
+                DBG("[StartupDialog] Input channels bits: " << setup.inputChannels.toString(2));
+            }
+            else
+            {
+                DBG("[StartupDialog] No input channels available");
+            }
+            
+            // Enable all output channels
+            if (numOutputChannels > 0)
+            {
+                setup.outputChannels.clear();
+                for (int i = 0; i < numOutputChannels; ++i)
+                {
+                    setup.outputChannels.setBit(i, true);
+                }
+                setup.useDefaultOutputChannels = false;
+                DBG("[StartupDialog] Enabled all " << numOutputChannels << " output channels");
+                DBG("[StartupDialog] Output channels bits: " << setup.outputChannels.toString(2));
+            }
+            else
+            {
+                DBG("[StartupDialog] No output channels available");
+            }
+            
+            // Apply the setup
+            DBG("[StartupDialog] Applying device setup...");
+            auto error = audioDeviceManager.setAudioDeviceSetup(setup, true);
+            if (error.isNotEmpty())
+            {
+                DBG("[StartupDialog] ERROR applying device setup: " << error);
+            }
+            else
+            {
+                DBG("[StartupDialog] Device setup applied successfully");
+                
+                // Verify the setup was applied
+                juce::AudioDeviceManager::AudioDeviceSetup verifySetup;
+                audioDeviceManager.getAudioDeviceSetup(verifySetup);
+                auto* verifyDevice = audioDeviceManager.getCurrentAudioDevice();
+                
+                DBG("[StartupDialog] Verification after applying setup:");
+                DBG("  outputDeviceName: " << verifySetup.outputDeviceName);
+                DBG("  inputDeviceName: " << verifySetup.inputDeviceName);
+                if (verifyDevice != nullptr)
+                {
+                    DBG("  Current device: " << verifyDevice->getName());
+                    DBG("  Active input channels: " << verifyDevice->getActiveInputChannels().countNumberOfSetBits());
+                    DBG("  Active output channels: " << verifyDevice->getActiveOutputChannels().countNumberOfSetBits());
+                }
+            }
+        }
+        else
+        {
+            DBG("[StartupDialog] WARNING: No current audio device!");
+        }
+        
         okClicked = true;
         if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
             dw->exitModalState(1);
     }
+}
+
+juce::AudioDeviceManager::AudioDeviceSetup StartupDialog::getDeviceSetup() const
+{
+    juce::AudioDeviceManager::AudioDeviceSetup setup;
+    audioDeviceManager.getAudioDeviceSetup(setup);
+    return setup;
 }
 
 void StartupDialog::paint(juce::Graphics& g)

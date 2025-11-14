@@ -161,24 +161,69 @@ void MultiTrackLooperEngine::syncAllTracks()
 
 void MultiTrackLooperEngine::startAudio()
 {
+    DBG("[MultiTrackLooperEngine] ENTRY: startAudio");
     DBG_SEGFAULT("ENTRY: startAudio");
+    
+    // Check current device setup before proceeding
+    juce::AudioDeviceManager::AudioDeviceSetup currentSetup;
+    audioDeviceManager.getAudioDeviceSetup(currentSetup);
+    DBG("[MultiTrackLooperEngine] Current device setup before startAudio:");
+    DBG("  outputDeviceName: " << currentSetup.outputDeviceName);
+    DBG("  inputDeviceName: " << currentSetup.inputDeviceName);
+    DBG("  useDefaultInputChannels: " << (currentSetup.useDefaultInputChannels ? "true" : "false"));
+    DBG("  useDefaultOutputChannels: " << (currentSetup.useDefaultOutputChannels ? "true" : "false"));
+    
     // Initialize audio device if not already initialized
     DBG_SEGFAULT("Getting current audio device");
     auto* device = audioDeviceManager.getCurrentAudioDevice();
+    DBG("[MultiTrackLooperEngine] Current device: " << (device != nullptr ? device->getName() : "null"));
     DBG_SEGFAULT("Current device=" + juce::String(device != nullptr ? "non-null" : "null"));
+    
     if (device == nullptr)
     {
-        DBG_SEGFAULT("Device is null, initializing with defaults");
-        // Device wasn't initialized yet, initialize with default settings
-        juce::String error = audioDeviceManager.initialiseWithDefaultDevices(2, 2);
-        if (error.isNotEmpty())
+        DBG("[MultiTrackLooperEngine] WARNING: Device is null!");
+        DBG("[MultiTrackLooperEngine] Checking if device setup has a device name...");
+        
+        // Check if we have a device name in the setup - if so, try to open it
+        if (currentSetup.outputDeviceName.isNotEmpty() || currentSetup.inputDeviceName.isNotEmpty())
         {
-            DBG("Audio device initialization error: " << error);
-            DBG_SEGFAULT("Initialization error, returning");
-            return;
+            DBG("[MultiTrackLooperEngine] Device setup has device names, attempting to open device...");
+            juce::String error = audioDeviceManager.setAudioDeviceSetup(currentSetup, true);
+            if (error.isNotEmpty())
+            {
+                DBG("[MultiTrackLooperEngine] ERROR opening configured device: " << error);
+                DBG("[MultiTrackLooperEngine] Falling back to default devices...");
+                // Fall back to defaults only if the configured device fails
+                error = audioDeviceManager.initialiseWithDefaultDevices(2, 2);
+                if (error.isNotEmpty())
+                {
+                    DBG("[MultiTrackLooperEngine] ERROR initializing with defaults: " << error);
+                    DBG_SEGFAULT("Initialization error, returning");
+                    return;
+                }
+            }
+            else
+            {
+                DBG("[MultiTrackLooperEngine] Successfully opened configured device");
+            }
         }
+        else
+        {
+            DBG("[MultiTrackLooperEngine] No device name in setup, initializing with defaults");
+            DBG_SEGFAULT("Device is null, initializing with defaults");
+            // Device wasn't initialized yet, initialize with default settings
+            juce::String error = audioDeviceManager.initialiseWithDefaultDevices(2, 2);
+            if (error.isNotEmpty())
+            {
+                DBG("[MultiTrackLooperEngine] Audio device initialization error: " << error);
+                DBG_SEGFAULT("Initialization error, returning");
+                return;
+            }
+        }
+        
         DBG_SEGFAULT("Getting device after initialization");
         device = audioDeviceManager.getCurrentAudioDevice();
+        DBG("[MultiTrackLooperEngine] Device after init: " << (device != nullptr ? device->getName() : "null"));
         DBG_SEGFAULT("Device after init=" + juce::String(device != nullptr ? "non-null" : "null"));
     }
     

@@ -48,6 +48,9 @@ public:
             dialogOptions.componentToCentreAround = juce::TopLevelWindow::getActiveTopLevelWindow();
             juce::Process::makeForegroundProcess();
             int result = dialogOptions.runModal();
+            
+            DBG("[Main] Dialog result: " << result);
+            
             // Access the dialog component to read the value
             if (result == 1 && dialogPtr != nullptr)
             {
@@ -57,17 +60,51 @@ public:
                     selectedFrontend = dialogPtr->getSelectedFrontend();
                     juce::Logger::writeToLog("Selected number of tracks: " + juce::String(numTracks));
                     juce::Logger::writeToLog("Selected frontend: " + selectedFrontend);
-                    // Copy audio device settings from temporary manager to the one we'll use
-                    tempDeviceManager.getAudioDeviceSetup(deviceSetup);
+                    
+                    // Get device setup from the dialog (which has the updated setup with all channels enabled)
+                    DBG("[Main] Getting device setup from StartupDialog...");
+                    deviceSetup = dialogPtr->getDeviceSetup();
+                    
+                    DBG("[Main] Device setup retrieved from StartupDialog:");
+                    DBG("  outputDeviceName: " << deviceSetup.outputDeviceName);
+                    DBG("  inputDeviceName: " << deviceSetup.inputDeviceName);
+                    DBG("  sampleRate: " << deviceSetup.sampleRate);
+                    DBG("  bufferSize: " << deviceSetup.bufferSize);
+                    DBG("  useDefaultInputChannels: " << (deviceSetup.useDefaultInputChannels ? "true" : "false"));
+                    DBG("  useDefaultOutputChannels: " << (deviceSetup.useDefaultOutputChannels ? "true" : "false"));
+                    DBG("  inputChannels bits: " << deviceSetup.inputChannels.toString(2));
+                    DBG("  outputChannels bits: " << deviceSetup.outputChannels.toString(2));
+                    
+                    // Also verify from tempDeviceManager for comparison
+                    juce::AudioDeviceManager::AudioDeviceSetup tempSetup;
+                    tempDeviceManager.getAudioDeviceSetup(tempSetup);
+                    DBG("[Main] Device setup from tempDeviceManager for comparison:");
+                    DBG("  outputDeviceName: " << tempSetup.outputDeviceName);
+                    DBG("  inputDeviceName: " << tempSetup.inputDeviceName);
+                    
+                    // Verify current device
+                    auto* currentDevice = tempDeviceManager.getCurrentAudioDevice();
+                    if (currentDevice != nullptr)
+                    {
+                        DBG("[Main] Current device in tempDeviceManager: " << currentDevice->getName());
+                        DBG("[Main] Active input channels: " << currentDevice->getActiveInputChannels().countNumberOfSetBits());
+                        DBG("[Main] Active output channels: " << currentDevice->getActiveOutputChannels().countNumberOfSetBits());
+                    }
+                    else
+                    {
+                        DBG("[Main] WARNING: No current device in tempDeviceManager!");
+                    }
                 }
                 else
                 {
                     juce::Logger::writeToLog("Dialog OK not clicked, using default 8 tracks");
+                    DBG("[Main] Dialog OK not clicked");
                 }
             }
             else
             {
                 juce::Logger::writeToLog("Dialog cancelled (result=" + juce::String(result) + "), using default 8 tracks");
+                DBG("[Main] Dialog cancelled or dialogPtr is null");
             }
             
             // Clean up the dialog component manually since we set auto-delete to false
@@ -115,6 +152,18 @@ public:
                                 .findColour(juce::ResizableWindow::backgroundColourId),
                             DocumentWindow::allButtons)
         {
+            DBG("[MainWindow] Constructor called");
+            DBG("[MainWindow] Frontend: " << frontend << ", numTracks: " << numTracks);
+            DBG("[MainWindow] Device setup received:");
+            DBG("  outputDeviceName: " << deviceSetup.outputDeviceName);
+            DBG("  inputDeviceName: " << deviceSetup.inputDeviceName);
+            DBG("  sampleRate: " << deviceSetup.sampleRate);
+            DBG("  bufferSize: " << deviceSetup.bufferSize);
+            DBG("  useDefaultInputChannels: " << (deviceSetup.useDefaultInputChannels ? "true" : "false"));
+            DBG("  useDefaultOutputChannels: " << (deviceSetup.useDefaultOutputChannels ? "true" : "false"));
+            DBG("  inputChannels bits: " << deviceSetup.inputChannels.toString(2));
+            DBG("  outputChannels bits: " << deviceSetup.outputChannels.toString(2));
+            
             setUsingNativeTitleBar(true);
             
             // Create the appropriate frontend component based on selection
@@ -125,24 +174,213 @@ public:
             
             if (frontendLower == "basic")
             {
+                DBG("[MainWindow] Creating Basic frontend...");
                 auto* basicComponent = new Basic::MainComponent(numTracks);
                 mainComponent = basicComponent;
-                basicComponent->getLooperEngine().getAudioDeviceManager().setAudioDeviceSetup(deviceSetup, true);
+                
+                DBG("[MainWindow] Setting device setup on Basic looper engine...");
+                auto& deviceManager = basicComponent->getLooperEngine().getAudioDeviceManager();
+                
+                // CRITICAL: Set device type first, otherwise setAudioDeviceSetup will fail silently
+                // Find the device type that contains our device
+                juce::String deviceType;
+                const auto& deviceTypes = deviceManager.getAvailableDeviceTypes();
+                for (int i = 0; i < deviceTypes.size(); ++i)
+                {
+                    auto* type = deviceTypes[i];
+                    auto outputDevices = type->getDeviceNames(false);
+                    auto inputDevices = type->getDeviceNames(true);
+                    
+                    bool foundDevice = false;
+                    if (deviceSetup.outputDeviceName.isNotEmpty())
+                        foundDevice = outputDevices.contains(deviceSetup.outputDeviceName);
+                    if (!foundDevice && deviceSetup.inputDeviceName.isNotEmpty())
+                        foundDevice = inputDevices.contains(deviceSetup.inputDeviceName);
+                    
+                    if (foundDevice)
+                    {
+                        deviceType = type->getTypeName();
+                        DBG("[MainWindow] Found device type for TX-6: " << deviceType);
+                        break;
+                    }
+                }
+                
+                if (deviceType.isNotEmpty())
+                {
+                    DBG("[MainWindow] Setting device type to: " << deviceType);
+                    deviceManager.setCurrentAudioDeviceType(deviceType, false);
+                }
+                else
+                {
+                    DBG("[MainWindow] WARNING: Could not find device type, using default");
+                }
+                
+                auto error = deviceManager.setAudioDeviceSetup(deviceSetup, true);
+                if (error.isNotEmpty())
+                {
+                    DBG("[MainWindow] ERROR setting device setup: " << error);
+                }
+                else
+                {
+                    DBG("[MainWindow] Device setup applied successfully");
+                    
+                    // Verify device after setup
+                    auto* verifyDevice = deviceManager.getCurrentAudioDevice();
+                    if (verifyDevice != nullptr)
+                    {
+                        DBG("[MainWindow] Device after setup: " << verifyDevice->getName());
+                        DBG("[MainWindow] Active input channels: " << verifyDevice->getActiveInputChannels().countNumberOfSetBits());
+                        DBG("[MainWindow] Active output channels: " << verifyDevice->getActiveOutputChannels().countNumberOfSetBits());
+                    }
+                    else
+                    {
+                        DBG("[MainWindow] WARNING: No device after setup!");
+                    }
+                }
+                
+                DBG("[MainWindow] Starting audio...");
                 basicComponent->getLooperEngine().startAudio();
+                
+                // Verify device after startAudio
+                auto* finalDevice = deviceManager.getCurrentAudioDevice();
+                if (finalDevice != nullptr)
+                {
+                    DBG("[MainWindow] Final device after startAudio: " << finalDevice->getName());
+                    DBG("[MainWindow] Final active input channels: " << finalDevice->getActiveInputChannels().countNumberOfSetBits());
+                    DBG("[MainWindow] Final active output channels: " << finalDevice->getActiveOutputChannels().countNumberOfSetBits());
+                }
             }
             else if (frontendLower == "text2sound")
             {
+                DBG("[MainWindow] Creating Text2Sound frontend...");
                 auto* text2SoundComponent = new Text2Sound::MainComponent(numTracks);
                 mainComponent = text2SoundComponent;
-                text2SoundComponent->getLooperEngine().getAudioDeviceManager().setAudioDeviceSetup(deviceSetup, true);
+                
+                DBG("[MainWindow] Setting device setup on Text2Sound looper engine...");
+                auto& deviceManager = text2SoundComponent->getLooperEngine().getAudioDeviceManager();
+                
+                // CRITICAL: Set device type first, otherwise setAudioDeviceSetup will fail silently
+                juce::String deviceType;
+                const auto& deviceTypes = deviceManager.getAvailableDeviceTypes();
+                for (int i = 0; i < deviceTypes.size(); ++i)
+                {
+                    auto* type = deviceTypes[i];
+                    auto outputDevices = type->getDeviceNames(false);
+                    auto inputDevices = type->getDeviceNames(true);
+                    
+                    bool foundDevice = false;
+                    if (deviceSetup.outputDeviceName.isNotEmpty())
+                        foundDevice = outputDevices.contains(deviceSetup.outputDeviceName);
+                    if (!foundDevice && deviceSetup.inputDeviceName.isNotEmpty())
+                        foundDevice = inputDevices.contains(deviceSetup.inputDeviceName);
+                    
+                    if (foundDevice)
+                    {
+                        deviceType = type->getTypeName();
+                        DBG("[MainWindow] Found device type: " << deviceType);
+                        break;
+                    }
+                }
+                
+                if (deviceType.isNotEmpty())
+                {
+                    deviceManager.setCurrentAudioDeviceType(deviceType, false);
+                }
+                
+                auto error = deviceManager.setAudioDeviceSetup(deviceSetup, true);
+                if (error.isNotEmpty())
+                {
+                    DBG("[MainWindow] ERROR setting device setup: " << error);
+                }
+                else
+                {
+                    DBG("[MainWindow] Device setup applied successfully");
+                    
+                    // Verify device after setup
+                    auto* verifyDevice = deviceManager.getCurrentAudioDevice();
+                    if (verifyDevice != nullptr)
+                    {
+                        DBG("[MainWindow] Device after setup: " << verifyDevice->getName());
+                        DBG("[MainWindow] Active input channels: " << verifyDevice->getActiveInputChannels().countNumberOfSetBits());
+                        DBG("[MainWindow] Active output channels: " << verifyDevice->getActiveOutputChannels().countNumberOfSetBits());
+                    }
+                }
+                
+                DBG("[MainWindow] Starting audio...");
                 text2SoundComponent->getLooperEngine().startAudio();
+                
+                // Verify device after startAudio
+                auto* finalDevice = deviceManager.getCurrentAudioDevice();
+                if (finalDevice != nullptr)
+                {
+                    DBG("[MainWindow] Final device after startAudio: " << finalDevice->getName());
+                }
             }
             else if (frontendLower == "vampnet")
             {
+                DBG("[MainWindow] Creating VampNet frontend...");
                 auto* vampNetComponent = new VampNet::MainComponent(numTracks);
                 mainComponent = vampNetComponent;
-                vampNetComponent->getLooperEngine().getAudioDeviceManager().setAudioDeviceSetup(deviceSetup, true);
+                
+                DBG("[MainWindow] Setting device setup on VampNet looper engine...");
+                auto& deviceManager = vampNetComponent->getLooperEngine().getAudioDeviceManager();
+                
+                // CRITICAL: Set device type first, otherwise setAudioDeviceSetup will fail silently
+                juce::String deviceType;
+                const auto& deviceTypes = deviceManager.getAvailableDeviceTypes();
+                for (int i = 0; i < deviceTypes.size(); ++i)
+                {
+                    auto* type = deviceTypes[i];
+                    auto outputDevices = type->getDeviceNames(false);
+                    auto inputDevices = type->getDeviceNames(true);
+                    
+                    bool foundDevice = false;
+                    if (deviceSetup.outputDeviceName.isNotEmpty())
+                        foundDevice = outputDevices.contains(deviceSetup.outputDeviceName);
+                    if (!foundDevice && deviceSetup.inputDeviceName.isNotEmpty())
+                        foundDevice = inputDevices.contains(deviceSetup.inputDeviceName);
+                    
+                    if (foundDevice)
+                    {
+                        deviceType = type->getTypeName();
+                        DBG("[MainWindow] Found device type: " << deviceType);
+                        break;
+                    }
+                }
+                
+                if (deviceType.isNotEmpty())
+                {
+                    deviceManager.setCurrentAudioDeviceType(deviceType, false);
+                }
+                
+                auto error = deviceManager.setAudioDeviceSetup(deviceSetup, true);
+                if (error.isNotEmpty())
+                {
+                    DBG("[MainWindow] ERROR setting device setup: " << error);
+                }
+                else
+                {
+                    DBG("[MainWindow] Device setup applied successfully");
+                    
+                    // Verify device after setup
+                    auto* verifyDevice = deviceManager.getCurrentAudioDevice();
+                    if (verifyDevice != nullptr)
+                    {
+                        DBG("[MainWindow] Device after setup: " << verifyDevice->getName());
+                        DBG("[MainWindow] Active input channels: " << verifyDevice->getActiveInputChannels().countNumberOfSetBits());
+                        DBG("[MainWindow] Active output channels: " << verifyDevice->getActiveOutputChannels().countNumberOfSetBits());
+                    }
+                }
+                
+                DBG("[MainWindow] Starting audio...");
                 vampNetComponent->getLooperEngine().startAudio();
+                
+                // Verify device after startAudio
+                auto* finalDevice = deviceManager.getCurrentAudioDevice();
+                if (finalDevice != nullptr)
+                {
+                    DBG("[MainWindow] Final device after startAudio: " << finalDevice->getName());
+                }
             }
             
             setContentOwned(mainComponent, true);

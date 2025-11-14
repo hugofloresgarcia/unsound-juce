@@ -13,6 +13,7 @@ public:
     
     int getNumTracks() const { return numTracks; }
     juce::String getSelectedFrontend() const { return selectedFrontend; }
+    juce::AudioDeviceManager::AudioDeviceSetup getDeviceSetup() const;
     
     void resized() override;
     void buttonClicked(juce::Button* button) override;

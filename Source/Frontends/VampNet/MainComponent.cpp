@@ -14,10 +14,10 @@ using namespace VampNet;
 
 MainComponent::MainComponent(int numTracks)
     : syncButton("sync all"),
-      audioSettingsButton("audio settings"),
       gradioSettingsButton("gradio settings"),
       midiSettingsButton("midi settings"),
       titleLabel("Title", "tape looper - vampnet"),
+      audioDeviceDebugLabel("AudioDebug", ""),
       midiLearnOverlay(midiLearnManager)
 {
     DBG_SEGFAULT("ENTRY: MainComponent::MainComponent, numTracks=" + juce::String(numTracks));
@@ -69,10 +69,6 @@ MainComponent::MainComponent(int numTracks)
     syncButton.onClick = [this] { syncButtonClicked(); };
     addAndMakeVisible(syncButton);
 
-    // Setup audio settings button
-    audioSettingsButton.onClick = [this] { audioSettingsButtonClicked(); };
-    addAndMakeVisible(audioSettingsButton);
-
     // Setup Gradio settings button
     gradioSettingsButton.onClick = [this] { gradioSettingsButtonClicked(); };
     addAndMakeVisible(gradioSettingsButton);
@@ -87,6 +83,14 @@ MainComponent::MainComponent(int numTracks)
                                   .withName(juce::Font::getDefaultMonospacedFontName())
                                   .withHeight(20.0f)));
     addAndMakeVisible(titleLabel);
+    
+    // Setup audio device debug label (top right corner)
+    audioDeviceDebugLabel.setJustificationType(juce::Justification::topRight);
+    audioDeviceDebugLabel.setFont(juce::Font(juce::FontOptions()
+                                             .withName(juce::Font::getDefaultMonospacedFontName())
+                                             .withHeight(11.0f)));
+    audioDeviceDebugLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
+    addAndMakeVisible(audioDeviceDebugLabel);
     
     // Setup MIDI learn overlay (covers entire window when active)
     addAndMakeVisible(midiLearnOverlay);
@@ -129,8 +133,6 @@ void MainComponent::resized()
     auto controlArea = bounds.removeFromTop(40);
     syncButton.setBounds(controlArea.removeFromLeft(120));
     controlArea.removeFromLeft(10);
-    audioSettingsButton.setBounds(controlArea.removeFromLeft(150));
-    controlArea.removeFromLeft(10);
     gradioSettingsButton.setBounds(controlArea.removeFromLeft(180));
     controlArea.removeFromLeft(10);
     midiSettingsButton.setBounds(controlArea.removeFromLeft(120));
@@ -154,6 +156,10 @@ void MainComponent::resized()
     
     // MIDI learn overlay covers entire window
     midiLearnOverlay.setBounds(getLocalBounds());
+    
+    // Audio device debug label in top right corner
+    auto debugBounds = getLocalBounds().removeFromTop(60).removeFromRight(300);
+    audioDeviceDebugLabel.setBounds(debugBounds.reduced(10, 5));
 }
 
 void MainComponent::timerCallback()
@@ -163,6 +169,9 @@ void MainComponent::timerCallback()
     {
         track->repaint();
     }
+    
+    // Update audio device debug info
+    updateAudioDeviceDebugInfo();
 }
 
 void MainComponent::syncButtonClicked()
@@ -170,38 +179,22 @@ void MainComponent::syncButtonClicked()
     looperEngine.syncAllTracks();
 }
 
-void MainComponent::audioSettingsButtonClicked()
+void MainComponent::updateAudioDeviceDebugInfo()
 {
-    showAudioSettings();
-}
-
-void MainComponent::showAudioSettings()
-{
-    if (audioSettingsWindow != nullptr)
+    auto* device = looperEngine.getAudioDeviceManager().getCurrentAudioDevice();
+    if (device != nullptr)
     {
-        audioSettingsWindow->toFront(true);
-        return;
+        juce::String deviceName = device->getName();
+        int numInputChannels = device->getActiveInputChannels().countNumberOfSetBits();
+        int numOutputChannels = device->getActiveOutputChannels().countNumberOfSetBits();
+        
+        juce::String debugText = "IN: " + deviceName + " (" + juce::String(numInputChannels) + " ch)\n"
+                               + "OUT: " + deviceName + " (" + juce::String(numOutputChannels) + " ch)";
+        audioDeviceDebugLabel.setText(debugText, juce::dontSendNotification);
     }
-
-    auto* audioSettingsComponent = new juce::AudioDeviceSelectorComponent(
-        looperEngine.getAudioDeviceManager(),
-        0, 256, 0, 256, true, true, true, false);
-
-    audioSettingsComponent->setSize(500, 400);
-
-    juce::DialogWindow::LaunchOptions options;
-    options.content.setOwned(audioSettingsComponent);
-    options.dialogTitle = "audio settings";
-    options.dialogBackgroundColour = juce::Colours::black;
-    options.escapeKeyTriggersCloseButton = true;
-    options.useNativeTitleBar = false;
-    options.resizable = false;
-
-    audioSettingsWindow = options.launchAsync();
-    
-    if (audioSettingsWindow != nullptr)
+    else
     {
-        audioSettingsWindow->enterModalState(true, nullptr, true);
+        audioDeviceDebugLabel.setText("No audio device", juce::dontSendNotification);
     }
 }
 
