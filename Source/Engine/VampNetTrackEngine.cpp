@@ -4,11 +4,17 @@
 #include <cmath>
 
 // TODO: Remove this debug macro after fixing segmentation fault
+#ifndef DEBUG_SEGFAULT
 #define DEBUG_SEGFAULT 1
+#endif
 #if DEBUG_SEGFAULT
+#ifndef DBG_SEGFAULT
 #define DBG_SEGFAULT(msg) juce::Logger::writeToLog("[SEGFAULT] " + juce::String(__FILE__) + ":" + juce::String(__LINE__) + " - " + juce::String(msg))
+#endif
 #else
+#ifndef DBG_SEGFAULT
 #define DBG_SEGFAULT(msg)
+#endif
 #endif
 
 VampNetTrackEngine::VampNetTrackEngine()
@@ -17,6 +23,8 @@ VampNetTrackEngine::VampNetTrackEngine()
 {
     formatManager.registerBasicFormats();
 }
+
+VampNetTrackEngine::~VampNetTrackEngine() = default;
 
 void VampNetTrackEngine::initialize(double sampleRate, double maxBufferDurationSeconds)
 {

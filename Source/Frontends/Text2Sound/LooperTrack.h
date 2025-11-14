@@ -100,6 +100,7 @@ private:
     juce::TextButton configureParamsButton;
     juce::TextEditor textPromptEditor;
     juce::Label textPromptLabel;
+    juce::ToggleButton autogenToggle;
     
     std::unique_ptr<GradioWorkerThread> gradioWorkerThread;
     std::function<juce::String()> gradioUrlProvider;

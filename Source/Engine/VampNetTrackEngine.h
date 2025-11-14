@@ -37,7 +37,7 @@ public:
     };
 
     VampNetTrackEngine();
-    ~VampNetTrackEngine() = default;
+    ~VampNetTrackEngine();
 
     // Initialize the track with sample rate and buffer duration
     void initialize(double sampleRate, double maxBufferDurationSeconds);
