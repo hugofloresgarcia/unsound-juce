@@ -7,6 +7,8 @@
 #include <atomic>
 #include <memory>
 #include "../../Engine/MultiTrackLooperEngine.h"
+#include "../Shared/MidiLearnManager.h"
+#include "../Shared/MidiLearnComponent.h"
 
 namespace VampNet
 {
@@ -51,7 +53,7 @@ private:
 class SamplerWindow : public juce::DialogWindow
 {
 public:
-    SamplerWindow(VampNetMultiTrackLooperEngine& engine, int numTracks);
+    SamplerWindow(VampNetMultiTrackLooperEngine& engine, int numTracks, Shared::MidiLearnManager* midiManager = nullptr);
     ~SamplerWindow() override;
     
     void closeButtonPressed() override;
@@ -63,8 +65,8 @@ private:
     class ContentComponent : public juce::Component
     {
     public:
-        ContentComponent(VampNetMultiTrackLooperEngine& engine, int numTracks);
-        ~ContentComponent() override = default;
+        ContentComponent(VampNetMultiTrackLooperEngine& engine, int numTracks, Shared::MidiLearnManager* midiManager);
+        ~ContentComponent() override;
         
         void paint(juce::Graphics& g) override;
         void resized() override;
@@ -74,20 +76,28 @@ private:
         
     private:
         VampNetMultiTrackLooperEngine& looperEngine;
+        Shared::MidiLearnManager* midiLearnManager;
         
         juce::ToggleButton enableButton;
         juce::Label trackLabel;
         juce::ComboBox trackSelector;
         juce::TextButton loadSampleButton;
+        juce::TextButton triggerButton;
         juce::Label sampleNameLabel;
         juce::Label instructionsLabel;
         
         std::atomic<int> selectedTrack{0};
         std::atomic<bool> enabled{false};
         
+        // MIDI learn support
+        std::unique_ptr<Shared::MidiLearnable> triggerButtonLearnable;
+        std::unique_ptr<Shared::MidiLearnMouseListener> triggerButtonMouseListener;
+        juce::String parameterId;
+        
         void enableButtonChanged();
         void trackSelectorChanged();
         void loadSampleButtonClicked();
+        void triggerButtonClicked();
         
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ContentComponent)
     };

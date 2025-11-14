@@ -59,8 +59,8 @@ float ClickSynth::getNextSample(double sampleRate)
 }
 
 // ClickSynthWindow::ContentComponent implementation
-ClickSynthWindow::ContentComponent::ContentComponent(VampNetMultiTrackLooperEngine& engine, int numTracks)
-    : looperEngine(engine)
+ClickSynthWindow::ContentComponent::ContentComponent(VampNetMultiTrackLooperEngine& engine, int numTracks, Shared::MidiLearnManager* midiManager)
+    : looperEngine(engine), midiLearnManager(midiManager), parameterId("clicksynth_trigger")
 {
     // Setup enable button
     enableButton.setButtonText("Enable Click Synth");
@@ -114,17 +114,64 @@ ClickSynthWindow::ContentComponent::ContentComponent(VampNetMultiTrackLooperEngi
     amplitudeSlider.onValueChange = [this] { amplitudeSliderChanged(); };
     addAndMakeVisible(amplitudeSlider);
     
+    // Setup trigger button
+    triggerButton.setButtonText("Trigger");
+    triggerButton.onClick = [this] { triggerButtonClicked(); };
+    addAndMakeVisible(triggerButton);
+    
+    // Setup MIDI learn for trigger button
+    if (midiLearnManager)
+    {
+        triggerButtonLearnable = std::make_unique<Shared::MidiLearnable>(*midiLearnManager, parameterId);
+        
+        // Create mouse listener for right-click handling
+        triggerButtonMouseListener = std::make_unique<Shared::MidiLearnMouseListener>(*triggerButtonLearnable, this);
+        triggerButton.addMouseListener(triggerButtonMouseListener.get(), false);
+        
+        midiLearnManager->registerParameter({
+            parameterId,
+            [this](float value) {
+                if (value > 0.5f && enabled.load())
+                    triggerButtonClicked();
+            },
+            [this]() { return 0.0f; },
+            "Click Synth Trigger",
+            true  // Toggle control
+        });
+    }
+    
     // Setup instructions label
-    instructionsLabel.setText("Press 'k' to trigger a click", juce::dontSendNotification);
+    instructionsLabel.setText("Press 'k' or click Trigger to trigger a click", juce::dontSendNotification);
     instructionsLabel.setJustificationType(juce::Justification::centred);
     instructionsLabel.setFont(juce::Font(juce::FontOptions().withHeight(12.0f)));
     instructionsLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
     addAndMakeVisible(instructionsLabel);
 }
 
+ClickSynthWindow::ContentComponent::~ContentComponent()
+{
+    // Remove mouse listener first
+    if (triggerButtonMouseListener)
+        triggerButton.removeMouseListener(triggerButtonMouseListener.get());
+    
+    // Unregister MIDI parameter
+    if (midiLearnManager)
+    {
+        midiLearnManager->unregisterParameter(parameterId);
+    }
+}
+
 void ClickSynthWindow::ContentComponent::paint(juce::Graphics& g)
 {
     g.fillAll(juce::Colours::black);
+    
+    // Draw MIDI indicator on trigger button if mapped
+    if (triggerButtonLearnable && triggerButtonLearnable->hasMidiMapping())
+    {
+        auto buttonBounds = triggerButton.getBounds();
+        g.setColour(juce::Colour(0xffed1683));  // Pink
+        g.fillEllipse(buttonBounds.getRight() - 8.0f, buttonBounds.getY() + 2.0f, 6.0f, 6.0f);
+    }
 }
 
 void ClickSynthWindow::ContentComponent::resized()
@@ -158,6 +205,10 @@ void ClickSynthWindow::ContentComponent::resized()
     amplitudeLabel.setBounds(ampArea.removeFromLeft(120));
     ampArea.removeFromLeft(5);
     amplitudeSlider.setBounds(ampArea);
+    bounds.removeFromTop(spacing);
+    
+    // Trigger button
+    triggerButton.setBounds(bounds.removeFromTop(rowHeight));
     bounds.removeFromTop(spacing);
     
     // Instructions at the bottom
@@ -232,17 +283,40 @@ void ClickSynthWindow::ContentComponent::amplitudeSliderChanged()
     }
 }
 
+void ClickSynthWindow::ContentComponent::triggerButtonClicked()
+{
+    if (!enabled.load())
+        return;
+    
+    int trackIdx = selectedTrack.load();
+    
+    // Trigger click on selected track(s)
+    if (trackIdx >= 0 && trackIdx < looperEngine.getNumTracks())
+    {
+        // Single track selected
+        looperEngine.getTrackEngine(trackIdx).getClickSynth().triggerClick();
+    }
+    else if (trackIdx == -1)
+    {
+        // All tracks - trigger click on all tracks
+        for (int i = 0; i < looperEngine.getNumTracks(); ++i)
+        {
+            looperEngine.getTrackEngine(i).getClickSynth().triggerClick();
+        }
+    }
+}
+
 // ClickSynthWindow implementation
-ClickSynthWindow::ClickSynthWindow(VampNetMultiTrackLooperEngine& engine, int numTracks)
+ClickSynthWindow::ClickSynthWindow(VampNetMultiTrackLooperEngine& engine, int numTracks, Shared::MidiLearnManager* midiManager)
     : juce::DialogWindow("Click Synth",
                         juce::Colours::darkgrey,
                         true),
-      contentComponent(new ContentComponent(engine, numTracks))
+      contentComponent(new ContentComponent(engine, numTracks, midiManager))
 {
     setContentOwned(contentComponent, true);
     setResizable(true, true);
     setUsingNativeTitleBar(true);
-    centreWithSize(400, 220); // Slightly taller to accommodate instructions
+    centreWithSize(400, 250); // Taller to accommodate trigger button
 }
 
 ClickSynthWindow::~ClickSynthWindow()
