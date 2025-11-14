@@ -4,7 +4,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include "../../Engine/MultiTrackLooperEngine.h"
-#include "../Shared/WaveformDisplay.h"
+#include "../Shared/DualWaveformDisplay.h"
 #include "../Shared/TransportControls.h"
 #include "../Shared/ParameterKnobs.h"
 #include "../Shared/LevelControl.h"
@@ -27,7 +27,7 @@ namespace VampNet
 class VampNetWorkerThread : public juce::Thread
 {
 public:
-    VampNetWorkerThread(MultiTrackLooperEngine& engine,
+    VampNetWorkerThread(VampNetMultiTrackLooperEngine& engine,
                        int trackIndex,
                        const juce::File& audioFile,
                        float periodicPrompt,
@@ -48,7 +48,7 @@ public:
     std::function<void(juce::Result, juce::File, int)> onComplete;
 
 private:
-    MultiTrackLooperEngine& looperEngine;
+    VampNetMultiTrackLooperEngine& looperEngine;
     int trackIndex;
     juce::File audioFile;
     float periodicPrompt;
@@ -62,7 +62,7 @@ private:
 class LooperTrack : public juce::Component, public juce::Timer
 {
 public:
-    LooperTrack(MultiTrackLooperEngine& engine, int trackIndex, std::function<juce::String()> gradioUrlProvider, Shared::MidiLearnManager* midiManager = nullptr);
+    LooperTrack(VampNetMultiTrackLooperEngine& engine, int trackIndex, std::function<juce::String()> gradioUrlProvider, Shared::MidiLearnManager* midiManager = nullptr);
     ~LooperTrack() override;
 
     void paint(juce::Graphics& g) override;
@@ -77,11 +77,11 @@ public:
     static juce::var getDefaultVampNetParams();
 
 private:
-    MultiTrackLooperEngine& looperEngine;
+    VampNetMultiTrackLooperEngine& looperEngine;
     int trackIndex;
 
     // Shared components
-    Shared::WaveformDisplay waveformDisplay;
+    Shared::DualWaveformDisplay waveformDisplay;
     Shared::TransportControls transportControls;
     Shared::ParameterKnobs parameterKnobs;
     Shared::LevelControl levelControl;

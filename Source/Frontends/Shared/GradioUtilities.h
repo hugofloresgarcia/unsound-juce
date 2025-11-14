@@ -2,8 +2,7 @@
 
 #include <juce_core/juce_core.h>
 #include <functional>
-
-class MultiTrackLooperEngine;
+#include "../../Engine/MultiTrackLooperEngine.h"
 
 namespace Shared
 {
@@ -12,6 +11,14 @@ namespace Shared
 // Used by both Text2Sound and VampNet worker threads
 juce::Result saveTrackBufferToWavFile(
     MultiTrackLooperEngine& engine,
+    int trackIndex,
+    juce::File& outputFile,
+    const juce::String& filePrefix = "gradio_input"
+);
+
+// Overload for VampNetMultiTrackLooperEngine (saves from recordBuffer)
+juce::Result saveTrackBufferToWavFile(
+    VampNetMultiTrackLooperEngine& engine,
     int trackIndex,
     juce::File& outputFile,
     const juce::String& filePrefix = "gradio_input"

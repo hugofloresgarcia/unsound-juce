@@ -30,7 +30,7 @@ endif()
 # Engine source files
 target_sources(TapeLooper PRIVATE
     Source/Engine/LooperTrackEngine.cpp
-    Source/Engine/MultiTrackLooperEngine.cpp
+    Source/Engine/VampNetTrackEngine.cpp
     Source/Engine/TapeLoop.cpp
     Source/Engine/LooperWriteHead.cpp
     Source/Engine/LooperReadHead.cpp
@@ -40,6 +40,7 @@ target_sources(TapeLooper PRIVATE
 target_sources(TapeLooper PRIVATE
     Source/Engine/LooperTrackEngine.h
     Source/Engine/MultiTrackLooperEngine.h
+    Source/Engine/VampNetTrackEngine.h
     Source/Engine/TapeLoop.h
     Source/Engine/LooperWriteHead.h
     Source/Engine/LooperReadHead.h
@@ -59,6 +60,7 @@ target_sources(TapeLooper PRIVATE
 # Shared frontend components source files
 target_sources(TapeLooper PRIVATE
     Source/Frontends/Shared/WaveformDisplay.cpp
+    Source/Frontends/Shared/DualWaveformDisplay.cpp
     Source/Frontends/Shared/TransportControls.cpp
     Source/Frontends/Shared/ParameterKnobs.cpp
     Source/Frontends/Shared/LevelControl.cpp
@@ -71,6 +73,7 @@ target_sources(TapeLooper PRIVATE
 # Shared frontend components headers
 target_sources(TapeLooper PRIVATE
     Source/Frontends/Shared/WaveformDisplay.h
+    Source/Frontends/Shared/DualWaveformDisplay.h
     Source/Frontends/Shared/TransportControls.h
     Source/Frontends/Shared/ParameterKnobs.h
     Source/Frontends/Shared/LevelControl.h

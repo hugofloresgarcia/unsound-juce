@@ -8,29 +8,33 @@
 #include "OutputBus.h"
 #include <atomic>
 
-// LooperTrackEngine handles processing for a single looper track
-class LooperTrackEngine
+// VampNetTrackEngine handles processing for a single VampNet track with dual buffers
+// Uses two LooperReadHead instances (one per buffer) and one LooperWriteHead
+class VampNetTrackEngine
 {
 public:
     struct TrackState
     {
-        TapeLoop tapeLoop;
-        LooperWriteHead writeHead;
-        LooperReadHead readHead;
+        TapeLoop recordBuffer;  // Records input audio
+        TapeLoop outputBuffer;  // Stores generated outputs
+        LooperWriteHead writeHead;  // writes to recordBuffer
+        LooperReadHead recordReadHead;  // reads from recordBuffer
+        LooperReadHead outputReadHead;  // reads from outputBuffer
         OutputBus outputBus;
         
         // UI state (these could eventually be moved to the UI layer)
         std::atomic<bool> isPlaying{false};
+        std::atomic<float> dryWetMix{0.5f};  // 0.0 = all dry (record buffer), 1.0 = all wet (output buffer)
         
-        TrackState() : writeHead(tapeLoop), readHead(tapeLoop) {}
+        TrackState() : writeHead(recordBuffer), recordReadHead(recordBuffer), outputReadHead(outputBuffer) {}
         
         // Non-copyable
         TrackState(const TrackState&) = delete;
         TrackState& operator=(const TrackState&) = delete;
     };
 
-    LooperTrackEngine();
-    ~LooperTrackEngine() = default;
+    VampNetTrackEngine();
+    ~VampNetTrackEngine() = default;
 
     // Initialize the track with sample rate and buffer duration
     void initialize(double sampleRate, double maxBufferDurationSeconds);
@@ -53,21 +57,13 @@ public:
     // Reset playhead to start
     void reset();
 
-    // Load audio file into the loop
+    // Load audio file into the output buffer
     // Returns true if successful, false otherwise
     bool loadFromFile(const juce::File& audioFile);
 
     // Access to track state
     TrackState& getTrackState() { return trackState; }
     const TrackState& getTrackState() const { return trackState; }
-
-protected:
-    // Helper methods factored out for reuse by VampNetTrackEngine
-    void processRecording(TrackState& track, const float* const* inputChannelData, 
-                         int numInputChannels, float currentPosition, int sample, bool isFirstCall);
-    float processPlayback(TrackState& track, bool isFirstCall);
-    bool finalizeRecordingIfNeeded(TrackState& track, bool wasRecording, bool isPlaying, 
-                                   bool hasExistingAudio, bool& recordingFinalized);
 
 private:
     TrackState trackState;

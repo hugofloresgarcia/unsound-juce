@@ -11,13 +11,19 @@ class WaveformDisplay : public juce::Component
 {
 public:
     WaveformDisplay(MultiTrackLooperEngine& engine, int trackIndex);
+    WaveformDisplay(VampNetMultiTrackLooperEngine& engine, int trackIndex);
     ~WaveformDisplay() override = default;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
 
 private:
-    MultiTrackLooperEngine& looperEngine;
+    enum EngineType { Basic, VampNet };
+    EngineType engineType;
+    union {
+        MultiTrackLooperEngine* basicEngine;
+        VampNetMultiTrackLooperEngine* vampNetEngine;
+    } looperEngine;
     int trackIndex;
 
     void drawWaveform(juce::Graphics& g, juce::Rectangle<int> area);

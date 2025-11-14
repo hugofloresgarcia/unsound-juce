@@ -15,6 +15,8 @@ class LevelControl : public juce::Component
 public:
     LevelControl(MultiTrackLooperEngine& engine, int trackIndex);
     LevelControl(MultiTrackLooperEngine& engine, int trackIndex, MidiLearnManager* midiManager, const juce::String& trackPrefix);
+    LevelControl(VampNetMultiTrackLooperEngine& engine, int trackIndex);
+    LevelControl(VampNetMultiTrackLooperEngine& engine, int trackIndex, MidiLearnManager* midiManager, const juce::String& trackPrefix);
     ~LevelControl() override;
 
     void paint(juce::Graphics& g) override;
@@ -28,7 +30,12 @@ public:
     void setLevelValue(double value, juce::NotificationType notification);
 
 private:
-    MultiTrackLooperEngine& looperEngine;
+    enum EngineType { Basic, VampNet };
+    EngineType engineType;
+    union {
+        MultiTrackLooperEngine* basicEngine;
+        VampNetMultiTrackLooperEngine* vampNetEngine;
+    } looperEngine;
     int trackIndex;
 
     juce::Slider levelSlider;

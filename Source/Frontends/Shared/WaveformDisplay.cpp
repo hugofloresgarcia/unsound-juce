@@ -1,10 +1,21 @@
 #include "WaveformDisplay.h"
+#include "../../Engine/MultiTrackLooperEngine.h"
+#include "../../Engine/TapeLoop.h"
+#include "../../Engine/LooperWriteHead.h"
+#include "../../Engine/LooperReadHead.h"
 
 using namespace Shared;
 
 WaveformDisplay::WaveformDisplay(MultiTrackLooperEngine& engine, int index)
-    : looperEngine(engine), trackIndex(index)
+    : engineType(Basic), trackIndex(index)
 {
+    looperEngine.basicEngine = &engine;
+}
+
+WaveformDisplay::WaveformDisplay(VampNetMultiTrackLooperEngine& engine, int index)
+    : engineType(VampNet), trackIndex(index)
+{
+    looperEngine.vampNetEngine = &engine;
 }
 
 void WaveformDisplay::paint(juce::Graphics& g)
@@ -21,20 +32,40 @@ void WaveformDisplay::resized()
 
 void WaveformDisplay::drawWaveform(juce::Graphics& g, juce::Rectangle<int> area)
 {
-    auto& track = looperEngine.getTrack(trackIndex);
+    TapeLoop* tapeLoop = nullptr;
+    LooperWriteHead* writeHead = nullptr;
+    std::atomic<bool>* isPlaying = nullptr;
+    LooperReadHead* readHead = nullptr;
     
-    const juce::ScopedLock sl(track.tapeLoop.lock);
-    
-    // Show recording progress even if not fully recorded yet
-    size_t displayLength = track.tapeLoop.recordedLength.load();
-    
-    if (track.writeHead.getRecordEnable())
+    if (engineType == Basic)
     {
-        // Show current recording position
-        displayLength = juce::jmax(displayLength, track.writeHead.getPos());
+        auto& track = looperEngine.basicEngine->getTrack(trackIndex);
+        tapeLoop = &track.tapeLoop;
+        writeHead = &track.writeHead;
+        isPlaying = &track.isPlaying;
+        readHead = &track.readHead;
+    }
+    else // VampNet
+    {
+        auto& track = looperEngine.vampNetEngine->getTrack(trackIndex);
+        tapeLoop = &track.recordBuffer; // Show record buffer in waveform
+        writeHead = &track.writeHead;
+        isPlaying = &track.isPlaying;
+        readHead = &track.recordReadHead; // Use record read head for playhead position
     }
     
-    if (displayLength == 0 && !track.writeHead.getRecordEnable())
+    const juce::ScopedLock sl(tapeLoop->lock);
+    
+    // Show recording progress even if not fully recorded yet
+    size_t displayLength = tapeLoop->recordedLength.load();
+    
+    if (writeHead->getRecordEnable())
+    {
+        // Show current recording position
+        displayLength = juce::jmax(displayLength, static_cast<size_t>(writeHead->getPos()));
+    }
+    
+    if (displayLength == 0 && !writeHead->getRecordEnable())
     {
         // Draw empty waveform placeholder
         g.setColour(juce::Colour(0xff333333));
@@ -44,7 +75,7 @@ void WaveformDisplay::drawWaveform(juce::Graphics& g, juce::Rectangle<int> area)
         return;
     }
     
-    auto& buffer = track.tapeLoop.getBuffer();
+    auto& buffer = tapeLoop->getBuffer();
     if (buffer.empty())
         return;
     
@@ -53,7 +84,7 @@ void WaveformDisplay::drawWaveform(juce::Graphics& g, juce::Rectangle<int> area)
         displayLength = buffer.size();
     
     // Draw waveform - use red-orange when recording, teal when playing
-    g.setColour(track.writeHead.getRecordEnable() ? juce::Colour(0xfff04e36) : juce::Colour(0xff1eb19d));
+    g.setColour(writeHead->getRecordEnable() ? juce::Colour(0xfff04e36) : juce::Colour(0xff1eb19d));
     
     const int numPoints = area.getWidth();
     const float samplesPerPixel = static_cast<float>(displayLength) / numPoints;
@@ -116,21 +147,41 @@ void WaveformDisplay::drawWaveform(juce::Graphics& g, juce::Rectangle<int> area)
 
 void WaveformDisplay::drawPlayhead(juce::Graphics& g, juce::Rectangle<int> waveformArea)
 {
-    auto& track = looperEngine.getTrack(trackIndex);
+    TapeLoop* tapeLoop = nullptr;
+    LooperWriteHead* writeHead = nullptr;
+    std::atomic<bool>* isPlaying = nullptr;
+    LooperReadHead* readHead = nullptr;
+    
+    if (engineType == Basic)
+    {
+        auto& track = looperEngine.basicEngine->getTrack(trackIndex);
+        tapeLoop = &track.tapeLoop;
+        writeHead = &track.writeHead;
+        isPlaying = &track.isPlaying;
+        readHead = &track.readHead;
+    }
+    else // VampNet
+    {
+        auto& track = looperEngine.vampNetEngine->getTrack(trackIndex);
+        tapeLoop = &track.recordBuffer;
+        writeHead = &track.writeHead;
+        isPlaying = &track.isPlaying;
+        readHead = &track.recordReadHead;
+    }
     
     // Show playhead if playing (even during recording before audio is recorded)
-    if (!track.isPlaying.load())
+    if (!isPlaying->load())
         return;
     
-    size_t recordedLength = track.tapeLoop.recordedLength.load();
+    size_t recordedLength = tapeLoop->recordedLength.load();
     // During new recording, use recordHead or playhead to show position
     if (recordedLength == 0)
     {
-        if (track.writeHead.getRecordEnable())
+        if (writeHead->getRecordEnable())
         {
             // Show playhead based on current recording position
-            float playheadPosition = track.readHead.getPos();
-            float maxLength = static_cast<float>(track.tapeLoop.getBufferSize());
+            float playheadPosition = readHead->getPos();
+            float maxLength = static_cast<float>(tapeLoop->getBufferSize());
             if (maxLength > 0)
             {
                 float normalizedPosition = playheadPosition / maxLength;
@@ -152,10 +203,10 @@ void WaveformDisplay::drawPlayhead(juce::Graphics& g, juce::Rectangle<int> wavef
         return;
     }
     
-    if (track.tapeLoop.getBufferSize() == 0 || recordedLength == 0)
+    if (tapeLoop->getBufferSize() == 0 || recordedLength == 0)
         return;
     
-    float playheadPosition = track.readHead.pos.load();
+    float playheadPosition = readHead->getPos();
     float normalizedPosition = playheadPosition / static_cast<float>(recordedLength);
     
     int playheadX = waveformArea.getX() + static_cast<int>(normalizedPosition * waveformArea.getWidth());
