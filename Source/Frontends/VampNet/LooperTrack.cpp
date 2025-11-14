@@ -131,6 +131,14 @@ juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFil
     {
         juce::URL uploadEndpoint = gradioEndpoint.getChildURL("gradio_api").getChildURL("upload");
         
+        // Print curl equivalent for upload request
+        DBG("=== CURL EQUIVALENT FOR UPLOAD ===");
+        DBG("curl -X POST \\");
+        DBG("  -H \"User-Agent: JUCE-VampNet/1.0\" \\");
+        DBG("  -F \"files=@" + inputAudioFile.getFullPathName() + "\" \\");
+        DBG("  \"" + uploadEndpoint.toString(false) + "\"");
+        DBG("===================================");
+        
         juce::StringPairArray responseHeaders;
         int statusCode = 0;
         juce::String mimeType = "audio/wav";
@@ -151,11 +159,12 @@ juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFil
             return juce::Result::fail("Failed to upload audio file. Status: " + juce::String(statusCode));
 
         juce::String response = stream->readEntireStreamAsString();
+        DBG("VampNetWorkerThread: Upload response: " + response);
 
         juce::var parsedResponse;
         auto parseResult = juce::JSON::parse(response, parsedResponse);
         if (parseResult.failed() || !parsedResponse.isArray())
-            return juce::Result::fail("Failed to parse upload response");
+            return juce::Result::fail("Failed to parse upload response: " + parseResult.getErrorMessage());
 
         juce::Array<juce::var>* responseArray = parsedResponse.getArray();
         if (responseArray == nullptr || responseArray->isEmpty())
@@ -165,7 +174,7 @@ juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFil
         if (uploadedFilePath.isEmpty())
             return juce::Result::fail("Uploaded file path is empty");
 
-        DBG("VampNetWorkerThread: File uploaded: " + uploadedFilePath);
+        DBG("VampNetWorkerThread: File uploaded successfully. Path: " + uploadedFilePath);
     }
 
     // Step 2: Prepare JSON payload with all 18 parameters
@@ -196,7 +205,7 @@ juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFil
     {
         dataItems.add(obj->getProperty("sample_temperature"));       // [1]
         dataItems.add(obj->getProperty("top_p"));                   // [2]
-        dataItems.add(juce::var(periodicPrompt));                   // [3] periodic prompt (from UI)
+        dataItems.add(juce::var(static_cast<int>(periodicPrompt))); // [3] periodic prompt (from UI) - force convert to int
         dataItems.add(obj->getProperty("mask_dropout"));            // [4]
         dataItems.add(obj->getProperty("time_stretch_factor"));     // [5]
         dataItems.add(obj->getProperty("onset_mask_width"));        // [6]
@@ -225,6 +234,15 @@ juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFil
                                        .getChildURL("call")
                                        .getChildURL("vamp");
 
+    // Print curl equivalent for POST request to get event ID
+    DBG("=== CURL EQUIVALENT FOR EVENT ID REQUEST ===");
+    DBG("curl -X POST \\");
+    DBG("  -H \"Content-Type: application/json\" \\");
+    DBG("  -H \"User-Agent: JUCE-VampNet/1.0\" \\");
+    DBG("  -d '" + jsonBody + "' \\");
+    DBG("  \"" + requestEndpoint.toString(false) + "\"");
+    DBG("============================================");
+
     juce::URL postEndpoint = requestEndpoint.withPOSTData(jsonBody);
 
     juce::StringPairArray responseHeaders;
@@ -239,19 +257,31 @@ juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFil
 
     std::unique_ptr<juce::InputStream> stream(postEndpoint.createInputStream(options));
 
+    DBG("VampNetWorkerThread: POST request status code: " + juce::String(statusCode));
+
     if (stream == nullptr || statusCode != 200)
         return juce::Result::fail("Failed to make POST request. Status: " + juce::String(statusCode));
 
     juce::String response = stream->readEntireStreamAsString();
+    DBG("VampNetWorkerThread: POST response: " + response);
 
     juce::var parsedResponse;
     auto parseResult = juce::JSON::parse(response, parsedResponse);
     if (parseResult.failed() || !parsedResponse.isObject())
-        return juce::Result::fail("Failed to parse POST response");
+        return juce::Result::fail("Failed to parse POST response: " + parseResult.getErrorMessage() + "\nResponse was: " + response);
 
     juce::DynamicObject* responseObj = parsedResponse.getDynamicObject();
     if (responseObj == nullptr || !responseObj->hasProperty("event_id"))
+    {
+        DBG("VampNetWorkerThread: Response object properties:");
+        if (responseObj != nullptr)
+        {
+            auto& props = responseObj->getProperties();
+            for (int i = 0; i < props.size(); ++i)
+                DBG("  " + props.getName(i).toString() + ": " + props.getValueAt(i).toString());
+        }
         return juce::Result::fail("Response does not contain 'event_id'");
+    }
 
     juce::String eventID = responseObj->getProperty("event_id").toString();
     if (eventID.isEmpty())
@@ -265,37 +295,157 @@ juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFil
                                   .getChildURL("vamp")
                                   .getChildURL(eventID);
 
+    // Print curl equivalent for polling request
+    DBG("=== CURL EQUIVALENT FOR POLLING REQUEST ===");
+    DBG("curl -N \\");
+    DBG("  -H \"Accept: text/event-stream\" \\");
+    DBG("  -H \"Cache-Control: no-cache\" \\");
+    DBG("  -H \"Connection: keep-alive\" \\");
+    DBG("  \"" + getEndpoint.toString(false) + "\"");
+    DBG("===========================================");
+
     juce::StringPairArray getResponseHeaders;
     int getStatusCode = 0;
+    
+    // Match curl's default headers for SSE streaming
+    juce::String sseHeaders = "Accept: text/event-stream\r\n"
+                              "Cache-Control: no-cache\r\n"
+                              "Connection: keep-alive\r\n";
+    
     auto getOptions = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
-                       .withExtraHeaders("User-Agent: JUCE-VampNet/1.0\r\n")
-                       .withConnectionTimeoutMs(60000)  // Longer timeout for generation
+                       .withExtraHeaders(sseHeaders)
+                       .withConnectionTimeoutMs(120000)  // 2 minute timeout for generation
                        .withResponseHeaders(&getResponseHeaders)
                        .withStatusCode(&getStatusCode)
-                       .withNumRedirectsToFollow(5);
+                       .withNumRedirectsToFollow(5)
+                       .withHttpRequestCmd("GET");
 
+    DBG("VampNetWorkerThread: Creating streaming connection...");
     std::unique_ptr<juce::InputStream> getStream(getEndpoint.createInputStream(getOptions));
+    
+    DBG("VampNetWorkerThread: Status code: " + juce::String(getStatusCode));
+    
+    // Log response headers
+    DBG("VampNetWorkerThread: Response headers:");
+    for (int i = 0; i < getResponseHeaders.size(); ++i)
+    {
+        DBG("  " + getResponseHeaders.getAllKeys()[i] + ": " + getResponseHeaders.getAllValues()[i]);
+    }
 
     if (getStream == nullptr)
-        return juce::Result::fail("Failed to create GET stream");
+        return juce::Result::fail("Failed to create GET stream. Status code: " + juce::String(getStatusCode));
+    
+    // Check if we got a valid status code
+    if (getStatusCode != 0 && getStatusCode != 200)
+    {
+        DBG("VampNetWorkerThread: Non-200 status code: " + juce::String(getStatusCode));
+        // Don't fail immediately - SSE might still work
+    }
 
     juce::String eventResponse;
+    juce::String lastDataLine;
+    juce::String currentEventType;
+    int lineCount = 0;
+    
+    DBG("VampNetWorkerThread: Starting to read SSE stream...");
+    
     while (!getStream->isExhausted())
     {
-        eventResponse = getStream->readNextLine();
+        if (threadShouldExit())
+        {
+            DBG("VampNetWorkerThread: Thread exit requested");
+            return juce::Result::fail("Thread was stopped");
+        }
         
-        DBG("VampNetWorkerThread: Response line: " + eventResponse);
+        juce::String line = getStream->readNextLine();
+        lineCount++;
+        
+        // Skip empty lines (SSE uses blank lines as message separators)
+        if (line.trim().isEmpty())
+        {
+            DBG("VampNetWorkerThread: Empty line (message separator)");
+            continue;
+        }
+        
+        DBG("VampNetWorkerThread: SSE line #" + juce::String(lineCount) + ": " + line);
 
-        if (eventResponse.contains("complete"))
+        // Check for event type
+        if (line.startsWith("event:"))
+        {
+            currentEventType = line.substring(6).trim();
+            DBG("VampNetWorkerThread: Event type: " + currentEventType);
+        }
+        else if (line.startsWith("data:"))
+        {
+            juce::String dataContent = line.substring(5).trim();
+            lastDataLine = line;
+            
+            DBG("VampNetWorkerThread: Data content: " + dataContent.substring(0, juce::jmin(200, dataContent.length())) + "...");
+            
+            // Check if we just got a complete or error event
+            if (currentEventType == "complete")
+            {
+                eventResponse = line;
+                DBG("VampNetWorkerThread: Got complete event with data");
+                break;
+            }
+            else if (currentEventType == "error")
+            {
+                DBG("VampNetWorkerThread: Got error event with data: " + dataContent);
+                
+                // Try to read any additional error details
+                juce::String additionalInfo;
+                while (!getStream->isExhausted())
+                {
+                    juce::String extraLine = getStream->readNextLine();
+                    if (extraLine.isNotEmpty())
+                    {
+                        additionalInfo += extraLine + "\n";
+                        DBG("VampNetWorkerThread: Additional error info: " + extraLine);
+                    }
+                    if (additionalInfo.length() > 1000) break; // Don't read too much
+                }
+                
+                juce::String errorMsg = "VampNet API returned error";
+                if (dataContent != "null" && dataContent.isNotEmpty())
+                    errorMsg += ": " + dataContent;
+                if (additionalInfo.isNotEmpty())
+                    errorMsg += "\nAdditional info: " + additionalInfo;
+                    
+                return juce::Result::fail(errorMsg);
+            }
+            
+            // Clear the event type after processing
+            currentEventType = "";
+        }
+        // Legacy: check if the line itself contains complete/error
+        else if (line.contains("complete"))
         {
             eventResponse = getStream->readNextLine();
+            DBG("VampNetWorkerThread: Complete response line (legacy): " + eventResponse);
             break;
         }
-        else if (eventResponse.contains("error"))
+        else if (line.contains("error"))
         {
-            juce::String errorPayload = getStream->readNextLine();
+            juce::String errorPayload = getStream->readEntireStreamAsString();
+            DBG("VampNetWorkerThread: Error payload (legacy): " + errorPayload);
             return juce::Result::fail("VampNet API error: " + errorPayload);
         }
+    }
+    
+    DBG("VampNetWorkerThread: Finished reading SSE stream. Total lines: " + juce::String(lineCount));
+    
+    // If we didn't get eventResponse from event:complete, use the last data line
+    if (eventResponse.isEmpty() && lastDataLine.isNotEmpty())
+    {
+        eventResponse = lastDataLine;
+        DBG("VampNetWorkerThread: Using last data line as response");
+    }
+    
+    if (eventResponse.isEmpty())
+    {
+        DBG("VampNetWorkerThread: No valid response received from stream");
+        return juce::Result::fail("No response received from VampNet API");
     }
 
     // Step 5: Extract data from response
@@ -338,6 +488,14 @@ juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFil
     
     outputFile = tempDir.getChildFile(baseName + "_" + juce::Uuid().toString() + extension);
 
+    // Print curl equivalent for download request
+    DBG("=== CURL EQUIVALENT FOR DOWNLOAD REQUEST ===");
+    DBG("curl -X GET \\");
+    DBG("  -H \"User-Agent: JUCE-VampNet/1.0\" \\");
+    DBG("  -o \"" + outputFile.getFullPathName() + "\" \\");
+    DBG("  \"" + outputURL.toString(false) + "\"");
+    DBG("=============================================");
+
     juce::StringPairArray downloadResponseHeaders;
     int downloadStatusCode = 0;
     auto downloadOptions = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
@@ -379,6 +537,16 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
 {
     // Initialize custom params with defaults
     customVampNetParams = getDefaultVampNetParams();
+    
+    // Create parameter dialog (non-modal)
+    parameterDialog = std::make_unique<Shared::ModelParameterDialog>(
+        "VampNet",
+        customVampNetParams,
+        [this](const juce::var& newParams) {
+            customVampNetParams = newParams;
+            DBG("VampNet custom parameters updated");
+        }
+    );
     
     // Setup track label
     trackLabel.setJustificationType(juce::Justification::centredLeft);
@@ -651,16 +819,15 @@ void LooperTrack::generateButtonClicked()
 
 void LooperTrack::configureParamsButtonClicked()
 {
-    auto* dialog = new Shared::ModelParameterDialog(
-        "VampNet",
-        customVampNetParams,
-        [this](const juce::var& newParams) {
-            customVampNetParams = newParams;
-            DBG("VampNet custom parameters updated");
-        }
-    );
-    
-    dialog->enterModalState(true);
+    if (parameterDialog != nullptr)
+    {
+        // Update the dialog with current params in case they changed
+        parameterDialog->updateParams(customVampNetParams);
+        
+        // Show the dialog (non-modal)
+        parameterDialog->setVisible(true);
+        parameterDialog->toFront(true);
+    }
 }
 
 juce::var LooperTrack::getDefaultVampNetParams()

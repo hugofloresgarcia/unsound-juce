@@ -1,11 +1,10 @@
 #include "GradioClient.h"
 #include <juce_audio_formats/juce_audio_formats.h>
-#include <functional>
 
 GradioClient::GradioClient()
 {
-    // Default space info
-    spaceInfo.gradio = "https://opensound-ezaudio-controlnet.hf.space/";
+    // Default space info - updated to new API endpoint
+    spaceInfo.gradio = "http://localhost:7860/";
 }
 
 juce::Result GradioClient::processRequest(const juce::File& inputAudioFile,
@@ -27,23 +26,32 @@ juce::Result GradioClient::processRequest(const juce::File& inputAudioFile,
     }
 
     // Step 2: Prepare the JSON payload
-    // Based on the curl example:
+    // New API format with 7 parameters:
     // "data": [
-    //   "Hello!!",  // text prompt
-    //   {"path":"..."} or null,  // audio file path (or null if no audio)
-    //   0, 1, 0, 25, 0, 0, 0, true  // other parameters
+    //   "Hello!!",  // [0] text prompt
+    //   {"path":"..."} or null,  // [1] audio file path (or null if no audio)
+    //   3,  // [2] seed (number)
+    //   0,  // [3] median filter length (number)
+    //   -24, // [4] normalize dB (number)
+    //   0,  // [5] duration in seconds (number)
+    //   "print('Hello World')"  // [6] inference parameters (string/code)
     // ]
     
     juce::Array<juce::var> dataItems;
     
-    // Text prompt
+    // [0] Text prompt
     dataItems.add(juce::var(textPrompt));
     
-    // Audio file object - null if no audio, otherwise file object
+    // [1] Audio file object - null if no audio, otherwise file object
     if (hasAudio)
     {
         juce::DynamicObject::Ptr fileObj = new juce::DynamicObject();
         fileObj->setProperty("path", juce::var(uploadedFilePath));
+        
+        juce::DynamicObject::Ptr metaObj = new juce::DynamicObject();
+        metaObj->setProperty("_type", juce::var("gradio.FileData"));
+        fileObj->setProperty("meta", juce::var(metaObj));
+        
         dataItems.add(juce::var(fileObj));
     }
     else
@@ -56,14 +64,11 @@ juce::Result GradioClient::processRequest(const juce::File& inputAudioFile,
     auto* obj = customParams.getDynamicObject();
     if (obj != nullptr)
     {
-        dataItems.add(obj->getProperty("param_3"));
-        dataItems.add(obj->getProperty("param_4"));
-        dataItems.add(obj->getProperty("param_5"));
-        dataItems.add(obj->getProperty("param_6"));
-        dataItems.add(obj->getProperty("param_7"));
-        dataItems.add(obj->getProperty("param_8"));
-        dataItems.add(obj->getProperty("param_9"));
-        dataItems.add(obj->getProperty("param_10"));
+        dataItems.add(obj->getProperty("seed"));                    // [2]
+        dataItems.add(obj->getProperty("median_filter_length"));    // [3]
+        dataItems.add(obj->getProperty("normalize_db"));            // [4]
+        dataItems.add(obj->getProperty("duration"));                // [5]
+        dataItems.add(obj->getProperty("inference_params"));        // [6]
     }
     
     juce::DynamicObject::Ptr payloadObj = new juce::DynamicObject();
@@ -75,7 +80,7 @@ juce::Result GradioClient::processRequest(const juce::File& inputAudioFile,
 
     // Step 3: Make POST request to get event ID
     juce::String eventId;
-    auto postResult = makePostRequestForEventID("generate_audio", eventId, jsonBody);
+    auto postResult = makePostRequestForEventID("generate_with_params", eventId, jsonBody);
     if (postResult.failed())
     {
         return juce::Result::fail("Failed to make POST request: " + postResult.getErrorMessage());
@@ -85,7 +90,7 @@ juce::Result GradioClient::processRequest(const juce::File& inputAudioFile,
 
     // Step 4: Poll for response
     juce::String response;
-    auto getResult = getResponseFromEventID("generate_audio", eventId, response);
+    auto getResult = getResponseFromEventID("generate_with_params", eventId, response);
     if (getResult.failed())
     {
         return juce::Result::fail("Failed to get response: " + getResult.getErrorMessage());
@@ -230,116 +235,177 @@ juce::Result GradioClient::getResponseFromEventID(const juce::String& callID,
                                   .getChildURL(callID)
                                   .getChildURL(eventID);
 
-    juce::String curlGetCommand = "curl -N '" + getEndpoint.toString(true) + "'";
-    DBG("GradioClient: Equivalent GET curl:\n" + curlGetCommand);
-
-    DBG("GradioClient: GET URL: " + getEndpoint.toString(true));
+    // Print curl equivalent for polling request
+    DBG("=== CURL EQUIVALENT FOR POLLING REQUEST ===");
+    DBG("curl -N \\");
+    DBG("  -H \"Accept: text/event-stream\" \\");
+    DBG("  -H \"Cache-Control: no-cache\" \\");
+    DBG("  -H \"Connection: keep-alive\" \\");
+    DBG("  \"" + getEndpoint.toString(false) + "\"");
+    DBG("===========================================");
 
     juce::StringPairArray responseHeaders;
     int statusCode = 0;
+    
+    // Use SSE-specific headers for streaming
     auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
-                       .withExtraHeaders(createCommonHeaders())
+                       .withExtraHeaders(createSSEHeaders())
                        .withConnectionTimeoutMs(timeoutMs)
                        .withResponseHeaders(&responseHeaders)
                        .withStatusCode(&statusCode)
-                       .withNumRedirectsToFollow(5);
+                       .withNumRedirectsToFollow(5)
+                       .withHttpRequestCmd("GET");
 
+    DBG("GradioClient: Creating streaming connection...");
     std::unique_ptr<juce::InputStream> stream(getEndpoint.createInputStream(options));
-
-    DBG("GradioClient: Input stream created");
+    
     DBG("GradioClient: Status code: " + juce::String(statusCode));
+    
+    // Log response headers
+    DBG("GradioClient: Response headers:");
+    for (int i = 0; i < responseHeaders.size(); ++i)
+    {
+        DBG("  " + responseHeaders.getAllKeys()[i] + ": " + responseHeaders.getAllValues()[i]);
+    }
 
     if (stream == nullptr)
     {
         return juce::Result::fail("Failed to create input stream for GET request to " + callID + "/" + eventID + ". Status code: " + juce::String(statusCode));
     }
+    
+    // Check if we got a valid status code
+    if (statusCode != 0 && statusCode != 200)
+    {
+        DBG("GradioClient: Non-200 status code: " + juce::String(statusCode));
+        // Don't fail immediately - SSE might still work
+    }
 
-    // Stream the response line by line until we get "complete" event
+    // Stream the response line by line with proper SSE parsing
+    juce::String lastDataLine;
+    juce::String currentEventType;
+    int lineCount = 0;
+    
+    DBG("GradioClient: Starting to read SSE stream...");
+    
     while (!stream->isExhausted())
     {
-        response = stream->readNextLine();
+        juce::String line = stream->readNextLine();
+        lineCount++;
         
-        DBG("GradioClient: Event ID: " + eventID);
-        DBG("GradioClient: Response line: " + response);
-        DBG("GradioClient: Line length: " + juce::String(response.length()));
-
-        // Check for completion event - Gradio sends "event: complete"
-        if (response.contains("complete"))
+        // Skip empty lines (SSE uses blank lines as message separators)
+        if (line.trim().isEmpty())
         {
-            // Read the next line which should contain the data
-            response = stream->readNextLine();
-            break;
+            DBG("GradioClient: Empty line (message separator)");
+            continue;
         }
-        // Check for error event
-        else if (response.contains("error"))
+        
+        DBG("GradioClient: SSE line #" + juce::String(lineCount) + ": " + line);
+
+        // Check for event type
+        if (line.startsWith("event:"))
         {
-            juce::String errorPayload = stream->readNextLine();
-            DBG("GradioClient: Error payload: " + errorPayload);
-
-            juce::String detailedMessage;
-
-            std::function<juce::String(const juce::var&)> extractErrorText;
-            extractErrorText = [&extractErrorText](const juce::var& value) -> juce::String
+            currentEventType = line.substring(6).trim();
+            DBG("GradioClient: Event type: " + currentEventType);
+        }
+        else if (line.startsWith("data:"))
+        {
+            juce::String dataContent = line.substring(5).trim();
+            lastDataLine = line;
+            
+            DBG("GradioClient: Data content: " + dataContent.substring(0, juce::jmin(200, dataContent.length())) + "...");
+            
+            // Check if we just got a complete or error event
+            if (currentEventType == "complete")
             {
-                if (value.isString())
-                    return value.toString();
-
-                if (value.isObject())
-                {
-                    if (auto* obj = value.getDynamicObject())
-                    {
-                        if (obj->hasProperty("detail"))
-                            return obj->getProperty("detail").toString();
-                        if (obj->hasProperty("error"))
-                            return obj->getProperty("error").toString();
-                        if (obj->hasProperty("message"))
-                            return obj->getProperty("message").toString();
-                        // Fall back to first property value
-                        const auto& properties = obj->getProperties();
-                        for (const auto& prop : properties)
-                        {
-                            auto text = extractErrorText(prop.value);
-                            if (text.isNotEmpty())
-                                return text;
-                        }
-                    }
-                }
-                else if (value.isArray())
-                {
-                    if (auto* arr = value.getArray())
-                    {
-                        for (const auto& element : *arr)
-                        {
-                            auto text = extractErrorText(element);
-                            if (text.isNotEmpty())
-                                return text;
-                        }
-                    }
-                }
-
-                return juce::JSON::toString(value);
-            };
-
-            if (errorPayload.startsWith("data:"))
+                response = line;
+                DBG("GradioClient: Got complete event with data");
+                break;
+            }
+            else if (currentEventType == "error")
             {
-                juce::String dataSection = errorPayload.fromFirstOccurrenceOf("data:", false, false).trim();
-
-                if (dataSection.isNotEmpty())
+                DBG("GradioClient: Got error event with data: " + dataContent);
+                
+                // Try to read any additional error details
+                juce::String additionalInfo;
+                while (!stream->isExhausted())
+                {
+                    juce::String extraLine = stream->readNextLine();
+                    if (extraLine.isNotEmpty())
+                    {
+                        additionalInfo += extraLine + "\n";
+                        DBG("GradioClient: Additional error info: " + extraLine);
+                    }
+                    if (additionalInfo.length() > 1000) break; // Don't read too much
+                }
+                
+                // Try to extract detailed error message
+                juce::String detailedMessage;
+                if (dataContent != "null" && dataContent.isNotEmpty())
                 {
                     juce::var parsedError;
-                    auto parseResult = juce::JSON::parse(dataSection, parsedError);
+                    auto parseResult = juce::JSON::parse(dataContent, parsedError);
                     if (parseResult.wasOk())
-                        detailedMessage = extractErrorText(parsedError).trim();
-                    else
-                        detailedMessage = dataSection;
+                    {
+                        // Try to extract meaningful error text
+                        if (parsedError.isString())
+                            detailedMessage = parsedError.toString();
+                        else if (parsedError.isObject())
+                        {
+                            if (auto* obj = parsedError.getDynamicObject())
+                            {
+                                if (obj->hasProperty("detail"))
+                                    detailedMessage = obj->getProperty("detail").toString();
+                                else if (obj->hasProperty("error"))
+                                    detailedMessage = obj->getProperty("error").toString();
+                                else if (obj->hasProperty("message"))
+                                    detailedMessage = obj->getProperty("message").toString();
+                            }
+                        }
+                    }
                 }
+                
+                juce::String errorMsg = "Gradio API returned error";
+                if (!detailedMessage.isEmpty())
+                    errorMsg += ": " + detailedMessage;
+                else if (dataContent != "null" && dataContent.isNotEmpty())
+                    errorMsg += ": " + dataContent;
+                if (additionalInfo.isNotEmpty())
+                    errorMsg += "\nAdditional info: " + additionalInfo;
+                    
+                return juce::Result::fail(errorMsg);
             }
-
-            if (detailedMessage.isEmpty())
-                detailedMessage = errorPayload;
-
-            return juce::Result::fail("Gradio API error: " + detailedMessage);
+            
+            // Clear the event type after processing
+            currentEventType = "";
         }
+        // Legacy: check if the line itself contains complete/error for backwards compatibility
+        else if (line.contains("complete"))
+        {
+            response = stream->readNextLine();
+            DBG("GradioClient: Complete response line (legacy): " + response);
+            break;
+        }
+        else if (line.contains("error"))
+        {
+            juce::String errorPayload = stream->readEntireStreamAsString();
+            DBG("GradioClient: Error payload (legacy): " + errorPayload);
+            return juce::Result::fail("Gradio API error: " + errorPayload);
+        }
+    }
+    
+    DBG("GradioClient: Finished reading SSE stream. Total lines: " + juce::String(lineCount));
+    
+    // If we didn't get response from event:complete, use the last data line
+    if (response.isEmpty() && lastDataLine.isNotEmpty())
+    {
+        response = lastDataLine;
+        DBG("GradioClient: Using last data line as response");
+    }
+    
+    if (response.isEmpty())
+    {
+        DBG("GradioClient: No valid response received from stream");
+        return juce::Result::fail("No response received from Gradio API");
     }
 
     return juce::Result::ok();
@@ -478,6 +544,13 @@ juce::Result GradioClient::downloadFileFromURL(const juce::URL& fileURL,
 juce::String GradioClient::createCommonHeaders() const
 {
     return "User-Agent: JUCE-GradioClient/1.0\r\n";
+}
+
+juce::String GradioClient::createSSEHeaders() const
+{
+    return "Accept: text/event-stream\r\n"
+           "Cache-Control: no-cache\r\n"
+           "Connection: keep-alive\r\n";
 }
 
 juce::String GradioClient::createJsonHeaders() const
