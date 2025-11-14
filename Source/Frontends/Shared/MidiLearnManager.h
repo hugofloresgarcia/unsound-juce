@@ -18,15 +18,34 @@ struct MidiLearnableParameter
     bool isToggle;                        // True for buttons, false for continuous controls
 };
 
-// Stores a MIDI CC to parameter mapping
+// Stores a MIDI message to parameter mapping
 struct MidiMapping
 {
-    int ccNumber;
+    enum class MessageType
+    {
+        CC,
+        Note
+    };
+
+    MessageType type = MessageType::CC;
+    int number = -1;
     juce::String parameterId;
     
     bool operator==(const MidiMapping& other) const
     {
-        return ccNumber == other.ccNumber && parameterId == other.parameterId;
+        return type == other.type &&
+               number == other.number &&
+               parameterId == other.parameterId;
+    }
+
+    bool isValid() const
+    {
+        return number >= 0 && parameterId.isNotEmpty();
+    }
+
+    static juce::String getTypeName(MessageType messageType)
+    {
+        return messageType == MessageType::CC ? "CC" : "Note";
     }
 };
 
@@ -67,8 +86,8 @@ public:
     // Get all current mappings
     std::vector<MidiMapping> getAllMappings() const;
     
-    // Get mapping for a specific parameter (returns -1 if not mapped)
-    int getMappingForParameter(const juce::String& parameterId) const;
+    // Get mapping for a specific parameter (number < 0 if not mapped)
+    MidiMapping getMappingForParameter(const juce::String& parameterId) const;
     
     // Enable/disable MIDI input
     void setMidiInputEnabled(bool enabled);
@@ -87,12 +106,19 @@ public:
     void handleIncomingMidiMessage(juce::MidiInput* source, const juce::MidiMessage& message) override;
     
     // Callback for when a parameter is learned
-    std::function<void(const juce::String& parameterId, int ccNumber)> onParameterLearned;
+    std::function<void(const MidiMapping& mapping)> onParameterLearned;
     
 private:
+    struct MidiAssignment
+    {
+        MidiMapping::MessageType type = MidiMapping::MessageType::CC;
+        int number = -1;
+    };
+
     std::map<juce::String, MidiLearnableParameter> parameters;
-    std::map<int, juce::String> ccToParameterMap;  // CC number -> parameter ID
-    std::map<juce::String, int> parameterToCcMap;  // parameter ID -> CC number
+    std::map<int, juce::String> ccToParameterMap;    // CC number -> parameter ID
+    std::map<int, juce::String> noteToParameterMap;  // Note number -> parameter ID
+    std::map<juce::String, MidiAssignment> parameterToMessageMap;  // parameter ID -> assignment
     
     juce::String learningParameterId;
     std::unique_ptr<juce::MidiInput> midiInput;
@@ -101,6 +127,9 @@ private:
     juce::CriticalSection mapLock;
     
     void processControlChange(int ccNumber, int ccValue);
+    void processNoteMessage(int noteNumber, bool isNoteOn);
+    void applyParameterValue(const juce::String& parameterId, float normalizedValue);
+    void storeMappingLocked(const juce::String& parameterId, MidiMapping::MessageType type, int number);
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiLearnManager)
 };
