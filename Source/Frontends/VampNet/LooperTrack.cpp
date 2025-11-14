@@ -298,6 +298,7 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
       transportControls(midiManager, "track" + juce::String(index)),
       parameterKnobs(midiManager, "track" + juce::String(index)),
       levelControl(engine, index, midiManager, "track" + juce::String(index)),
+      inputSelector(),
       outputSelector(),
       trackLabel("Track", "track " + juce::String(index + 1)),
       resetButton("x"),
@@ -419,6 +420,12 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     };
     addAndMakeVisible(levelControl);
     
+    // Setup input selector
+    inputSelector.onChannelChange = [this](int channel) {
+        looperEngine.getTrack(trackIndex).writeHead.setInputChannel(channel);
+    };
+    addAndMakeVisible(inputSelector);
+    
     // Setup output selector (applies to both read heads)
     outputSelector.onChannelChange = [this](int channel) {
         auto& track = looperEngine.getTrack(trackIndex);
@@ -426,6 +433,11 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
         track.outputReadHead.setOutputChannel(channel);
     };
     addAndMakeVisible(outputSelector);
+    
+    // Initialize channel selectors (will show "all" if device not ready yet)
+    // They will be updated again after device is initialized via updateChannelSelectors()
+    inputSelector.updateChannels(looperEngine.getAudioDeviceManager());
+    outputSelector.updateChannels(looperEngine.getAudioDeviceManager());
     
     // Apply custom look and feel to all child components
     applyLookAndFeel();
@@ -469,6 +481,23 @@ void LooperTrack::paint(juce::Graphics& g)
         g.setColour(juce::Colour(0xff1eb19d).withAlpha(0.15f)); // Teal
         g.fillRect(getLocalBounds());
     }
+    
+    // Draw arrow between input and output selectors
+    const int componentMargin = 5;
+    const int trackLabelHeight = 20;
+    const int spacingSmall = 5;
+    const int channelSelectorHeight = 30;
+    
+    auto bounds = getLocalBounds().reduced(componentMargin);
+    bounds.removeFromTop(trackLabelHeight + spacingSmall);
+    auto channelSelectorArea = bounds.removeFromTop(channelSelectorHeight);
+    const int selectorWidth = (channelSelectorArea.getWidth() - 40) / 2;
+    channelSelectorArea.removeFromLeft(selectorWidth + spacingSmall);
+    auto arrowArea = channelSelectorArea.removeFromLeft(40);
+    
+    g.setColour(juce::Colours::grey);
+    g.setFont(juce::Font(14.0f));
+    g.drawText("-->", arrowArea, juce::Justification::centred);
 }
 
 void LooperTrack::resized()
@@ -481,16 +510,16 @@ void LooperTrack::resized()
     const int buttonHeight = 30;
     const int generateButtonHeight = 30;
     const int configureButtonHeight = 30;
-    const int outputSelectorHeight = 30;
+    const int channelSelectorHeight = 30;
     const int knobAreaHeight = 140;
     const int controlsHeight = 160;
     
-    const int totalBottomHeight = knobAreaHeight + spacingSmall + 
+    const int totalBottomHeight = channelSelectorHeight + spacingSmall +
+                                   knobAreaHeight + spacingSmall + 
                                    controlsHeight + spacingSmall +
                                    generateButtonHeight + spacingSmall + 
                                    configureButtonHeight + spacingSmall +
-                                   buttonHeight + spacingSmall + 
-                                   outputSelectorHeight;
+                                   buttonHeight;
     
     auto bounds = getLocalBounds().reduced(componentMargin);
     
@@ -499,6 +528,20 @@ void LooperTrack::resized()
     resetButton.setBounds(trackLabelArea.removeFromRight(resetButtonSize));
     trackLabelArea.removeFromRight(spacingSmall);
     trackLabel.setBounds(trackLabelArea);
+    bounds.removeFromTop(spacingSmall);
+    
+    // Channel selectors: [input] --> [output]
+    auto channelSelectorArea = bounds.removeFromTop(channelSelectorHeight);
+    const int selectorWidth = (channelSelectorArea.getWidth() - 40) / 2; // Leave space for arrow
+    const int arrowWidth = 40;
+    
+    inputSelector.setBounds(channelSelectorArea.removeFromLeft(selectorWidth));
+    channelSelectorArea.removeFromLeft(spacingSmall);
+    
+    // Draw arrow in the middle
+    auto arrowArea = channelSelectorArea.removeFromLeft(arrowWidth);
+    
+    outputSelector.setBounds(channelSelectorArea.removeFromLeft(selectorWidth));
     bounds.removeFromTop(spacingSmall);
     
     // Reserve space for controls at bottom
@@ -527,14 +570,8 @@ void LooperTrack::resized()
     bottomArea.removeFromTop(spacingSmall);
     
     // Transport buttons
-    auto buttonArea = bottomArea.removeFromBottom(buttonHeight + spacingSmall + outputSelectorHeight);
-    auto outputArea = buttonArea.removeFromBottom(outputSelectorHeight);
-    buttonArea.removeFromBottom(spacingSmall);
-    
+    auto buttonArea = bottomArea.removeFromBottom(buttonHeight);
     transportControls.setBounds(buttonArea);
-    
-    // Output channel selector
-    outputSelector.setBounds(outputArea);
 }
 
 void LooperTrack::recordEnableButtonToggled(bool enabled)
@@ -827,4 +864,11 @@ void LooperTrack::timerCallback()
     waveformDisplay.repaint();
     levelControl.repaint();
     repaint();
+}
+
+void LooperTrack::updateChannelSelectors()
+{
+    // Update channel selectors based on current audio device
+    inputSelector.updateChannels(looperEngine.getAudioDeviceManager());
+    outputSelector.updateChannels(looperEngine.getAudioDeviceManager());
 }

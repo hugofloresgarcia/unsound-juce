@@ -9,6 +9,7 @@
 #include "../Shared/ParameterKnobs.h"
 #include "../Shared/LevelControl.h"
 #include "../Shared/OutputSelector.h"
+#include "../Shared/InputSelector.h"
 #include "../Shared/MidiLearnManager.h"
 #include "../Shared/MidiLearnComponent.h"
 #include <memory>
@@ -73,6 +74,9 @@ public:
     
     float getPeriodicPrompt() const;
     
+    // Update channel selectors based on current audio device
+    void updateChannelSelectors();
+    
     // Public static method to get default parameters
     static juce::var getDefaultVampNetParams();
 
@@ -85,6 +89,7 @@ private:
     Shared::TransportControls transportControls;
     Shared::ParameterKnobs parameterKnobs;
     Shared::LevelControl levelControl;
+    Shared::InputSelector inputSelector;
     Shared::OutputSelector outputSelector;
     
     // VampNet-specific UI
