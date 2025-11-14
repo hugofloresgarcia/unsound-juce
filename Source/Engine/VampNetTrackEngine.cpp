@@ -1,5 +1,6 @@
 #include "VampNetTrackEngine.h"
 #include "../Frontends/VampNet/ClickSynth.h"
+#include "../Frontends/VampNet/Sampler.h"
 #include <cmath>
 
 // TODO: Remove this debug macro after fixing segmentation fault
@@ -11,7 +12,8 @@
 #endif
 
 VampNetTrackEngine::VampNetTrackEngine()
-    : clickSynth(std::make_unique<VampNet::ClickSynth>())
+    : clickSynth(std::make_unique<VampNet::ClickSynth>()),
+      sampler(std::make_unique<VampNet::Sampler>())
 {
     formatManager.registerBasicFormats();
 }
@@ -318,6 +320,13 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
                     double sampleRate = track.writeHead.getSampleRate();
                     float clickSample = clickSynth->getNextSample(sampleRate);
                     inputSample += clickSample; // Mix click into input
+                }
+                
+                // Mix in sampler audio if sampler is playing
+                if (sampler->isPlaying())
+                {
+                    float samplerSample = sampler->getNextSample();
+                    inputSample += samplerSample; // Mix sampler into input
                 }
                 
                 if (isFirstCall && sample == 0)
