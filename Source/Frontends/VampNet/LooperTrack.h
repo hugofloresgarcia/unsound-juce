@@ -33,14 +33,16 @@ public:
                        const juce::File& audioFile,
                        float periodicPrompt,
                        const juce::var& customParams,
-                       std::function<juce::String()> gradioUrlProvider)
+                       std::function<juce::String()> gradioUrlProvider,
+                       bool useOutputBuffer = false)
         : Thread("VampNetWorkerThread"),
           looperEngine(engine),
           trackIndex(trackIndex),
           audioFile(audioFile),
           periodicPrompt(periodicPrompt),
           customParams(customParams),
-          gradioUrlProvider(std::move(gradioUrlProvider))
+          gradioUrlProvider(std::move(gradioUrlProvider)),
+          useOutputBuffer(useOutputBuffer)
     {
     }
 
@@ -55,6 +57,7 @@ private:
     float periodicPrompt;
     juce::var customParams;
     std::function<juce::String()> gradioUrlProvider;
+    bool useOutputBuffer;
     
     juce::Result saveBufferToFile(int trackIndex, juce::File& outputFile);
     juce::Result callVampNetAPI(const juce::File& inputAudioFile, float periodicPrompt, const juce::var& customParams, juce::File& outputFile);
@@ -97,6 +100,8 @@ private:
     juce::TextButton resetButton;
     juce::TextButton generateButton;
     juce::TextButton configureParamsButton;
+    juce::ToggleButton useOutputAsInputToggle;
+    juce::ToggleButton autogenToggle;
     
     std::unique_ptr<VampNetWorkerThread> vampNetWorkerThread;
     std::function<juce::String()> gradioUrlProvider;

@@ -204,6 +204,102 @@ juce::Result saveTrackBufferToWavFile(
     return juce::Result::ok();
 }
 
+// Save VampNet output buffer to WAV file
+juce::Result saveVampNetOutputBufferToWavFile(
+    VampNetMultiTrackLooperEngine& engine,
+    int trackIndex,
+    juce::File& outputFile,
+    const juce::String& filePrefix)
+{
+    auto& track = engine.getTrack(trackIndex);
+    
+    const juce::ScopedLock sl(track.outputBuffer.lock);
+    const auto& buffer = track.outputBuffer.getBuffer();
+    
+    if (buffer.empty())
+    {
+        return juce::Result::fail("Output buffer is empty");
+    }
+
+    // Get recorded length to determine how much to save
+    size_t recordedLength = track.outputBuffer.recordedLength.load();
+    if (recordedLength == 0)
+    {
+        recordedLength = buffer.size(); // Fallback to full buffer
+    }
+    
+    // Clamp recordedLength to buffer size
+    recordedLength = juce::jmin(recordedLength, buffer.size());
+    
+    if (recordedLength == 0)
+    {
+        return juce::Result::fail("No audio data in output buffer");
+    }
+
+    // Get sample rate from write head (should be same for all buffers)
+    double sampleRate = track.writeHead.getSampleRate();
+    if (sampleRate <= 0)
+    {
+        sampleRate = 44100.0; // Default sample rate
+    }
+
+    // Create temporary file
+    juce::File tempDir = juce::File::getSpecialLocation(juce::File::tempDirectory);
+    outputFile = tempDir.getChildFile(filePrefix + "_" + juce::Uuid().toString() + ".wav");
+
+    // Create output stream
+    outputFile.deleteFile();
+    std::unique_ptr<juce::OutputStream> fileStream(outputFile.createOutputStream());
+    if (fileStream == nullptr)
+    {
+        return juce::Result::fail("Failed to create output file: " + outputFile.getFullPathName());
+    }
+    
+    // Check if it's a FileOutputStream and verify it opened successfully
+    auto* fileOutputStream = dynamic_cast<juce::FileOutputStream*>(fileStream.get());
+    if (fileOutputStream != nullptr && !fileOutputStream->openedOk())
+    {
+        return juce::Result::fail("Failed to open output file: " + outputFile.getFullPathName());
+    }
+
+    // Create WAV writer
+    juce::WavAudioFormat wavFormat;
+    using Opts = juce::AudioFormatWriterOptions;
+    auto options = Opts{}.withSampleRate(sampleRate)
+                          .withNumChannels(1)  // Mono
+                          .withBitsPerSample(16);
+
+    // Writer takes ownership of the stream (pass by reference)
+    std::unique_ptr<juce::AudioFormatWriter> writer(wavFormat.createWriterFor(fileStream, options));
+    if (writer == nullptr)
+    {
+        return juce::Result::fail("Failed to create WAV writer");
+    }
+
+    // Write audio data (cropped to recordedLength)
+    // Convert float buffer to AudioBuffer for writing
+    juce::AudioBuffer<float> audioBuffer(1, static_cast<int>(recordedLength));
+    const float* source = buffer.data();
+    float* dest = audioBuffer.getWritePointer(0);
+    
+    for (size_t i = 0; i < recordedLength; ++i)
+    {
+        dest[i] = source[i];
+    }
+
+    // Write the buffer
+    if (!writer->writeFromAudioSampleBuffer(audioBuffer, 0, audioBuffer.getNumSamples()))
+    {
+        return juce::Result::fail("Failed to write audio data to file");
+    }
+
+    // Writer will flush and close when destroyed
+    writer.reset();
+
+    DBG("GradioUtilities: Saved " + juce::String(recordedLength) + " samples from output buffer to " + outputFile.getFullPathName());
+    return juce::Result::ok();
+}
+
 juce::Result parseSSEStream(
     juce::InputStream* stream,
     juce::String& completeResponse,
