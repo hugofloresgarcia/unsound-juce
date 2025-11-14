@@ -88,8 +88,8 @@ float Sampler::getNextSample()
 }
 
 // SamplerWindow::ContentComponent implementation
-SamplerWindow::ContentComponent::ContentComponent(VampNetMultiTrackLooperEngine& engine, int numTracks)
-    : looperEngine(engine)
+SamplerWindow::ContentComponent::ContentComponent(VampNetMultiTrackLooperEngine& engine, int numTracks, Shared::MidiLearnManager* midiManager)
+    : looperEngine(engine), midiLearnManager(midiManager), parameterId("sampler_trigger")
 {
     // Setup enable button
     enableButton.setButtonText("Enable Sampler");
@@ -121,8 +121,34 @@ SamplerWindow::ContentComponent::ContentComponent(VampNetMultiTrackLooperEngine&
     sampleNameLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(sampleNameLabel);
     
+    // Setup trigger button
+    triggerButton.setButtonText("Trigger");
+    triggerButton.onClick = [this] { triggerButtonClicked(); };
+    addAndMakeVisible(triggerButton);
+    
+    // Setup MIDI learn for trigger button
+    if (midiLearnManager)
+    {
+        triggerButtonLearnable = std::make_unique<Shared::MidiLearnable>(*midiLearnManager, parameterId);
+        
+        // Create mouse listener for right-click handling
+        triggerButtonMouseListener = std::make_unique<Shared::MidiLearnMouseListener>(*triggerButtonLearnable, this);
+        triggerButton.addMouseListener(triggerButtonMouseListener.get(), false);
+        
+        midiLearnManager->registerParameter({
+            parameterId,
+            [this](float value) {
+                if (value > 0.5f && enabled.load())
+                    triggerButtonClicked();
+            },
+            [this]() { return 0.0f; },
+            "Sampler Trigger",
+            true  // Toggle control
+        });
+    }
+    
     // Setup instructions label
-    instructionsLabel.setText("Press 'k' to trigger the sample", juce::dontSendNotification);
+    instructionsLabel.setText("Press 'k' or click Trigger to trigger the sample", juce::dontSendNotification);
     instructionsLabel.setJustificationType(juce::Justification::centred);
     instructionsLabel.setFont(juce::Font(juce::FontOptions().withHeight(12.0f)));
     instructionsLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
@@ -132,6 +158,14 @@ SamplerWindow::ContentComponent::ContentComponent(VampNetMultiTrackLooperEngine&
 void SamplerWindow::ContentComponent::paint(juce::Graphics& g)
 {
     g.fillAll(juce::Colours::black);
+    
+    // Draw MIDI indicator on trigger button if mapped
+    if (triggerButtonLearnable && triggerButtonLearnable->hasMidiMapping())
+    {
+        auto buttonBounds = triggerButton.getBounds();
+        g.setColour(juce::Colour(0xffed1683));  // Pink
+        g.fillEllipse(buttonBounds.getRight() - 8.0f, buttonBounds.getY() + 2.0f, 6.0f, 6.0f);
+    }
 }
 
 void SamplerWindow::ContentComponent::resized()
@@ -154,6 +188,10 @@ void SamplerWindow::ContentComponent::resized()
     loadSampleButton.setBounds(loadArea.removeFromLeft(120));
     loadArea.removeFromLeft(5);
     sampleNameLabel.setBounds(loadArea);
+    bounds.removeFromTop(spacing);
+    
+    // Trigger button
+    triggerButton.setBounds(bounds.removeFromTop(rowHeight));
     bounds.removeFromTop(spacing);
     
     // Instructions at the bottom
@@ -213,17 +251,59 @@ void SamplerWindow::ContentComponent::loadSampleButtonClicked()
     }
 }
 
+void SamplerWindow::ContentComponent::triggerButtonClicked()
+{
+    if (!enabled.load())
+        return;
+    
+    int trackIdx = selectedTrack.load();
+    
+    // Trigger sample on selected track(s)
+    if (trackIdx >= 0 && trackIdx < looperEngine.getNumTracks())
+    {
+        // Single track selected
+        if (looperEngine.getTrackEngine(trackIdx).getSampler().hasSample())
+        {
+            looperEngine.getTrackEngine(trackIdx).getSampler().trigger();
+        }
+    }
+    else if (trackIdx == -1)
+    {
+        // All tracks - trigger sample on all tracks that have samples loaded
+        for (int i = 0; i < looperEngine.getNumTracks(); ++i)
+        {
+            if (looperEngine.getTrackEngine(i).getSampler().hasSample())
+            {
+                looperEngine.getTrackEngine(i).getSampler().trigger();
+            }
+        }
+    }
+}
+
+SamplerWindow::ContentComponent::~ContentComponent()
+{
+    // Remove mouse listener first
+    if (triggerButtonMouseListener)
+        triggerButton.removeMouseListener(triggerButtonMouseListener.get());
+    
+    // Unregister MIDI parameter
+    if (midiLearnManager)
+    {
+        midiLearnManager->unregisterParameter(parameterId);
+    }
+}
+
 // SamplerWindow implementation
-SamplerWindow::SamplerWindow(VampNetMultiTrackLooperEngine& engine, int numTracks)
+SamplerWindow::SamplerWindow(VampNetMultiTrackLooperEngine& engine, int numTracks, Shared::MidiLearnManager* midiManager)
     : juce::DialogWindow("Sampler",
                         juce::Colours::darkgrey,
                         true),
-      contentComponent(new ContentComponent(engine, numTracks))
+      contentComponent(new ContentComponent(engine, numTracks, midiManager))
 {
     setContentOwned(contentComponent, true);
     setResizable(true, true);
     setUsingNativeTitleBar(true);
-    centreWithSize(400, 180);
+    centreWithSize(400, 230); // Taller to accommodate trigger button
 }
 
 SamplerWindow::~SamplerWindow()

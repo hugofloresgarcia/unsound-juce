@@ -5,6 +5,8 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <atomic>
 #include "../../Engine/MultiTrackLooperEngine.h"
+#include "../Shared/MidiLearnManager.h"
+#include "../Shared/MidiLearnComponent.h"
 
 namespace VampNet
 {
@@ -46,7 +48,7 @@ private:
 class ClickSynthWindow : public juce::DialogWindow
 {
 public:
-    ClickSynthWindow(VampNetMultiTrackLooperEngine& engine, int numTracks);
+    ClickSynthWindow(VampNetMultiTrackLooperEngine& engine, int numTracks, Shared::MidiLearnManager* midiManager = nullptr);
     ~ClickSynthWindow() override;
     
     void closeButtonPressed() override;
@@ -58,8 +60,8 @@ private:
     class ContentComponent : public juce::Component
     {
     public:
-        ContentComponent(VampNetMultiTrackLooperEngine& engine, int numTracks);
-        ~ContentComponent() override = default;
+        ContentComponent(VampNetMultiTrackLooperEngine& engine, int numTracks, Shared::MidiLearnManager* midiManager);
+        ~ContentComponent() override;
         
         void paint(juce::Graphics& g) override;
         void resized() override;
@@ -69,6 +71,7 @@ private:
         
     private:
         VampNetMultiTrackLooperEngine& looperEngine;
+        Shared::MidiLearnManager* midiLearnManager;
         
         juce::ToggleButton enableButton;
         juce::Label trackLabel;
@@ -79,16 +82,23 @@ private:
         juce::Slider durationSlider;
         juce::Label amplitudeLabel;
         juce::Slider amplitudeSlider;
+        juce::TextButton triggerButton;
         juce::Label instructionsLabel;
         
         std::atomic<int> selectedTrack{0};
         std::atomic<bool> enabled{false};
+        
+        // MIDI learn support
+        std::unique_ptr<Shared::MidiLearnable> triggerButtonLearnable;
+        std::unique_ptr<Shared::MidiLearnMouseListener> triggerButtonMouseListener;
+        juce::String parameterId;
         
         void enableButtonChanged();
         void trackSelectorChanged();
         void frequencySliderChanged();
         void durationSliderChanged();
         void amplitudeSliderChanged();
+        void triggerButtonClicked();
         
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ContentComponent)
     };

@@ -371,7 +371,7 @@ void MainComponent::showClickSynthWindow()
     if (clickSynthWindow == nullptr)
     {
         int numTracks = static_cast<int>(tracks.size());
-        clickSynthWindow = std::make_unique<ClickSynthWindow>(looperEngine, numTracks);
+        clickSynthWindow = std::make_unique<ClickSynthWindow>(looperEngine, numTracks, &midiLearnManager);
     }
     
     clickSynthWindow->setVisible(true);
@@ -383,7 +383,7 @@ void MainComponent::showSamplerWindow()
     if (samplerWindow == nullptr)
     {
         int numTracks = static_cast<int>(tracks.size());
-        samplerWindow = std::make_unique<SamplerWindow>(looperEngine, numTracks);
+        samplerWindow = std::make_unique<SamplerWindow>(looperEngine, numTracks, &midiLearnManager);
     }
     
     samplerWindow->setVisible(true);
