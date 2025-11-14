@@ -17,6 +17,7 @@ MainComponent::MainComponent(int numTracks)
       gradioSettingsButton("gradio settings"),
       midiSettingsButton("midi settings"),
       clickSynthButton("click synth"),
+      samplerButton("sampler"),
       titleLabel("Title", "tape looper - vampnet"),
       audioDeviceDebugLabel("AudioDebug", ""),
       midiLearnOverlay(midiLearnManager)
@@ -81,6 +82,10 @@ MainComponent::MainComponent(int numTracks)
     // Setup click synth button
     clickSynthButton.onClick = [this] { showClickSynthWindow(); };
     addAndMakeVisible(clickSynthButton);
+    
+    // Setup sampler button
+    samplerButton.onClick = [this] { showSamplerWindow(); };
+    addAndMakeVisible(samplerButton);
 
     // Setup title label
     titleLabel.setJustificationType(juce::Justification::centred);
@@ -147,6 +152,8 @@ void MainComponent::resized()
     midiSettingsButton.setBounds(controlArea.removeFromLeft(120));
     controlArea.removeFromLeft(10);
     clickSynthButton.setBounds(controlArea.removeFromLeft(120));
+    controlArea.removeFromLeft(10);
+    samplerButton.setBounds(controlArea.removeFromLeft(120));
     bounds.removeFromTop(10);
 
     // Tracks arranged horizontally with fixed width
@@ -272,10 +279,53 @@ void MainComponent::midiSettingsButtonClicked()
 
 bool MainComponent::keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent)
 {
-    // Handle 'k' key for click synth
+    // Handle 'k' key for click synth or sampler
     if (key.getKeyCode() == 'k' || key.getKeyCode() == 'K')
     {
-        if (clickSynthWindow != nullptr && clickSynthWindow->isEnabled())
+        // Check sampler first (if enabled)
+        if (samplerWindow != nullptr && samplerWindow->isEnabled())
+        {
+            int selectedTrack = samplerWindow->getSelectedTrack();
+            
+            // Trigger sampler on selected track(s)
+            if (selectedTrack >= 0 && selectedTrack < static_cast<int>(tracks.size()))
+            {
+                // Single track selected
+                auto& trackEngine = looperEngine.getTrackEngine(selectedTrack);
+                if (trackEngine.getSampler().hasSample())
+                {
+                    trackEngine.getSampler().trigger();
+                    
+                    auto& track = looperEngine.getTrack(selectedTrack);
+                    if (!track.writeHead.getRecordEnable())
+                    {
+                        track.writeHead.setRecordEnable(true);
+                        tracks[selectedTrack]->repaint();
+                    }
+                }
+            }
+            else if (selectedTrack == -1)
+            {
+                // All tracks - trigger sampler on all tracks
+                for (size_t i = 0; i < tracks.size(); ++i)
+                {
+                    auto& trackEngine = looperEngine.getTrackEngine(static_cast<int>(i));
+                    if (trackEngine.getSampler().hasSample())
+                    {
+                        trackEngine.getSampler().trigger();
+                        
+                        auto& track = looperEngine.getTrack(static_cast<int>(i));
+                        if (!track.writeHead.getRecordEnable())
+                        {
+                            track.writeHead.setRecordEnable(true);
+                            tracks[i]->repaint();
+                        }
+                    }
+                }
+            }
+        }
+        // Check click synth if sampler is not enabled
+        else if (clickSynthWindow != nullptr && clickSynthWindow->isEnabled())
         {
             int selectedTrack = clickSynthWindow->getSelectedTrack();
             
@@ -326,6 +376,18 @@ void MainComponent::showClickSynthWindow()
     
     clickSynthWindow->setVisible(true);
     clickSynthWindow->toFront(true);
+}
+
+void MainComponent::showSamplerWindow()
+{
+    if (samplerWindow == nullptr)
+    {
+        int numTracks = static_cast<int>(tracks.size());
+        samplerWindow = std::make_unique<SamplerWindow>(looperEngine, numTracks);
+    }
+    
+    samplerWindow->setVisible(true);
+    samplerWindow->toFront(true);
 }
 
 void MainComponent::showMidiSettings()

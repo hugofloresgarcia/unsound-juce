@@ -7,6 +7,7 @@
 #include "../../Engine/MultiTrackLooperEngine.h"
 #include "LooperTrack.h"
 #include "ClickSynth.h"
+#include "Sampler.h"
 #include "../../CustomLookAndFeel.h"
 #include "../Shared/MidiLearnManager.h"
 #include "../Shared/MidiLearnComponent.h"
@@ -41,6 +42,7 @@ private:
     juce::TextButton gradioSettingsButton;
     juce::TextButton midiSettingsButton;
     juce::TextButton clickSynthButton;
+    juce::TextButton samplerButton;
     juce::Label titleLabel;
     juce::Label audioDeviceDebugLabel;
     CustomLookAndFeel customLookAndFeel;
@@ -51,9 +53,13 @@ private:
     
     // Click synth window
     std::unique_ptr<ClickSynthWindow> clickSynthWindow;
+    
+    // Sampler window
+    std::unique_ptr<SamplerWindow> samplerWindow;
 
     void syncButtonClicked();
     void showClickSynthWindow();
+    void showSamplerWindow();
     void gradioSettingsButtonClicked();
     void updateAudioDeviceDebugInfo();
     void showGradioSettings();
