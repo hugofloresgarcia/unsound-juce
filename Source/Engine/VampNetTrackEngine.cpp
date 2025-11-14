@@ -288,136 +288,121 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
 
         if (isFirstCall)
             DBG_SEGFAULT("Entering sample loop, numSamples=" + juce::String(numSamples));
-        for (int sample = 0; sample < numSamples; ++sample)
+        
+        // OPTIMIZATION: Pre-cache values that don't change during the block
+        float wrapPos = static_cast<float>(track.writeHead.getWrapPos());
+        bool isRecording = track.writeHead.getRecordEnable() && numInputChannels > 0;
+        int inputChannel = track.writeHead.getInputChannel();
+        bool clickActive = clickSynth->isClickActive();
+        bool samplerActive = sampler->isPlaying();
+        double sampleRate = track.writeHead.getSampleRate();
+        float mix = track.dryWetMix.load();
+        
+        // Store positions and input samples for writing (since writeHead locks internally)
+        juce::Array<float> writePositions;
+        juce::Array<float> writeSamples;
+        if (isRecording)
         {
-            if (isFirstCall && sample == 0)
-                DBG_SEGFAULT("First sample iteration");
+            writePositions.resize(numSamples);
+            writeSamples.resize(numSamples);
+        }
+        
+        // OPTIMIZATION: Lock buffers once per block for reading instead of per-sample
+        // This dramatically reduces lock contention (from numSamples locks to 1 lock per block)
+        {
+            const juce::ScopedLock sl1(track.recordBuffer.lock);
+            const juce::ScopedLock sl2(track.outputBuffer.lock);
             
-            float currentPosition = track.recordReadHead.getPos();
-
-            // Handle recording (overdub or new) - write to recordBuffer
-            // Note: writeHead.processSample() locks the buffer internally, so we don't hold the lock here
-            if (track.writeHead.getRecordEnable() && numInputChannels > 0)
+            for (int sample = 0; sample < numSamples; ++sample)
             {
-                int inputChannel = track.writeHead.getInputChannel();
-                float inputSample = 0.0f;
-                
-                // Get input sample from selected channel
-                if (inputChannel == -1)
-                {
-                    // All channels: use channel 0 (mono sum could be added later)
-                    if (inputChannelData[0] != nullptr)
-                        inputSample = inputChannelData[0][sample];
-                }
-                else if (inputChannel >= 0 && inputChannel < numInputChannels && inputChannelData[inputChannel] != nullptr)
-                {
-                    inputSample = inputChannelData[inputChannel][sample];
-                }
-                
-                // Mix in click audio if click synth is active
-                if (clickSynth->isClickActive())
-                {
-                    double sampleRate = track.writeHead.getSampleRate();
-                    float clickSample = clickSynth->getNextSample(sampleRate);
-                    inputSample += clickSample; // Mix click into input
-                }
-                
-                // Mix in sampler audio if sampler is playing
-                if (sampler->isPlaying())
-                {
-                    float samplerSample = sampler->getNextSample();
-                    inputSample += samplerSample; // Mix sampler into input
-                }
-                
                 if (isFirstCall && sample == 0)
-                    DBG_SEGFAULT("Calling writeHead.processSample");
-                track.writeHead.processSample(inputSample, currentPosition);
-                if (isFirstCall && sample == 0)
-                    DBG_SEGFAULT("writeHead.processSample completed");
-            }
+                    DBG_SEGFAULT("First sample iteration");
+                
+                float currentPosition = track.recordReadHead.getPos();
 
-            // Playback - read from both buffers and mix dry/wet
-            float drySample, wetSample;
-            {
-                // Lock both buffers for reading (consistent lock order: recordBuffer first, then outputBuffer)
-                const juce::ScopedLock sl1(track.recordBuffer.lock);
-                const juce::ScopedLock sl2(track.outputBuffer.lock);
-                
-                if (isFirstCall && sample == 0)
+                // Prepare input sample for recording (store for writing after releasing locks)
+                if (isRecording)
                 {
-                    DBG_SEGFAULT("Calling readHeads.processSample");
-                    DBG("[VampNetTrackEngine] Track playback state:");
-                    DBG("  isPlaying: " << (track.isPlaying.load() ? "YES" : "NO"));
-                    DBG("  hasRecordedAudio: " << (track.recordBuffer.recordedLength.load() > 0 ? "YES" : "NO"));
-                    DBG("  recordedLength: " << track.recordBuffer.recordedLength.load());
-                    DBG("  recordReadHead position: " << track.recordReadHead.getPos());
-                    DBG("  outputReadHead position: " << track.outputReadHead.getPos());
+                    float inputSample = 0.0f;
+                    // Get input sample from selected channel
+                    if (inputChannel == -1)
+                    {
+                        // All channels: use channel 0 (mono sum could be added later)
+                        if (inputChannelData[0] != nullptr)
+                            inputSample = inputChannelData[0][sample];
+                    }
+                    else if (inputChannel >= 0 && inputChannel < numInputChannels && inputChannelData[inputChannel] != nullptr)
+                    {
+                        inputSample = inputChannelData[inputChannel][sample];
+                    }
+                    
+                    // Mix in click audio if click synth is active
+                    if (clickActive)
+                    {
+                        float clickSample = clickSynth->getNextSample(sampleRate);
+                        inputSample += clickSample; // Mix click into input
+                    }
+                    
+                    // Mix in sampler audio if sampler is playing
+                    if (samplerActive)
+                    {
+                        float samplerSample = sampler->getNextSample();
+                        inputSample += samplerSample; // Mix sampler into input
+                    }
+                    
+                    // Store position and sample for later writing
+                    writePositions.set(sample, currentPosition);
+                    writeSamples.set(sample, inputSample);
                 }
-                
+
+                // Playback - read from both buffers and mix dry/wet
                 // Sync output read head position to match record read head
                 track.outputReadHead.setPos(track.recordReadHead.getPos());
                 
-                drySample = track.recordReadHead.processSample();
-                wetSample = track.outputReadHead.processSample();
+                float drySample = track.recordReadHead.processSample();
+                float wetSample = track.outputReadHead.processSample();
                 
-                if (isFirstCall && sample == 0)
+                // Mix dry and wet based on dry/wet mix parameter
+                // dryWetMix: 0.0 = all dry (record buffer), 1.0 = all wet (output buffer)
+                float sampleValue = drySample * (1.0f - mix) + wetSample * mix;
+
+                // Configure output bus from record read head's channel setting
+                int outputChannel = track.recordReadHead.getOutputChannel();
+                track.outputBus.setOutputChannel(outputChannel);
+
+                // Route to selected output channel(s)
+                // Note: activeChannels check is done in MultiTrackLooperEngine, so we pass nullptr here
+                track.outputBus.processSample(outputChannelData, numOutputChannels, sample, sampleValue, nullptr);
+
+                // Advance both read heads together (same playhead position)
+                bool wrappedRecord = track.recordReadHead.advance(wrapPos);
+                bool wrappedOutput = track.outputReadHead.advance(wrapPos);
+                
+                // Sync positions in case they diverged
+                track.outputReadHead.setPos(track.recordReadHead.getPos());
+                
+                if (wrappedRecord && !hasExistingAudio)
                 {
-                    DBG_SEGFAULT("readHeads.processSample completed, dry=" + juce::String(drySample) + ", wet=" + juce::String(wetSample));
+                    recordingFinalized = true;
+                    juce::Logger::writeToLog("~~~ WRAPPED! Finalized recording");
+                    // Sync output buffer wrapPos to match record buffer
+                    track.outputBuffer.recordedLength.store(track.recordBuffer.recordedLength.load());
                 }
             }
-            
-            // Mix dry and wet based on dry/wet mix parameter
-            // dryWetMix: 0.0 = all dry (record buffer), 1.0 = all wet (output buffer)
-            float mix = track.dryWetMix.load();
-            float sampleValue = drySample * (1.0f - mix) + wetSample * mix;
-
-            // Configure output bus from record read head's channel setting (both read heads should have same settings)
-            int outputChannel = track.recordReadHead.getOutputChannel();
-            if (isFirstCall && sample == 0)
+        } // Locks released here
+        
+        // Process writes after releasing read locks to avoid deadlock
+        // WriteHead locks internally, so we can safely call it now
+        if (isRecording)
+        {
+            for (int sample = 0; sample < numSamples; ++sample)
             {
-                DBG("[VampNetTrackEngine] Output routing:");
-                DBG("  ReadHead outputChannel: " << outputChannel);
-                DBG("  numOutputChannels: " << numOutputChannels);
-                DBG("  sampleValue: " << sampleValue);
-            }
-            track.outputBus.setOutputChannel(outputChannel);
-            
-            if (isFirstCall && sample == 0)
-            {
-                DBG("[VampNetTrackEngine] OutputBus outputChannel after set: " << track.outputBus.getOutputChannel());
-            }
-
-            // Route to selected output channel(s)
-            if (isFirstCall && sample == 0)
-                DBG_SEGFAULT("Calling outputBus.processSample");
-            // Note: activeChannels check is done in MultiTrackLooperEngine, so we pass nullptr here
-            // The active channels are verified at the callback level
-            track.outputBus.processSample(outputChannelData, numOutputChannels, sample, sampleValue, nullptr);
-            if (isFirstCall && sample == 0)
-            {
-                DBG_SEGFAULT("outputBus.processSample completed");
-            }
-
-            // Advance both read heads together (same playhead position)
-            if (isFirstCall && sample == 0)
-                DBG_SEGFAULT("Calling readHeads.advance, wrapPos=" + juce::String(track.writeHead.getWrapPos()));
-            float wrapPos = static_cast<float>(track.writeHead.getWrapPos());
-            bool wrappedRecord = track.recordReadHead.advance(wrapPos);
-            bool wrappedOutput = track.outputReadHead.advance(wrapPos);
-            
-            // Sync positions in case they diverged
-            track.outputReadHead.setPos(track.recordReadHead.getPos());
-            
-            if (isFirstCall && sample == 0)
-                DBG_SEGFAULT("readHeads.advance completed, wrapped=" + juce::String(wrappedRecord ? "YES" : "NO"));
-            
-            if (wrappedRecord && !hasExistingAudio)
-            {
-                track.writeHead.finalizeRecording(track.writeHead.getPos());
-                recordingFinalized = true;
-                juce::Logger::writeToLog("~~~ WRAPPED! Finalized recording");
-                // Sync output buffer wrapPos to match record buffer
-                track.outputBuffer.recordedLength.store(track.recordBuffer.recordedLength.load());
+                float inputSample = writeSamples[sample];
+                if (inputSample != 0.0f)
+                {
+                    float currentWritePos = writePositions[sample];
+                    track.writeHead.processSample(inputSample, currentWritePos);
+                }
             }
         }
         if (isFirstCall)
