@@ -35,19 +35,16 @@ private:
     std::vector<std::unique_ptr<Basic::LooperTrack>> tracks;
     
     juce::TextButton syncButton;
-    juce::TextButton audioSettingsButton;
     juce::TextButton midiSettingsButton;
     juce::Label titleLabel;
-
-    juce::DialogWindow* audioSettingsWindow = nullptr;
+    juce::Label audioDeviceDebugLabel;
     CustomLookAndFeel customLookAndFeel;
     
     Shared::MidiLearnOverlay midiLearnOverlay;
 
     void syncButtonClicked();
-    void audioSettingsButtonClicked();
-    void showAudioSettings();
     void midiSettingsButtonClicked();
+    void updateAudioDeviceDebugInfo();
     void showMidiSettings();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
