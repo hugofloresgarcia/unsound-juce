@@ -48,7 +48,14 @@ void VampNetWorkerThread::run()
 
 juce::Result VampNetWorkerThread::saveBufferToFile(int trackIndex, juce::File& outputFile)
 {
-    return Shared::saveTrackBufferToWavFile(looperEngine, trackIndex, outputFile, "vampnet_input");
+    if (useOutputBuffer)
+    {
+        return Shared::saveVampNetOutputBufferToWavFile(looperEngine, trackIndex, outputFile, "vampnet_input");
+    }
+    else
+    {
+        return Shared::saveTrackBufferToWavFile(looperEngine, trackIndex, outputFile, "vampnet_input");
+    }
 }
 
 juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFile, float periodicPrompt, const juce::var& customParams, juce::File& outputFile)
@@ -303,6 +310,8 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
       trackLabel("Track", "track " + juce::String(index + 1)),
       resetButton("x"),
       generateButton("generate"),
+      useOutputAsInputToggle("use o as i"),
+      autogenToggle("autogen"),
       gradioUrlProvider(std::move(gradioUrlGetter)),
       midiLearnManager(midiManager),
       trackIdPrefix("track" + juce::String(index))
@@ -420,6 +429,16 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     };
     addAndMakeVisible(levelControl);
     
+    // Setup "use o as i" toggle
+    useOutputAsInputToggle.setButtonText("use o as i");
+    useOutputAsInputToggle.setToggleState(false, juce::dontSendNotification);
+    addAndMakeVisible(useOutputAsInputToggle);
+    
+    // Setup "autogen" toggle
+    autogenToggle.setButtonText("autogen");
+    autogenToggle.setToggleState(false, juce::dontSendNotification);
+    addAndMakeVisible(autogenToggle);
+    
     // Setup input selector
     inputSelector.onChannelChange = [this](int channel) {
         looperEngine.getTrack(trackIndex).writeHead.setInputChannel(channel);
@@ -456,6 +475,8 @@ void LooperTrack::applyLookAndFeel()
         resetButton.setLookAndFeel(&laf);
         generateButton.setLookAndFeel(&laf);
         configureParamsButton.setLookAndFeel(&laf);
+        useOutputAsInputToggle.setLookAndFeel(&laf);
+        autogenToggle.setLookAndFeel(&laf);
     }
 }
 
@@ -555,10 +576,15 @@ void LooperTrack::resized()
     parameterKnobs.setBounds(knobArea);
     bottomArea.removeFromTop(spacingSmall);
     
-    // Level control and VU meter
+    // Level control and VU meter with toggles
     auto controlsArea = bottomArea.removeFromTop(controlsHeight);
     levelControl.setBounds(controlsArea.removeFromLeft(115)); // 80 + 5 + 30
     controlsArea.removeFromLeft(spacingSmall);
+    // Stack toggles vertically: autogen on top, use o as i below
+    auto toggleArea = controlsArea.removeFromLeft(100); // Toggle button width
+    autogenToggle.setBounds(toggleArea.removeFromTop(30)); // First toggle
+    toggleArea.removeFromTop(spacingSmall);
+    useOutputAsInputToggle.setBounds(toggleArea.removeFromTop(30)); // Second toggle
     bottomArea.removeFromTop(spacingSmall);
     
     // Generate button
@@ -642,9 +668,24 @@ void LooperTrack::generateButtonClicked()
     generateButton.setEnabled(false);
     generateButton.setButtonText("generating...");
 
-    // Determine if we have audio (check record buffer)
+    // Check if we should use output buffer as input
+    bool useOutputAsInput = useOutputAsInputToggle.getToggleState();
+    
+    // Determine if we have audio (check appropriate buffer based on toggle)
     juce::File audioFile;
-    if (track.recordBuffer.hasRecorded.load())
+    bool hasAudio = false;
+    if (useOutputAsInput)
+    {
+        hasAudio = track.outputBuffer.hasRecorded.load();
+        DBG("LooperTrack: Using output buffer as input, hasAudio=" + juce::String(hasAudio ? "YES" : "NO"));
+    }
+    else
+    {
+        hasAudio = track.recordBuffer.hasRecorded.load();
+        DBG("LooperTrack: Using record buffer as input, hasAudio=" + juce::String(hasAudio ? "YES" : "NO"));
+    }
+    
+    if (hasAudio)
     {
         audioFile = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("has_audio");
         DBG("LooperTrack: Has audio - passing sentinel file");
@@ -660,7 +701,8 @@ void LooperTrack::generateButtonClicked()
                                                                 audioFile,
                                                                 periodicPrompt,
                                                                 customVampNetParams,
-                                                                gradioUrlProvider);
+                                                                gradioUrlProvider,
+                                                                useOutputAsInput);
     vampNetWorkerThread->onComplete = [this](juce::Result result, juce::File outputFile, int trackIdx)
     {
         onVampNetComplete(result, outputFile);
@@ -737,6 +779,17 @@ void LooperTrack::onVampNetComplete(juce::Result result, juce::File outputFile)
     if (trackEngine.loadFromFile(outputFile))
     {
         repaint(); // Refresh waveform display
+        
+        // Check if autogen is enabled - if so, automatically trigger next generation
+        if (autogenToggle.getToggleState())
+        {
+            DBG("LooperTrack: Autogen enabled - automatically triggering next generation");
+            // Use a short delay to ensure the UI updates and the file is fully loaded
+            juce::MessageManager::callAsync([this]()
+            {
+                generateButtonClicked();
+            });
+        }
     }
     else
     {
