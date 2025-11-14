@@ -56,7 +56,7 @@ void ParameterKnobs::addKnob(const KnobConfig& config)
         control.slider->setTextValueSuffix(config.suffix);
     
     // Make text box smaller and more compact
-    control.slider->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 16);
+    control.slider->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 14);
     
     if (config.onChange)
     {
@@ -148,8 +148,7 @@ void ParameterKnobs::resized()
     
     // Compact dimensions for labels and spacing
     const int knobLabelHeight = 12;    // Reduced from 15
-    const int knobLabelSpacing = 2;    // Reduced from 5
-    const int textBoxHeight = 16;      // Height of text box below knob
+    const int knobLabelSpacing = 1;    // Reduced from 5 to minimize spacing
     
     // Preferred dimensions
     const int preferredKnobSize = 110;
@@ -210,12 +209,9 @@ void ParameterKnobs::resized()
         // Small spacing
         knobArea.removeFromTop(knobLabelSpacing);
         
-        // Reserve space for text box at bottom
-        knobArea.removeFromBottom(textBoxHeight);
-        
-        // Rest goes to the slider (which includes the knob widget and text box)
-        // The slider will use its textBoxStyle settings to layout the text box
-        knobs[i].slider->setBounds(knobArea.expanded(0, textBoxHeight));
+        // Give the slider the remaining area - JUCE will handle text box positioning
+        // The slider's TextBoxBelow style will place the text box at the bottom
+        knobs[i].slider->setBounds(knobArea);
     }
 }
 
