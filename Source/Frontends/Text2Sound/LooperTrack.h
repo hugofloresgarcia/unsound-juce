@@ -14,6 +14,11 @@
 #include <functional>
 #include <utility>
 
+namespace Shared
+{
+    class ModelParameterDialog;
+}
+
 namespace Text2Sound
 {
 
@@ -94,6 +99,9 @@ private:
     
     // Custom Text2Sound parameters (excluding text prompt which is in UI)
     juce::var customText2SoundParams;
+    
+    // Parameter configuration dialog
+    std::unique_ptr<Shared::ModelParameterDialog> parameterDialog;
     
     void applyLookAndFeel();
 

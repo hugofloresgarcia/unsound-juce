@@ -64,6 +64,9 @@ private:
     // Create common headers for requests (as formatted string)
     juce::String createCommonHeaders() const;
 
+    // Create SSE headers for streaming requests (as formatted string)
+    juce::String createSSEHeaders() const;
+
     // Create JSON headers for POST requests (as formatted string)
     juce::String createJsonHeaders() const;
 };

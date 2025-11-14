@@ -183,6 +183,16 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     // Initialize custom params with defaults
     customText2SoundParams = getDefaultText2SoundParams();
     
+    // Create parameter dialog (non-modal)
+    parameterDialog = std::make_unique<Shared::ModelParameterDialog>(
+        "Text2Sound",
+        customText2SoundParams,
+        [this](const juce::var& newParams) {
+            customText2SoundParams = newParams;
+            DBG("Text2Sound custom parameters updated");
+        }
+    );
+    
     // Setup track label
     trackLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(trackLabel);
@@ -469,32 +479,28 @@ void LooperTrack::generateButtonClicked()
 
 void LooperTrack::configureParamsButtonClicked()
 {
-    auto* dialog = new Shared::ModelParameterDialog(
-        "Text2Sound",
-        customText2SoundParams,
-        [this](const juce::var& newParams) {
-            customText2SoundParams = newParams;
-            DBG("Text2Sound custom parameters updated");
-        }
-    );
-    
-    dialog->enterModalState(true);
+    if (parameterDialog != nullptr)
+    {
+        // Update the dialog with current params in case they changed
+        parameterDialog->updateParams(customText2SoundParams);
+        
+        // Show the dialog (non-modal)
+        parameterDialog->setVisible(true);
+        parameterDialog->toFront(true);
+    }
 }
 
 juce::var LooperTrack::getDefaultText2SoundParams()
 {
-    // Create default parameters object (excluding text prompt which is in UI)
+    // Create default parameters object (excluding text prompt and audio which are in UI)
     juce::DynamicObject::Ptr params = new juce::DynamicObject();
     
-    // These correspond to params 3-10 in the API
-    params->setProperty("param_3", juce::var(0));
-    params->setProperty("param_4", juce::var(1));
-    params->setProperty("param_5", juce::var(0));
-    params->setProperty("param_6", juce::var(25));
-    params->setProperty("param_7", juce::var(0));
-    params->setProperty("param_8", juce::var(0));
-    params->setProperty("param_9", juce::var(0));
-    params->setProperty("param_10", juce::var(true));
+    // New API parameters (indices 2-6):
+    params->setProperty("seed", juce::var(3));                          // [2] seed (number, 0 or empty for random)
+    params->setProperty("median_filter_length", juce::var(0));          // [3] median filter length (0 for none)
+    params->setProperty("normalize_db", juce::var(-24));                // [4] normalize dB (0 for none)
+    params->setProperty("duration", juce::var(0));                      // [5] duration in seconds (0 for auto)
+    params->setProperty("inference_params", juce::var("print('Hello World')"));  // [6] inference parameters (code)
     
     return juce::var(params);
 }
