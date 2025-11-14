@@ -884,9 +884,6 @@ void LooperTrack::onVampNetComplete(juce::Result result, juce::File outputFile)
     
     if (trackEngine.loadFromFile(outputFile))
     {
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
-                                              "success",
-                                              "generated audio loaded into track " + juce::String(trackIndex + 1));
         repaint(); // Refresh waveform display
     }
     else

@@ -500,7 +500,20 @@ juce::var LooperTrack::getDefaultText2SoundParams()
     params->setProperty("median_filter_length", juce::var(0));          // [3] median filter length (0 for none)
     params->setProperty("normalize_db", juce::var(-24));                // [4] normalize dB (0 for none)
     params->setProperty("duration", juce::var(0));                      // [5] duration in seconds (0 for auto)
-    params->setProperty("inference_params", juce::var("print('Hello World')"));  // [6] inference parameters (code)
+    
+    // Create inference parameters as Python dict literal string
+    // The API expects Python dict syntax (single quotes), not JSON (double quotes)
+    juce::String inferenceParamsString = 
+        "{'guidance_scale': 3.0, "
+        "'logsnr_max': 5.0, "
+        "'logsnr_min': -8, "
+        "'num_seconds': 8.0, "
+        "'num_steps': 24, "
+        "'rho': 7.0, "
+        "'sampler': 'dpmpp-2m-sde', "
+        "'schedule': 'karras'}";
+    
+    params->setProperty("inference_params", juce::var(inferenceParamsString));  // [6] inference parameters as Python dict string
     
     return juce::var(params);
 }
@@ -534,9 +547,6 @@ void LooperTrack::onGradioComplete(juce::Result result, juce::File outputFile)
     
     if (trackEngine.loadFromFile(outputFile))
     {
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
-                                              "success",
-                                              "generated audio loaded into track " + juce::String(trackIndex + 1));
         repaint(); // Refresh waveform display
     }
     else
