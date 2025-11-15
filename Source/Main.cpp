@@ -23,6 +23,7 @@ public:
         // Show startup dialog before creating main window
         int numTracks = 8; // Default value, will be updated from dialog
         juce::String selectedFrontend = "basic"; // Default frontend
+        juce::String selectedPanner = "Stereo"; // Default panner
         juce::AudioDeviceManager::AudioDeviceSetup deviceSetup;
         
         {
@@ -58,8 +59,10 @@ public:
                 {
                     numTracks = dialogPtr->getNumTracks();
                     selectedFrontend = dialogPtr->getSelectedFrontend();
+                    selectedPanner = dialogPtr->getSelectedPanner();
                     juce::Logger::writeToLog("Selected number of tracks: " + juce::String(numTracks));
                     juce::Logger::writeToLog("Selected frontend: " + selectedFrontend);
+                    juce::Logger::writeToLog("Selected panner: " + selectedPanner);
                     
                     // Get device setup from the dialog (which has the updated setup with all channels enabled)
                     DBG("[Main] Getting device setup from StartupDialog...");
@@ -126,7 +129,7 @@ public:
             #endif
         }
         
-        mainWindow.reset(new MainWindow(getApplicationName(), numTracks, selectedFrontend, deviceSetup));
+        mainWindow.reset(new MainWindow(getApplicationName(), numTracks, selectedFrontend, selectedPanner, deviceSetup));
     }
 
     void shutdown() override
@@ -146,7 +149,7 @@ public:
     class MainWindow : public juce::DocumentWindow
     {
     public:
-        MainWindow(juce::String name, int numTracks, const juce::String& frontend, const juce::AudioDeviceManager::AudioDeviceSetup& deviceSetup)
+        MainWindow(juce::String name, int numTracks, const juce::String& frontend, const juce::String& pannerType, const juce::AudioDeviceManager::AudioDeviceSetup& deviceSetup)
             : DocumentWindow(name,
                             juce::Desktop::getInstance().getDefaultLookAndFeel()
                                 .findColour(juce::ResizableWindow::backgroundColourId),
@@ -175,7 +178,7 @@ public:
             if (frontendLower == "basic")
             {
                 DBG("[MainWindow] Creating Basic frontend...");
-                auto* basicComponent = new Basic::MainComponent(numTracks);
+                auto* basicComponent = new Basic::MainComponent(numTracks, pannerType);
                 mainComponent = basicComponent;
                 
                 DBG("[MainWindow] Setting device setup on Basic looper engine...");
@@ -256,7 +259,7 @@ public:
             else if (frontendLower == "text2sound")
             {
                 DBG("[MainWindow] Creating Text2Sound frontend...");
-                auto* text2SoundComponent = new Text2Sound::MainComponent(numTracks);
+                auto* text2SoundComponent = new Text2Sound::MainComponent(numTracks, pannerType);
                 mainComponent = text2SoundComponent;
                 
                 DBG("[MainWindow] Setting device setup on Text2Sound looper engine...");
@@ -322,7 +325,7 @@ public:
             else if (frontendLower == "vampnet")
             {
                 DBG("[MainWindow] Creating VampNet frontend...");
-                auto* vampNetComponent = new VampNet::MainComponent(numTracks);
+                auto* vampNetComponent = new VampNet::MainComponent(numTracks, pannerType);
                 mainComponent = vampNetComponent;
                 
                 DBG("[MainWindow] Setting device setup on VampNet looper engine...");

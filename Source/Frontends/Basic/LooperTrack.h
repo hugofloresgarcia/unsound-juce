@@ -11,6 +11,11 @@
 #include "../Shared/OutputSelector.h"
 #include "../Shared/InputSelector.h"
 #include "../Shared/MidiLearnManager.h"
+#include "../../Panners/Panner.h"
+#include "../../Panners/StereoPanner.h"
+#include "../../Panners/QuadPanner.h"
+#include "../../Panners/CLEATPanner.h"
+#include "../../Panners/Panner2DComponent.h"
 #include <memory>
 
 namespace Basic
@@ -19,7 +24,7 @@ namespace Basic
 class LooperTrack : public juce::Component, public juce::Timer
 {
 public:
-    LooperTrack(MultiTrackLooperEngine& engine, int trackIndex, Shared::MidiLearnManager* midiManager = nullptr);
+    LooperTrack(MultiTrackLooperEngine& engine, int trackIndex, Shared::MidiLearnManager* midiManager = nullptr, const juce::String& pannerType = "Stereo");
     ~LooperTrack() override;
 
     void paint(juce::Graphics& g) override;
@@ -46,6 +51,12 @@ private:
     // Track-specific UI
     juce::Label trackLabel;
     juce::TextButton resetButton;
+    
+    // Panner
+    juce::String pannerType;
+    std::unique_ptr<Panner> panner;
+    std::unique_ptr<Panner2DComponent> panner2DComponent;
+    juce::Slider stereoPanSlider; // For stereo panner
     
     void applyLookAndFeel();
 

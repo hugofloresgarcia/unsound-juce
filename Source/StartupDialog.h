@@ -13,6 +13,7 @@ public:
     
     int getNumTracks() const { return numTracks; }
     juce::String getSelectedFrontend() const { return selectedFrontend; }
+    juce::String getSelectedPanner() const { return selectedPanner; }
     juce::AudioDeviceManager::AudioDeviceSetup getDeviceSetup() const;
     
     void resized() override;
@@ -26,6 +27,7 @@ private:
     juce::AudioDeviceManager& audioDeviceManager;
     int numTracks{8};
     juce::String selectedFrontend{"Basic"};
+    juce::String selectedPanner{"Stereo"};
     bool okClicked{false};
     
     juce::Label titleLabel;
@@ -33,6 +35,8 @@ private:
     juce::Slider numTracksSlider;
     juce::Label frontendLabel;
     juce::ComboBox frontendCombo;
+    juce::Label pannerLabel;
+    juce::ComboBox pannerCombo;
     juce::AudioDeviceSelectorComponent audioDeviceSelector;
     juce::TextButton okButton;
     

@@ -36,6 +36,16 @@ target_sources(TapeLooper PRIVATE
     Source/Engine/LooperReadHead.cpp
 )
 
+# Panners source files
+target_sources(TapeLooper PRIVATE
+    Source/Panners/PanningUtils.cpp
+    Source/Panners/StereoPanner.cpp
+    Source/Panners/QuadPanner.cpp
+    Source/Panners/CLEATPanner.cpp
+    Source/Panners/Panner2DComponent.cpp
+    Source/Panners/PannerTests.cpp
+)
+
 # Engine headers
 target_sources(TapeLooper PRIVATE
     Source/Engine/LooperTrackEngine.h
@@ -45,6 +55,17 @@ target_sources(TapeLooper PRIVATE
     Source/Engine/LooperWriteHead.h
     Source/Engine/LooperReadHead.h
     Source/Engine/OutputBus.h
+)
+
+# Panners headers
+target_sources(TapeLooper PRIVATE
+    Source/Panners/Panner.h
+    Source/Panners/PanningUtils.h
+    Source/Panners/StereoPanner.h
+    Source/Panners/QuadPanner.h
+    Source/Panners/CLEATPanner.h
+    Source/Panners/Panner2DComponent.h
+    Source/Panners/PannerTests.h
 )
 
 # GradioClient source files
@@ -145,6 +166,7 @@ target_link_libraries(TapeLooper PRIVATE
     juce::juce_audio_utils
     juce::juce_core
     juce::juce_data_structures
+    juce::juce_dsp
     juce::juce_events
     juce::juce_graphics
     juce::juce_gui_basics
@@ -159,4 +181,36 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon.png)
     )
     target_link_libraries(TapeLooper PRIVATE TapeLooperBinaryData)
 endif()
+
+# Test runner executable
+juce_add_console_app(PannerTestsRunner
+    COMPANY_NAME "Unsound"
+    PRODUCT_NAME "Panner Tests Runner"
+    VERSION ${PROJECT_VERSION}
+)
+
+target_sources(PannerTestsRunner PRIVATE
+    Source/Panners/RunPannerTests.cpp
+    Source/Panners/PannerTests.cpp
+    Source/Panners/PanningUtils.cpp
+    Source/Panners/StereoPanner.cpp
+    Source/Panners/QuadPanner.cpp
+    Source/Panners/CLEATPanner.cpp
+)
+
+target_sources(PannerTestsRunner PRIVATE
+    Source/Panners/PannerTests.h
+    Source/Panners/Panner.h
+    Source/Panners/PanningUtils.h
+    Source/Panners/StereoPanner.h
+    Source/Panners/QuadPanner.h
+    Source/Panners/CLEATPanner.h
+)
+
+target_link_libraries(PannerTestsRunner PRIVATE
+    juce::juce_core
+    juce::juce_dsp
+    juce::juce_graphics
+    juce::juce_gui_basics
+)
 

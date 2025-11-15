@@ -6,6 +6,7 @@ StartupDialog::StartupDialog(juce::AudioDeviceManager& deviceManager)
       numTracksLabel("Tracks", "number of tracks"),
       numTracksSlider(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight),
       frontendLabel("Frontend", "frontend"),
+      pannerLabel("Panner", "panner type"),
       audioDeviceSelector(deviceManager, 0, 256, 0, 256, true, true, true, false),
       okButton("ok")
 {
@@ -39,6 +40,18 @@ StartupDialog::StartupDialog(juce::AudioDeviceManager& deviceManager)
     addAndMakeVisible(frontendCombo);
     addAndMakeVisible(frontendLabel);
     
+    // Setup panner selector
+    pannerCombo.addItem("Stereo", 1);
+    pannerCombo.addItem("Quad", 2);
+    pannerCombo.addItem("CLEAT", 3);
+    pannerCombo.setSelectedId(1); // Default to "Stereo"
+    pannerCombo.onChange = [this]
+    {
+        selectedPanner = pannerCombo.getText();
+    };
+    addAndMakeVisible(pannerCombo);
+    addAndMakeVisible(pannerLabel);
+    
     // Setup audio device selector
     addAndMakeVisible(audioDeviceSelector);
     
@@ -71,6 +84,13 @@ void StartupDialog::resized()
     frontendCombo.setBounds(frontendArea.removeFromLeft(200));
     bounds.removeFromTop(20);
     
+    // Panner selection section
+    auto pannerArea = bounds.removeFromTop(40);
+    pannerLabel.setBounds(pannerArea.removeFromLeft(150));
+    pannerArea.removeFromLeft(10);
+    pannerCombo.setBounds(pannerArea.removeFromLeft(200));
+    bounds.removeFromTop(20);
+    
     // OK button at bottom
     auto buttonArea = bounds.removeFromBottom(40);
     okButton.setBounds(buttonArea.removeFromRight(100).reduced(5));
@@ -86,9 +106,10 @@ void StartupDialog::buttonClicked(juce::Button* button)
     {
         DBG("[StartupDialog] OK button clicked");
         
-        // Update numTracks and selectedFrontend from UI values when OK is clicked
+        // Update numTracks, selectedFrontend, and selectedPanner from UI values when OK is clicked
         numTracks = static_cast<int>(numTracksSlider.getValue());
         selectedFrontend = frontendCombo.getText();
+        selectedPanner = pannerCombo.getText();
         
         DBG("[StartupDialog] numTracks=" << numTracks << ", frontend=" << selectedFrontend);
         
