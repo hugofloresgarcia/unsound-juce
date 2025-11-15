@@ -59,7 +59,7 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     const int trackSpacing = 5;
     const int horizontalMargin = 20;
     const int topControlsHeight = 40 + 10 + 40 + 10;
-    const int fixedTrackHeight = 770; // Increased height to accommodate taller panner (was 650, added 120 for panner)
+    const int fixedTrackHeight = 720; // Height adjusted for panner (was 650, added 70 for panner)
     const int verticalMargin = 20;
     
     int windowWidth = (fixedTrackWidth * actualNumTracks) + (trackSpacing * (actualNumTracks - 1)) + horizontalMargin;

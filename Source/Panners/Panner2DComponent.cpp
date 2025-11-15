@@ -18,17 +18,23 @@ void Panner2DComponent::paint(juce::Graphics& g)
     g.setColour(juce::Colours::black);
     g.fillRoundedRectangle(bounds, 4.0f);
     
-    // Draw grid
+    // Draw bright border
+    g.setColour(juce::Colour(0xfff3d430)); // Bright yellow from CustomLookAndFeel
+    g.drawRoundedRectangle(bounds, 4.0f, 3.0f);
+    
+    // Draw dense grid (16x16)
     g.setColour(juce::Colour(0xff333333));
-    float gridSpacing = bounds.getWidth() / 4.0f;
-    for (int i = 1; i < 4; ++i)
+    const int gridDivisions = 16;
+    float gridSpacingX = bounds.getWidth() / gridDivisions;
+    float gridSpacingY = bounds.getHeight() / gridDivisions;
+    for (int i = 1; i < gridDivisions; ++i)
     {
         // Vertical lines
-        g.drawLine(bounds.getX() + i * gridSpacing, bounds.getY(),
-                   bounds.getX() + i * gridSpacing, bounds.getBottom(), 1.0f);
+        g.drawLine(bounds.getX() + i * gridSpacingX, bounds.getY(),
+                   bounds.getX() + i * gridSpacingX, bounds.getBottom(), 0.5f);
         // Horizontal lines
-        g.drawLine(bounds.getX(), bounds.getY() + i * gridSpacing,
-                   bounds.getRight(), bounds.getY() + i * gridSpacing, 1.0f);
+        g.drawLine(bounds.getX(), bounds.getY() + i * gridSpacingY,
+                   bounds.getRight(), bounds.getY() + i * gridSpacingY, 0.5f);
     }
     
     // Draw center crosshair

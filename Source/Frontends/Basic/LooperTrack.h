@@ -57,6 +57,8 @@ private:
     std::unique_ptr<Panner> panner;
     std::unique_ptr<Panner2DComponent> panner2DComponent;
     juce::Slider stereoPanSlider; // For stereo panner
+    juce::Label panLabel;
+    juce::Label panCoordLabel; // Shows pan coordinates (x, y)
     
     void applyLookAndFeel();
 

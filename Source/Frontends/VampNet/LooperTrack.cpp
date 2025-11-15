@@ -316,7 +316,9 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
       midiLearnManager(midiManager),
       trackIdPrefix("track" + juce::String(index)),
       pannerType(pannerType),
-      stereoPanSlider(juce::Slider::LinearHorizontal, juce::Slider::NoTextBox)
+      stereoPanSlider(juce::Slider::LinearHorizontal, juce::Slider::NoTextBox),
+      panLabel("pan", "pan"),
+      panCoordLabel("coord", "0.50, 0.50")
 {
     // Initialize custom params with defaults
     customVampNetParams = getDefaultVampNetParams();
@@ -334,6 +336,14 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     // Setup track label
     trackLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(trackLabel);
+    
+    // Setup pan label
+    panLabel.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(panLabel);
+    
+    // Setup pan coordinate label
+    panCoordLabel.setJustificationType(juce::Justification::centredRight);
+    addAndMakeVisible(panCoordLabel);
     
     // Setup reset button
     resetButton.onClick = [this] { resetButtonClicked(); };
@@ -469,7 +479,11 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
         stereoPanSlider.setValue(0.5); // Center
         stereoPanSlider.onValueChange = [this] {
             if (auto* stereoPanner = dynamic_cast<StereoPanner*>(panner.get()))
-                stereoPanner->setPan(static_cast<float>(stereoPanSlider.getValue()));
+            {
+                float panValue = static_cast<float>(stereoPanSlider.getValue());
+                stereoPanner->setPan(panValue);
+                panCoordLabel.setText(juce::String(panValue, 2), juce::dontSendNotification);
+            }
         };
         addAndMakeVisible(stereoPanSlider);
     }
@@ -480,7 +494,10 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
         panner2DComponent->setPanPosition(0.5f, 0.5f); // Center
         panner2DComponent->onPanChange = [this](float x, float y) {
             if (auto* quadPanner = dynamic_cast<QuadPanner*>(panner.get()))
+            {
                 quadPanner->setPan(x, y);
+                panCoordLabel.setText(juce::String(x, 2) + ", " + juce::String(y, 2), juce::dontSendNotification);
+            }
         };
         addAndMakeVisible(panner2DComponent.get());
     }
@@ -491,7 +508,10 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
         panner2DComponent->setPanPosition(0.5f, 0.5f); // Center
         panner2DComponent->onPanChange = [this](float x, float y) {
             if (auto* cleatPanner = dynamic_cast<CLEATPanner*>(panner.get()))
+            {
                 cleatPanner->setPan(x, y);
+                panCoordLabel.setText(juce::String(x, 2) + ", " + juce::String(y, 2), juce::dontSendNotification);
+            }
         };
         addAndMakeVisible(panner2DComponent.get());
     }
@@ -573,13 +593,15 @@ void LooperTrack::resized()
     const int knobAreaHeight = 140;
     const int controlsHeight = 160;
     
-    const int pannerHeight = 240; // Make it square-ish (track width is 260)
+    const int labelHeight = 15;
+    const int pannerHeight = 150; // 2D panner height
     const int totalBottomHeight = channelSelectorHeight + spacingSmall +
                                    knobAreaHeight + spacingSmall + 
                                    controlsHeight + spacingSmall +
                                    generateButtonHeight + spacingSmall + 
                                    configureButtonHeight + spacingSmall +
                                    buttonHeight + spacingSmall +
+                                   labelHeight + spacingSmall +
                                    pannerHeight;
     
     auto bounds = getLocalBounds().reduced(componentMargin);
@@ -643,6 +665,11 @@ void LooperTrack::resized()
     // Panner UI (below transport controls)
     if (panner != nullptr)
     {
+        auto panLabelArea = bottomArea.removeFromTop(labelHeight);
+        panLabel.setBounds(panLabelArea.removeFromLeft(50)); // "pan" label on left
+        panCoordLabel.setBounds(panLabelArea); // Coordinates on right
+        bottomArea.removeFromTop(spacingSmall);
+        
         auto pannerArea = bottomArea.removeFromTop(pannerHeight);
         if (pannerType.toLowerCase() == "stereo" && stereoPanSlider.isVisible())
         {
