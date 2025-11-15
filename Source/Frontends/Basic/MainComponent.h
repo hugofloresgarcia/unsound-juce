@@ -17,7 +17,7 @@ class MainComponent : public juce::Component,
                       public juce::Timer
 {
 public:
-    MainComponent(int numTracks = 8);
+    MainComponent(int numTracks = 8, const juce::String& pannerType = "Stereo");
     ~MainComponent() override;
 
     void paint(juce::Graphics& g) override;

@@ -298,7 +298,7 @@ juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFil
 }
 
 // LooperTrack implementation
-LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::function<juce::String()> gradioUrlGetter, Shared::MidiLearnManager* midiManager)
+LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::function<juce::String()> gradioUrlGetter, Shared::MidiLearnManager* midiManager, const juce::String& pannerType)
     : looperEngine(engine), 
       trackIndex(index),
       waveformDisplay(engine, index),
@@ -314,7 +314,9 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
       autogenToggle("autogen"),
       gradioUrlProvider(std::move(gradioUrlGetter)),
       midiLearnManager(midiManager),
-      trackIdPrefix("track" + juce::String(index))
+      trackIdPrefix("track" + juce::String(index)),
+      pannerType(pannerType),
+      stereoPanSlider(juce::Slider::LinearHorizontal, juce::Slider::NoTextBox)
 {
     // Initialize custom params with defaults
     customVampNetParams = getDefaultVampNetParams();
@@ -458,6 +460,42 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     inputSelector.updateChannels(looperEngine.getAudioDeviceManager());
     outputSelector.updateChannels(looperEngine.getAudioDeviceManager());
     
+    // Setup panner based on type
+    auto pannerTypeLower = pannerType.toLowerCase();
+    if (pannerTypeLower == "stereo")
+    {
+        panner = std::make_unique<StereoPanner>();
+        stereoPanSlider.setRange(0.0, 1.0, 0.01);
+        stereoPanSlider.setValue(0.5); // Center
+        stereoPanSlider.onValueChange = [this] {
+            if (auto* stereoPanner = dynamic_cast<StereoPanner*>(panner.get()))
+                stereoPanner->setPan(static_cast<float>(stereoPanSlider.getValue()));
+        };
+        addAndMakeVisible(stereoPanSlider);
+    }
+    else if (pannerTypeLower == "quad")
+    {
+        panner = std::make_unique<QuadPanner>();
+        panner2DComponent = std::make_unique<Panner2DComponent>();
+        panner2DComponent->setPanPosition(0.5f, 0.5f); // Center
+        panner2DComponent->onPanChange = [this](float x, float y) {
+            if (auto* quadPanner = dynamic_cast<QuadPanner*>(panner.get()))
+                quadPanner->setPan(x, y);
+        };
+        addAndMakeVisible(panner2DComponent.get());
+    }
+    else if (pannerTypeLower == "cleat")
+    {
+        panner = std::make_unique<CLEATPanner>();
+        panner2DComponent = std::make_unique<Panner2DComponent>();
+        panner2DComponent->setPanPosition(0.5f, 0.5f); // Center
+        panner2DComponent->onPanChange = [this](float x, float y) {
+            if (auto* cleatPanner = dynamic_cast<CLEATPanner*>(panner.get()))
+                cleatPanner->setPan(x, y);
+        };
+        addAndMakeVisible(panner2DComponent.get());
+    }
+    
     // Apply custom look and feel to all child components
     applyLookAndFeel();
     
@@ -535,12 +573,14 @@ void LooperTrack::resized()
     const int knobAreaHeight = 140;
     const int controlsHeight = 160;
     
+    const int pannerHeight = 240; // Make it square-ish (track width is 260)
     const int totalBottomHeight = channelSelectorHeight + spacingSmall +
                                    knobAreaHeight + spacingSmall + 
                                    controlsHeight + spacingSmall +
                                    generateButtonHeight + spacingSmall + 
                                    configureButtonHeight + spacingSmall +
-                                   buttonHeight;
+                                   buttonHeight + spacingSmall +
+                                   pannerHeight;
     
     auto bounds = getLocalBounds().reduced(componentMargin);
     
@@ -598,6 +638,21 @@ void LooperTrack::resized()
     // Transport buttons
     auto buttonArea = bottomArea.removeFromBottom(buttonHeight);
     transportControls.setBounds(buttonArea);
+    bottomArea.removeFromTop(spacingSmall);
+    
+    // Panner UI (below transport controls)
+    if (panner != nullptr)
+    {
+        auto pannerArea = bottomArea.removeFromTop(pannerHeight);
+        if (pannerType.toLowerCase() == "stereo" && stereoPanSlider.isVisible())
+        {
+            stereoPanSlider.setBounds(pannerArea);
+        }
+        else if (panner2DComponent != nullptr && panner2DComponent->isVisible())
+        {
+            panner2DComponent->setBounds(pannerArea);
+        }
+    }
 }
 
 void LooperTrack::recordEnableButtonToggled(bool enabled)

@@ -12,7 +12,7 @@ using namespace Text2Sound;
 #define DBG_SEGFAULT(msg)
 #endif
 
-MainComponent::MainComponent(int numTracks)
+MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     : syncButton("sync all"),
       gradioSettingsButton("gradio settings"),
       midiSettingsButton("midi settings"),
@@ -37,7 +37,7 @@ MainComponent::MainComponent(int numTracks)
     for (int i = 0; i < actualNumTracks; ++i)
     {
         DBG_SEGFAULT("Creating LooperTrack " + juce::String(i));
-        tracks.push_back(std::make_unique<LooperTrack>(looperEngine, i, gradioUrlProvider, &midiLearnManager));
+        tracks.push_back(std::make_unique<LooperTrack>(looperEngine, i, gradioUrlProvider, &midiLearnManager, pannerType));
         DBG_SEGFAULT("Adding LooperTrack " + juce::String(i) + " to view");
         addAndMakeVisible(tracks[i].get());
     }
@@ -57,7 +57,7 @@ MainComponent::MainComponent(int numTracks)
     const int trackSpacing = 5;       // Space between tracks
     const int horizontalMargin = 20;  // Left + right margins
     const int topControlsHeight = 40 + 10 + 40 + 10; // Title + spacing + buttons + spacing
-    const int fixedTrackHeight = 650; // Increased height for better layout
+    const int fixedTrackHeight = 770; // Increased height to accommodate taller panner (was 650, added 120 for panner)
     const int verticalMargin = 20;    // Top + bottom margins
     
     int windowWidth = (fixedTrackWidth * actualNumTracks) + (trackSpacing * (actualNumTracks - 1)) + horizontalMargin;
