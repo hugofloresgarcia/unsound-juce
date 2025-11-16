@@ -1,6 +1,9 @@
 #include "MainComponent.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <functional>
+// Ensure VampNet types are fully defined (they're forward declared in VampNetTrackEngine.h)
+#include "../VampNet/ClickSynth.h"
+#include "../VampNet/Sampler.h"
 
 using namespace WhAM;
 
@@ -18,6 +21,7 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
       midiSettingsButton("midi settings"),
       clickSynthButton("click synth"),
       samplerButton("sampler"),
+      vizButton("viz"),
       titleLabel("Title", "tape looper - wham"),
       audioDeviceDebugLabel("AudioDebug", ""),
       midiLearnOverlay(midiLearnManager)
@@ -86,6 +90,10 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     // Setup sampler button
     samplerButton.onClick = [this] { showSamplerWindow(); };
     addAndMakeVisible(samplerButton);
+    
+    // Setup viz button
+    vizButton.onClick = [this] { showVizWindow(); };
+    addAndMakeVisible(vizButton);
 
     // Setup title label
     titleLabel.setJustificationType(juce::Justification::centred);
@@ -154,6 +162,8 @@ void MainComponent::resized()
     clickSynthButton.setBounds(controlArea.removeFromLeft(120));
     controlArea.removeFromLeft(10);
     samplerButton.setBounds(controlArea.removeFromLeft(120));
+    controlArea.removeFromLeft(10);
+    vizButton.setBounds(controlArea.removeFromLeft(120));
     bounds.removeFromTop(10);
 
     // Tracks arranged horizontally with fixed width
@@ -388,6 +398,18 @@ void MainComponent::showSamplerWindow()
     
     samplerWindow->setVisible(true);
     samplerWindow->toFront(true);
+}
+
+void MainComponent::showVizWindow()
+{
+    if (vizWindow == nullptr)
+    {
+        int numTracks = static_cast<int>(tracks.size());
+        vizWindow = std::make_unique<TokenVisualizerWindow>(looperEngine, numTracks);
+    }
+    
+    vizWindow->setVisible(true);
+    vizWindow->toFront(true);
 }
 
 void MainComponent::showMidiSettings()

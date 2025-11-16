@@ -151,6 +151,7 @@ target_sources(TapeLooper PRIVATE
     Source/Frontends/WhAM/LooperTrack.cpp
     Source/Frontends/WhAM/ClickSynth.cpp
     Source/Frontends/WhAM/Sampler.cpp
+    Source/Frontends/WhAM/TokenVisualizer.cpp
 )
 
 # WhAM frontend headers
@@ -159,6 +160,7 @@ target_sources(TapeLooper PRIVATE
     Source/Frontends/WhAM/LooperTrack.h
     Source/Frontends/WhAM/ClickSynth.h
     Source/Frontends/WhAM/Sampler.h
+    Source/Frontends/WhAM/TokenVisualizer.h
 )
 
 # Application source files

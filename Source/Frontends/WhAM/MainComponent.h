@@ -4,10 +4,13 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_utils/juce_audio_utils.h>
+#include "../VampNet/ClickSynth.h"
+#include "../VampNet/Sampler.h"
 #include "../../Engine/MultiTrackLooperEngine.h"
 #include "LooperTrack.h"
 #include "ClickSynth.h"
 #include "Sampler.h"
+#include "TokenVisualizer.h"
 #include "../../CustomLookAndFeel.h"
 #include "../Shared/MidiLearnManager.h"
 #include "../Shared/MidiLearnComponent.h"
@@ -43,6 +46,7 @@ private:
     juce::TextButton midiSettingsButton;
     juce::TextButton clickSynthButton;
     juce::TextButton samplerButton;
+    juce::TextButton vizButton;
     juce::Label titleLabel;
     juce::Label audioDeviceDebugLabel;
     CustomLookAndFeel customLookAndFeel;
@@ -56,10 +60,14 @@ private:
     
     // Sampler window
     std::unique_ptr<SamplerWindow> samplerWindow;
+    
+    // Token visualizer window
+    std::unique_ptr<TokenVisualizerWindow> vizWindow;
 
     void syncButtonClicked();
     void showClickSynthWindow();
     void showSamplerWindow();
+    void showVizWindow();
     void gradioSettingsButtonClicked();
     void updateAudioDeviceDebugInfo();
     void showGradioSettings();
