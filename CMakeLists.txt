@@ -191,11 +191,20 @@ target_link_libraries(TapeLooper PRIVATE
     juce::juce_gui_extra
 )
 
-# Copy resources (if icon exists)
+# Embed binary resources
+set(BINARY_DATA_SOURCES)
+
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon.png)
+    list(APPEND BINARY_DATA_SOURCES Resources/icon.png)
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Assets/wham.png)
+    list(APPEND BINARY_DATA_SOURCES Assets/wham.png)
+endif()
+
+if(BINARY_DATA_SOURCES)
     juce_add_binary_data(TapeLooperBinaryData
-        SOURCES
-            Resources/icon.png
+        SOURCES ${BINARY_DATA_SOURCES}
     )
     target_link_libraries(TapeLooper PRIVATE TapeLooperBinaryData)
 endif()

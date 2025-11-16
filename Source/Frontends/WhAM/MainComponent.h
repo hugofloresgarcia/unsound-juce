@@ -30,6 +30,7 @@ public:
     void resized() override;
     void timerCallback() override;
     bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
+    bool keyStateChanged(bool isKeyDown, juce::Component* originatingComponent) override;
     
     VampNetMultiTrackLooperEngine& getLooperEngine() { return looperEngine; }
 
@@ -41,12 +42,17 @@ private:
     
     std::vector<std::unique_ptr<WhAM::LooperTrack>> tracks;
     
+    // Track selection and recording state
+    int activeTrackIndex = 0;  // Currently selected track (0-7)
+    bool isRecordingHeld = false;  // True while 'r' key is held
+    
     juce::TextButton syncButton;
     juce::TextButton gradioSettingsButton;
     juce::TextButton midiSettingsButton;
     juce::TextButton clickSynthButton;
     juce::TextButton samplerButton;
     juce::TextButton vizButton;
+    juce::TextButton overflowButton;  // "..." button for overflow menu
     juce::Label titleLabel;
     juce::Label audioDeviceDebugLabel;
     CustomLookAndFeel customLookAndFeel;
@@ -75,6 +81,7 @@ private:
     juce::String getGradioUrl() const;
     void midiSettingsButtonClicked();
     void showMidiSettings();
+    void showOverflowMenu();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

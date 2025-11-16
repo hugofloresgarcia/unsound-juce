@@ -22,6 +22,7 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
       clickSynthButton("click synth"),
       samplerButton("sampler"),
       vizButton("viz"),
+      overflowButton("..."),
       titleLabel("Title", "tape looper - wham"),
       audioDeviceDebugLabel("AudioDebug", ""),
       midiLearnOverlay(midiLearnManager)
@@ -71,6 +72,21 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     
     setSize(windowWidth, windowHeight);
 
+    // Setup title label (add first so it's behind other components)
+    titleLabel.setJustificationType(juce::Justification::centred);
+    titleLabel.setFont(juce::Font(juce::FontOptions()
+                                  .withName(juce::Font::getDefaultMonospacedFontName())
+                                  .withHeight(20.0f)));
+    addAndMakeVisible(titleLabel);
+    
+    // Setup audio device debug label (top right corner)
+    audioDeviceDebugLabel.setJustificationType(juce::Justification::topRight);
+    audioDeviceDebugLabel.setFont(juce::Font(juce::FontOptions()
+                                             .withName(juce::Font::getDefaultMonospacedFontName())
+                                             .withHeight(11.0f)));
+    audioDeviceDebugLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
+    addAndMakeVisible(audioDeviceDebugLabel);
+
     // Setup sync button
     syncButton.onClick = [this] { syncButtonClicked(); };
     addAndMakeVisible(syncButton);
@@ -94,21 +110,10 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     // Setup viz button
     vizButton.onClick = [this] { showVizWindow(); };
     addAndMakeVisible(vizButton);
-
-    // Setup title label
-    titleLabel.setJustificationType(juce::Justification::centred);
-    titleLabel.setFont(juce::Font(juce::FontOptions()
-                                  .withName(juce::Font::getDefaultMonospacedFontName())
-                                  .withHeight(20.0f)));
-    addAndMakeVisible(titleLabel);
     
-    // Setup audio device debug label (top right corner)
-    audioDeviceDebugLabel.setJustificationType(juce::Justification::topRight);
-    audioDeviceDebugLabel.setFont(juce::Font(juce::FontOptions()
-                                             .withName(juce::Font::getDefaultMonospacedFontName())
-                                             .withHeight(11.0f)));
-    audioDeviceDebugLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
-    addAndMakeVisible(audioDeviceDebugLabel);
+    // Setup overflow button
+    overflowButton.onClick = [this] { showOverflowMenu(); };
+    addAndMakeVisible(overflowButton);
     
     // Setup MIDI learn overlay (covers entire window when active)
     addAndMakeVisible(midiLearnOverlay);
@@ -151,19 +156,84 @@ void MainComponent::resized()
     titleLabel.setBounds(bounds.removeFromTop(40));
     bounds.removeFromTop(10);
 
-    // Control buttons
+    // Control buttons with overflow logic
     auto controlArea = bounds.removeFromTop(40);
-    syncButton.setBounds(controlArea.removeFromLeft(120));
-    controlArea.removeFromLeft(10);
-    gradioSettingsButton.setBounds(controlArea.removeFromLeft(180));
-    controlArea.removeFromLeft(10);
-    midiSettingsButton.setBounds(controlArea.removeFromLeft(120));
-    controlArea.removeFromLeft(10);
-    clickSynthButton.setBounds(controlArea.removeFromLeft(120));
-    controlArea.removeFromLeft(10);
-    samplerButton.setBounds(controlArea.removeFromLeft(120));
-    controlArea.removeFromLeft(10);
-    vizButton.setBounds(controlArea.removeFromLeft(120));
+    const int buttonSpacing = 10;
+    const int overflowButtonWidth = 60;
+    
+    // Define buttons in order with their widths
+    struct ButtonInfo {
+        juce::TextButton* button;
+        int width;
+    };
+    
+    std::vector<ButtonInfo> buttons = {
+        {&syncButton, 120},
+        {&gradioSettingsButton, 180},
+        {&midiSettingsButton, 120},
+        {&clickSynthButton, 120},
+        {&samplerButton, 120},
+        {&vizButton, 120}
+    };
+    
+    // Calculate which buttons fit
+    int availableWidth = controlArea.getWidth();
+    int usedWidth = 0;
+    int visibleButtonCount = 0;
+    
+    // First pass: determine how many buttons fit (reserving space for overflow if needed)
+    for (size_t i = 0; i < buttons.size(); ++i)
+    {
+        int buttonWidth = buttons[i].width;
+        int spacing = (visibleButtonCount > 0) ? buttonSpacing : 0;
+        int widthNeeded = usedWidth + spacing + buttonWidth;
+        
+        // Check if we need overflow button for remaining items
+        bool hasMoreButtons = (i < buttons.size() - 1);
+        int overflowSpace = hasMoreButtons ? (buttonSpacing + overflowButtonWidth) : 0;
+        
+        if (widthNeeded + overflowSpace <= availableWidth)
+        {
+            usedWidth = widthNeeded;
+            visibleButtonCount++;
+        }
+        else
+        {
+            break;
+        }
+    }
+    
+    // Layout visible buttons (positioned within controlArea)
+    int xPos = controlArea.getX();
+    int yPos = controlArea.getY();
+    for (int i = 0; i < visibleButtonCount; ++i)
+    {
+        if (i > 0)
+            xPos += buttonSpacing;
+        
+        buttons[i].button->setBounds(xPos, yPos, buttons[i].width, controlArea.getHeight());
+        buttons[i].button->setVisible(true);
+        xPos += buttons[i].width;
+    }
+    
+    // Hide overflow buttons and show overflow menu button if needed
+    bool hasOverflow = visibleButtonCount < static_cast<int>(buttons.size());
+    for (size_t i = visibleButtonCount; i < buttons.size(); ++i)
+    {
+        buttons[i].button->setVisible(false);
+    }
+    
+    if (hasOverflow)
+    {
+        xPos += buttonSpacing;
+        overflowButton.setBounds(xPos, yPos, overflowButtonWidth, controlArea.getHeight());
+        overflowButton.setVisible(true);
+    }
+    else
+    {
+        overflowButton.setVisible(false);
+    }
+    
     bounds.removeFromTop(10);
 
     // Tracks arranged horizontally with fixed width
@@ -289,6 +359,22 @@ void MainComponent::midiSettingsButtonClicked()
 
 bool MainComponent::keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent)
 {
+    // Handle 1-8 keys for track selection
+    int keyCode = key.getKeyCode();
+    if (keyCode >= '1' && keyCode <= '8')
+    {
+        int trackNum = keyCode - '1';  // 0-7
+        if (trackNum < static_cast<int>(tracks.size()))
+        {
+            activeTrackIndex = trackNum;
+            DBG("Selected track " + juce::String(trackNum + 1));
+            // Visual feedback: repaint all tracks to show selection
+            for (auto& track : tracks)
+                track->repaint();
+        }
+        return true;
+    }
+    
     // Handle 'k' key for click synth or sampler
     if (key.getKeyCode() == 'k' || key.getKeyCode() == 'K')
     {
@@ -376,6 +462,81 @@ bool MainComponent::keyPressed(const juce::KeyPress& key, juce::Component* origi
     return false;
 }
 
+bool MainComponent::keyStateChanged(bool isKeyDown, juce::Component* originatingComponent)
+{
+    // Handle 'r' key for hold-to-record
+    if (juce::KeyPress::isKeyCurrentlyDown('r') || juce::KeyPress::isKeyCurrentlyDown('R'))
+    {
+        if (!isRecordingHeld)
+        {
+            // 'r' key just pressed - start recording on active track
+            isRecordingHeld = true;
+            
+            if (activeTrackIndex < static_cast<int>(tracks.size()))
+            {
+                auto& track = looperEngine.getTrack(activeTrackIndex);
+                
+                // Enable recording
+                track.writeHead.setRecordEnable(true);
+                
+                // Start playback if not already playing
+                if (!track.isPlaying.load())
+                {
+                    track.isPlaying = true;
+                }
+                
+                DBG("Started recording on track " + juce::String(activeTrackIndex + 1));
+                tracks[activeTrackIndex]->repaint();
+            }
+        }
+        return true;
+    }
+    else if (isRecordingHeld)
+    {
+        // 'r' key just released - stop recording and trigger generate
+        isRecordingHeld = false;
+        
+        if (activeTrackIndex < static_cast<int>(tracks.size()))
+        {
+            auto& track = looperEngine.getTrack(activeTrackIndex);
+            
+            // Disable recording
+            track.writeHead.setRecordEnable(false);
+            
+            DBG("Stopped recording on track " + juce::String(activeTrackIndex + 1) + ", triggering generation");
+            
+            // Trigger generate button programmatically
+            // We need to call the generate function on the active track
+            juce::MessageManager::callAsync([this]() {
+                if (activeTrackIndex < static_cast<int>(tracks.size()))
+                {
+                    // Access the generate button through the track's public interface
+                    // Since we can't directly access private members, we'll trigger via button click
+                    // Find the generate button component
+                    auto* trackComponent = tracks[activeTrackIndex].get();
+                    for (int i = 0; i < trackComponent->getNumChildComponents(); ++i)
+                    {
+                        auto* child = trackComponent->getChildComponent(i);
+                        if (auto* button = dynamic_cast<juce::TextButton*>(child))
+                        {
+                            if (button->getButtonText().containsIgnoreCase("generate"))
+                            {
+                                button->triggerClick();
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+            
+            tracks[activeTrackIndex]->repaint();
+        }
+        return true;
+    }
+    
+    return false;
+}
+
 void MainComponent::showClickSynthWindow()
 {
     if (clickSynthWindow == nullptr)
@@ -430,5 +591,66 @@ void MainComponent::showMidiSettings()
         "Current mappings: " + juce::String(midiLearnManager.getAllMappings().size()),
         "OK"
     );
+}
+
+void MainComponent::showOverflowMenu()
+{
+    DBG("showOverflowMenu called");
+    juce::PopupMenu menu;
+    
+    // Define all buttons with their actions
+    struct ButtonMenuItem {
+        juce::TextButton* button;
+        juce::String label;
+        int menuId;
+    };
+    
+    std::vector<ButtonMenuItem> allButtons = {
+        {&syncButton, "sync all", 1},
+        {&gradioSettingsButton, "gradio settings", 2},
+        {&midiSettingsButton, "midi settings", 3},
+        {&clickSynthButton, "click synth", 4},
+        {&samplerButton, "sampler", 5},
+        {&vizButton, "viz", 6}
+    };
+    
+    // Add only hidden buttons to menu
+    int hiddenCount = 0;
+    for (const auto& item : allButtons)
+    {
+        if (!item.button->isVisible())
+        {
+            DBG("Adding to menu: " + item.label);
+            menu.addItem(item.menuId, item.label);
+            hiddenCount++;
+        }
+    }
+    
+    DBG("Hidden buttons count: " + juce::String(hiddenCount));
+    
+    if (hiddenCount == 0)
+    {
+        DBG("No hidden buttons to show in menu");
+        return;
+    }
+    
+    // Show menu below the overflow button
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&overflowButton),
+                       [this](int result) {
+                           DBG("Menu result: " + juce::String(result));
+                           if (result == 0)
+                               return; // Menu dismissed
+                           
+                           // Handle menu selection
+                           switch (result)
+                           {
+                               case 1: syncButtonClicked(); break;
+                               case 2: gradioSettingsButtonClicked(); break;
+                               case 3: midiSettingsButtonClicked(); break;
+                               case 4: showClickSynthWindow(); break;
+                               case 5: showSamplerWindow(); break;
+                               case 6: showVizWindow(); break;
+                           }
+                       });
 }
 
