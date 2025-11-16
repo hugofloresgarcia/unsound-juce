@@ -880,14 +880,17 @@ TokenVisualizerWindow::TokenVisualizerWindow(VampNetMultiTrackLooperEngine& engi
     setResizable(true, true);
     setUsingNativeTitleBar(true);
     
-    // Fixed width for demo presentation, height scales with number of tracks
-    const int fixedWidth = 840;  // 800px content + margins
-    const int headerHeight = 40;
-    const int trackHeight = 180;  // Each track gets 180px
-    const int windowHeight = headerHeight + (numTracks * trackHeight) + 40; // + margins
+    // Set to full screen
+    setFullScreen(true);
     
-    centreWithSize(fixedWidth, windowHeight);
-    setResizeLimits(fixedWidth, windowHeight, fixedWidth, windowHeight);  // Fixed size for demo
+    // Allow window to be resizable if user exits fullscreen
+    auto displays = juce::Desktop::getInstance().getDisplays();
+    auto mainDisplay = displays.getPrimaryDisplay();
+    if (mainDisplay != nullptr)
+    {
+        auto screenArea = mainDisplay->userArea;
+        setResizeLimits(800, 600, screenArea.getWidth(), screenArea.getHeight());
+    }
 }
 
 TokenVisualizerWindow::~TokenVisualizerWindow()
