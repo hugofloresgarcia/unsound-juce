@@ -8,6 +8,7 @@
 #include "Frontends/Basic/MainComponent.h"
 #include "Frontends/Text2Sound/MainComponent.h"
 #include "Frontends/VampNet/MainComponent.h"
+#include "Frontends/WhAM/MainComponent.h"
 
 class TapeLooperApplication : public juce::JUCEApplication
 {
@@ -380,6 +381,72 @@ public:
                 
                 DBG("[MainWindow] Starting audio...");
                 vampNetComponent->getLooperEngine().startAudio();
+                
+                // Verify device after startAudio
+                auto* finalDevice = deviceManager.getCurrentAudioDevice();
+                if (finalDevice != nullptr)
+                {
+                    DBG("[MainWindow] Final device after startAudio: " << finalDevice->getName());
+                }
+            }
+            else if (frontendLower == "wham")
+            {
+                DBG("[MainWindow] Creating WhAM frontend...");
+                auto* whamComponent = new WhAM::MainComponent(numTracks, pannerType);
+                mainComponent = whamComponent;
+                
+                DBG("[MainWindow] Setting device setup on WhAM looper engine...");
+                auto& deviceManager = whamComponent->getLooperEngine().getAudioDeviceManager();
+                
+                // CRITICAL: Set device type first, otherwise setAudioDeviceSetup will fail silently
+                juce::String deviceType;
+                const auto& deviceTypes = deviceManager.getAvailableDeviceTypes();
+                for (int i = 0; i < deviceTypes.size(); ++i)
+                {
+                    auto* type = deviceTypes[i];
+                    auto outputDevices = type->getDeviceNames(false);
+                    auto inputDevices = type->getDeviceNames(true);
+                    
+                    bool foundDevice = false;
+                    if (deviceSetup.outputDeviceName.isNotEmpty())
+                        foundDevice = outputDevices.contains(deviceSetup.outputDeviceName);
+                    if (!foundDevice && deviceSetup.inputDeviceName.isNotEmpty())
+                        foundDevice = inputDevices.contains(deviceSetup.inputDeviceName);
+                    
+                    if (foundDevice)
+                    {
+                        deviceType = type->getTypeName();
+                        DBG("[MainWindow] Found device type: " << deviceType);
+                        break;
+                    }
+                }
+                
+                if (deviceType.isNotEmpty())
+                {
+                    deviceManager.setCurrentAudioDeviceType(deviceType, false);
+                }
+                
+                auto error = deviceManager.setAudioDeviceSetup(deviceSetup, true);
+                if (error.isNotEmpty())
+                {
+                    DBG("[MainWindow] ERROR setting device setup: " << error);
+                }
+                else
+                {
+                    DBG("[MainWindow] Device setup applied successfully");
+                    
+                    // Verify device after setup
+                    auto* verifyDevice = deviceManager.getCurrentAudioDevice();
+                    if (verifyDevice != nullptr)
+                    {
+                        DBG("[MainWindow] Device after setup: " << verifyDevice->getName());
+                        DBG("[MainWindow] Active input channels: " << verifyDevice->getActiveInputChannels().countNumberOfSetBits());
+                        DBG("[MainWindow] Active output channels: " << verifyDevice->getActiveOutputChannels().countNumberOfSetBits());
+                    }
+                }
+                
+                DBG("[MainWindow] Starting audio...");
+                whamComponent->getLooperEngine().startAudio();
                 
                 // Verify device after startAudio
                 auto* finalDevice = deviceManager.getCurrentAudioDevice();

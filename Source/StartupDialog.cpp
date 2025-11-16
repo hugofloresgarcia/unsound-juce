@@ -32,6 +32,7 @@ StartupDialog::StartupDialog(juce::AudioDeviceManager& deviceManager)
     frontendCombo.addItem("basic", 1);
     frontendCombo.addItem("text2sound", 2);
     frontendCombo.addItem("vampnet", 3);
+    frontendCombo.addItem("wham", 4);
     frontendCombo.setSelectedId(1); // Default to "basic"
     frontendCombo.onChange = [this]
     {

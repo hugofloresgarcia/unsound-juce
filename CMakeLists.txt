@@ -145,6 +145,22 @@ target_sources(TapeLooper PRIVATE
     Source/Frontends/VampNet/Sampler.h
 )
 
+# WhAM frontend source files
+target_sources(TapeLooper PRIVATE
+    Source/Frontends/WhAM/MainComponent.cpp
+    Source/Frontends/WhAM/LooperTrack.cpp
+    Source/Frontends/WhAM/ClickSynth.cpp
+    Source/Frontends/WhAM/Sampler.cpp
+)
+
+# WhAM frontend headers
+target_sources(TapeLooper PRIVATE
+    Source/Frontends/WhAM/MainComponent.h
+    Source/Frontends/WhAM/LooperTrack.h
+    Source/Frontends/WhAM/ClickSynth.h
+    Source/Frontends/WhAM/Sampler.h
+)
+
 # Application source files
 target_sources(TapeLooper PRIVATE
     Source/Main.cpp
