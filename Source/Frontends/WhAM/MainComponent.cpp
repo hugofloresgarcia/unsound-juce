@@ -561,13 +561,14 @@ bool MainComponent::keyStateChanged(bool isKeyDown, juce::Component* originating
             
             DBG("Stopped recording on track " + juce::String(activeTrackIndex + 1) + ", triggering generation");
             
-            // Trigger generation using the public method
-            juce::MessageManager::callAsync([this]() {
-                if (activeTrackIndex < static_cast<int>(tracks.size()))
-                {
-                    tracks[activeTrackIndex]->triggerGeneration();
-                }
-            });
+            // Trigger generation using the public method  (broken)
+            // juce::MessageManager::callAsync([this]() {
+            //     if (activeTrackIndex < static_cast<int>(tracks.size()))
+            //     {
+            //         tracks[activeTrackIndex]->triggerGeneration();
+            //     }
+            // });
+
             
             tracks[activeTrackIndex]->repaint();
         }
