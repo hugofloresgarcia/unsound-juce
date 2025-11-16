@@ -101,14 +101,28 @@ public:
                 }
                 else
                 {
-                    juce::Logger::writeToLog("Dialog OK not clicked, using default 8 tracks");
-                    DBG("[Main] Dialog OK not clicked");
+                    juce::Logger::writeToLog("Dialog OK not clicked, exiting application");
+                    DBG("[Main] Dialog OK not clicked, exiting");
+                    // Clean up the dialog component manually since we set auto-delete to false
+                    if (dialogPtr != nullptr)
+                    {
+                        delete dialogPtr;
+                    }
+                    quit();
+                    return;
                 }
             }
             else
             {
-                juce::Logger::writeToLog("Dialog cancelled (result=" + juce::String(result) + "), using default 8 tracks");
-                DBG("[Main] Dialog cancelled or dialogPtr is null");
+                juce::Logger::writeToLog("Dialog cancelled (result=" + juce::String(result) + "), exiting application");
+                DBG("[Main] Dialog cancelled or dialogPtr is null, exiting");
+                // Clean up the dialog component manually since we set auto-delete to false
+                if (dialogPtr != nullptr)
+                {
+                    delete dialogPtr;
+                }
+                quit();
+                return;
             }
             
             // Clean up the dialog component manually since we set auto-delete to false

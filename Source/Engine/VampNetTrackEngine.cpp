@@ -393,6 +393,8 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
                 {
                     recordingFinalized = true;
                     juce::Logger::writeToLog("~~~ WRAPPED! Finalized recording");
+                    track.writeHead.setRecordEnable(false);
+                    track.writeHead.finalizeRecording(wrapPos);
                     // Sync output buffer wrapPos to match record buffer
                     track.outputBuffer.recordedLength.store(track.recordBuffer.recordedLength.load());
                 }

@@ -685,6 +685,7 @@ void LooperTrack::resized()
 void LooperTrack::recordEnableButtonToggled(bool enabled)
 {
     auto& track = looperEngine.getTrack(trackIndex);
+    DBG("LooperTrack: recordEnableButtonToggled: enabled=" + juce::String(enabled ? "YES" : "NO"));
     track.writeHead.setRecordEnable(enabled);
     repaint();
 }
@@ -1006,5 +1007,19 @@ void LooperTrack::updateChannelSelectors()
     // Update channel selectors based on current audio device
     inputSelector.updateChannels(looperEngine.getAudioDeviceManager());
     outputSelector.updateChannels(looperEngine.getAudioDeviceManager());
+}
+
+bool LooperTrack::isGenerating() const
+{
+    return vampNetWorkerThread != nullptr && vampNetWorkerThread->isThreadRunning();
+}
+
+void LooperTrack::triggerGeneration()
+{
+    // Only trigger if not already generating and button is enabled
+    if (!isGenerating() && generateButton.isEnabled())
+    {
+        generateButtonClicked();
+    }
 }
 

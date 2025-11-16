@@ -64,7 +64,7 @@ bool LooperReadHead::advance(float wrapPos)
         DBG_SEGFAULT("ENTRY: LooperReadHead::advance, wrapPos=" + juce::String(wrapPos));
     
     // Safety check: if wrapPos is 0 or invalid, don't advance
-    if (wrapPos <= 0.0f)
+    if (wrapPos < 0.0f)
     {
         juce::Logger::writeToLog("WARNING: Wrap position is 0 or invalid in advance");
         if (isFirstCall)

@@ -150,6 +150,10 @@ void MainComponent::paint(juce::Graphics& g)
 
 void MainComponent::resized()
 {
+    static int resizeCallCount = 0;
+    resizeCallCount++;
+    DBG("[resized] CALL #" + juce::String(resizeCallCount));
+    
     auto bounds = getLocalBounds().reduced(10);
 
     // Title at top
@@ -181,18 +185,16 @@ void MainComponent::resized()
     int usedWidth = 0;
     int visibleButtonCount = 0;
     
-    // First pass: determine how many buttons fit (reserving space for overflow if needed)
+    // First pass: determine how many buttons fit WITHOUT overflow button
+    // (we'll add overflow button space only if needed)
     for (size_t i = 0; i < buttons.size(); ++i)
     {
         int buttonWidth = buttons[i].width;
         int spacing = (visibleButtonCount > 0) ? buttonSpacing : 0;
         int widthNeeded = usedWidth + spacing + buttonWidth;
         
-        // Check if we need overflow button for remaining items
-        bool hasMoreButtons = (i < buttons.size() - 1);
-        int overflowSpace = hasMoreButtons ? (buttonSpacing + overflowButtonWidth) : 0;
-        
-        if (widthNeeded + overflowSpace <= availableWidth)
+        // Check if this button fits
+        if (widthNeeded <= availableWidth)
         {
             usedWidth = widthNeeded;
             visibleButtonCount++;
@@ -201,6 +203,48 @@ void MainComponent::resized()
         {
             break;
         }
+    }
+    
+    // If not all buttons fit, we need to reserve space for overflow button
+    // and potentially show fewer visible buttons
+    bool hasOverflow = visibleButtonCount < static_cast<int>(buttons.size());
+    if (hasOverflow)
+    {
+        // Recalculate: reserve space for overflow button and see how many buttons fit
+        int overflowSpace = buttonSpacing + overflowButtonWidth;
+        visibleButtonCount = 0;
+        usedWidth = 0;
+        
+        for (size_t i = 0; i < buttons.size(); ++i)
+        {
+            int buttonWidth = buttons[i].width;
+            int spacing = (visibleButtonCount > 0) ? buttonSpacing : 0;
+            int widthNeeded = usedWidth + spacing + buttonWidth;
+            
+            // Check if button fits with overflow space reserved
+            if (widthNeeded + overflowSpace <= availableWidth)
+            {
+                usedWidth = widthNeeded;
+                visibleButtonCount++;
+            }
+            else
+            {
+                break;
+            }
+        }
+        // Recalculate hasOverflow after reserving space for overflow button
+        hasOverflow = visibleButtonCount < static_cast<int>(buttons.size());
+    }
+    
+    DBG("[resized] availableWidth=" + juce::String(availableWidth) + 
+        ", visibleButtonCount=" + juce::String(visibleButtonCount) + 
+        ", hasOverflow=" + juce::String(hasOverflow ? 1 : 0));
+    
+    // IMPORTANT: First hide ALL buttons, then show only the ones that should be visible
+    // This ensures proper state even if resized() is called multiple times
+    for (size_t i = 0; i < buttons.size(); ++i)
+    {
+        buttons[i].button->setVisible(false);
     }
     
     // Layout visible buttons (positioned within controlArea)
@@ -213,14 +257,15 @@ void MainComponent::resized()
         
         buttons[i].button->setBounds(xPos, yPos, buttons[i].width, controlArea.getHeight());
         buttons[i].button->setVisible(true);
+        DBG("[resized] Showing button " + juce::String(i) + " at x=" + juce::String(xPos));
         xPos += buttons[i].width;
     }
     
-    // Hide overflow buttons and show overflow menu button if needed
-    bool hasOverflow = visibleButtonCount < static_cast<int>(buttons.size());
+    // Hide overflow buttons (already hidden above, but be explicit)
     for (size_t i = visibleButtonCount; i < buttons.size(); ++i)
     {
         buttons[i].button->setVisible(false);
+        DBG("[resized] Hiding button " + juce::String(i));
     }
     
     if (hasOverflow)
@@ -232,6 +277,17 @@ void MainComponent::resized()
     else
     {
         overflowButton.setVisible(false);
+    }
+    
+    // Force a repaint to ensure visibility changes take effect
+    repaint();
+    
+    // Double-check visibility at the end (debug)
+    DBG("[resized] END - Final visibility check:");
+    for (size_t i = 0; i < buttons.size(); ++i)
+    {
+        bool isVisible = buttons[i].button->isVisible();
+        DBG("[resized] Button " + juce::String(i) + " final isVisible=" + juce::String(isVisible ? 1 : 0));
     }
     
     bounds.removeFromTop(10);
@@ -505,27 +561,11 @@ bool MainComponent::keyStateChanged(bool isKeyDown, juce::Component* originating
             
             DBG("Stopped recording on track " + juce::String(activeTrackIndex + 1) + ", triggering generation");
             
-            // Trigger generate button programmatically
-            // We need to call the generate function on the active track
+            // Trigger generation using the public method
             juce::MessageManager::callAsync([this]() {
                 if (activeTrackIndex < static_cast<int>(tracks.size()))
                 {
-                    // Access the generate button through the track's public interface
-                    // Since we can't directly access private members, we'll trigger via button click
-                    // Find the generate button component
-                    auto* trackComponent = tracks[activeTrackIndex].get();
-                    for (int i = 0; i < trackComponent->getNumChildComponents(); ++i)
-                    {
-                        auto* child = trackComponent->getChildComponent(i);
-                        if (auto* button = dynamic_cast<juce::TextButton*>(child))
-                        {
-                            if (button->getButtonText().containsIgnoreCase("generate"))
-                            {
-                                button->triggerClick();
-                                break;
-                            }
-                        }
-                    }
+                    tracks[activeTrackIndex]->triggerGeneration();
                 }
             });
             
@@ -566,7 +606,14 @@ void MainComponent::showVizWindow()
     if (vizWindow == nullptr)
     {
         int numTracks = static_cast<int>(tracks.size());
-        vizWindow = std::make_unique<TokenVisualizerWindow>(looperEngine, numTracks);
+        // Convert unique_ptr vector to pointer vector for TokenVisualizerWindow
+        std::vector<WhAM::LooperTrack*> trackPointers;
+        trackPointers.reserve(tracks.size());
+        for (auto& track : tracks)
+        {
+            trackPointers.push_back(track.get());
+        }
+        vizWindow = std::make_unique<TokenVisualizerWindow>(looperEngine, numTracks, trackPointers);
     }
     
     vizWindow->setVisible(true);
@@ -596,7 +643,12 @@ void MainComponent::showMidiSettings()
 void MainComponent::showOverflowMenu()
 {
     DBG("showOverflowMenu called");
-    juce::PopupMenu menu;
+    
+    // Get the control area bounds to check which buttons should be visible
+    auto bounds = getLocalBounds().reduced(10);
+    bounds.removeFromTop(40 + 10); // Title + spacing
+    auto controlArea = bounds.removeFromTop(40);
+    int controlAreaRight = controlArea.getRight();
     
     // Define all buttons with their actions
     struct ButtonMenuItem {
@@ -614,14 +666,69 @@ void MainComponent::showOverflowMenu()
         {&vizButton, "viz", 6}
     };
     
-    // Add only hidden buttons to menu
+    // Add buttons to menu if they're outside the visible control area
+    // Check bounds instead of isVisible() since visibility might be reset
     int hiddenCount = 0;
-    for (const auto& item : allButtons)
+    juce::PopupMenu menu;
+    DBG("[showOverflowMenu] Checking button bounds vs controlAreaRight=" + juce::String(controlAreaRight));
+    
+    // Calculate which buttons should be visible based on the same logic as resized()
+    const int buttonSpacing = 10;
+    const int overflowButtonWidth = 60;
+    int availableWidth = controlArea.getWidth();
+    
+    // Calculate visible button count (same logic as resized())
+    int visibleButtonCount = 0;
+    int usedWidth = 0;
+    std::vector<int> buttonWidths = {120, 180, 120, 120, 120, 120};
+    
+    // First pass: how many fit without overflow
+    for (size_t i = 0; i < buttonWidths.size(); ++i)
     {
-        if (!item.button->isVisible())
+        int spacing = (visibleButtonCount > 0) ? buttonSpacing : 0;
+        int widthNeeded = usedWidth + spacing + buttonWidths[i];
+        if (widthNeeded <= availableWidth)
         {
-            DBG("Adding to menu: " + item.label);
-            menu.addItem(item.menuId, item.label);
+            usedWidth = widthNeeded;
+            visibleButtonCount++;
+        }
+        else
+        {
+            break;
+        }
+    }
+    
+    // If overflow, recalculate with overflow space
+    if (visibleButtonCount < static_cast<int>(buttonWidths.size()))
+    {
+        int overflowSpace = buttonSpacing + overflowButtonWidth;
+        visibleButtonCount = 0;
+        usedWidth = 0;
+        for (size_t i = 0; i < buttonWidths.size(); ++i)
+        {
+            int spacing = (visibleButtonCount > 0) ? buttonSpacing : 0;
+            int widthNeeded = usedWidth + spacing + buttonWidths[i];
+            if (widthNeeded + overflowSpace <= availableWidth)
+            {
+                usedWidth = widthNeeded;
+                visibleButtonCount++;
+            }
+            else
+            {
+                break;
+            }
+        }
+    }
+    
+    DBG("[showOverflowMenu] Calculated visibleButtonCount=" + juce::String(visibleButtonCount));
+    
+    // Add buttons that are beyond the visible count
+    for (size_t i = 0; i < allButtons.size(); ++i)
+    {
+        if (i >= static_cast<size_t>(visibleButtonCount))
+        {
+            DBG("Adding to menu (hidden): " + allButtons[i].label);
+            menu.addItem(allButtons[i].menuId, allButtons[i].label);
             hiddenCount++;
         }
     }
@@ -630,7 +737,10 @@ void MainComponent::showOverflowMenu()
     
     if (hiddenCount == 0)
     {
-        DBG("No hidden buttons to show in menu");
+        DBG("No hidden buttons to show in menu - hiding overflow button");
+        // If overflow button was clicked but there are no hidden buttons,
+        // hide the overflow button (this shouldn't happen, but handle it gracefully)
+        overflowButton.setVisible(false);
         return;
     }
     

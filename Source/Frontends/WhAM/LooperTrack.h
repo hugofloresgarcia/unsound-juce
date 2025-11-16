@@ -87,6 +87,12 @@ public:
     
     // Public static method to get default parameters
     static juce::var getDefaultVampNetParams();
+    
+    // Check if generation is currently in progress
+    bool isGenerating() const;
+    
+    // Trigger generation programmatically (e.g., from keyboard shortcut)
+    void triggerGeneration();
 
 private:
     VampNetMultiTrackLooperEngine& looperEngine;

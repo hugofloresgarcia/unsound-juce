@@ -300,8 +300,7 @@ bool LooperTrackEngine::processBlock(const float* const* inputChannelData,
                 DBG_SEGFAULT("readHead.advance completed, wrapped=" + juce::String(wrapped ? "YES" : "NO"));
             if (wrapped && !hasExistingAudio)
             {
-                track.writeHead.finalizeRecording(track.writeHead.getPos());
-                recordingFinalized = true;
+                track.writeHead.setRecordEnable(false); // Stop recording
                 juce::Logger::writeToLog("~~~ WRAPPED! Finalized recording");
             }
         }
@@ -316,7 +315,8 @@ bool LooperTrackEngine::processBlock(const float* const* inputChannelData,
         if (track.writeHead.getRecordEnable() && playbackJustStopped)
         {
             // finalize recording if we were recording and playback just stopped
-            track.writeHead.finalizeRecording(track.writeHead.getPos());
+            track.writeHead.setRecordEnable(false); // Stop recording and update UI
+            track.writeHead.setWrapPos(track.writeHead.getPos());
             recordingFinalized = true;
             // Record enable is on but playback just stopped - prepare for new recording
             juce::Logger::writeToLog("WARNING: ActuallyRecording but not playing.");
@@ -388,9 +388,8 @@ bool LooperTrackEngine::finalizeRecordingIfNeeded(TrackState& track, bool wasRec
     if (wasRecording && !track.writeHead.getRecordEnable() && isPlaying && !hasExistingAudio)
     {
         track.writeHead.finalizeRecording(track.writeHead.getPos());
-        track.readHead.reset(); // Reset playhead to start of loop
         recordingFinalized = true;
-        juce::Logger::writeToLog("~~~ Finalized initial recording");
+        juce::Logger::writeToLog("~~~ Finalized initial recording (it was needed)");
         return true;
     }
     return false;

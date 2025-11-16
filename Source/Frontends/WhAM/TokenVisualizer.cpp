@@ -1,4 +1,5 @@
 #include "TokenVisualizer.h"
+#include "LooperTrack.h"
 #include <juce_dsp/juce_dsp.h>
 #include <cmath>
 #include <random>
@@ -18,7 +19,7 @@ namespace
 {
     constexpr int NUM_TOKEN_ROWS = 13;
     constexpr int SAMPLES_PER_BLOCK = 512;
-    constexpr int NUM_VISIBLE_COLUMNS = 30; // Reduced from 100 for better performance
+    constexpr int NUM_VISIBLE_COLUMNS = 100; // Display 100 tokens in time axis
 
     // Per-coefficient statistics for normalization
     struct MFCCStats
@@ -370,10 +371,11 @@ class TokenVisualizerWindow::TokenVisualizerComponent : public juce::Component,
                                                         public juce::Timer
 {
 public:
-    TokenVisualizerComponent(VampNetMultiTrackLooperEngine& engine, int numTracks)
+    TokenVisualizerComponent(VampNetMultiTrackLooperEngine& engine, int numTracks, const std::vector<LooperTrack*>& tracks)
         : looperEngine(engine),
           numTracks(numTracks),
-          animationFrame(0)
+          animationFrame(0),
+          looperTracks(tracks)  // Copy the vector (pointers remain valid)
     {
         // Initialize grid data for each track (input and output)
         for (int i = 0; i < numTracks; ++i)
@@ -382,6 +384,8 @@ public:
             outputGrids.push_back(TokenGridData(i));
             lastInputReadPos.push_back(0.0f);
             lastOutputReadPos.push_back(0.0f);
+            lastInputRecordedLength.push_back(0);
+            lastOutputRecordedLength.push_back(0);
         }
         
         // Load logo from embedded BinaryData (if available)
@@ -459,6 +463,13 @@ private:
     // Track last processed positions for each track (to avoid duplicate blocks)
     std::vector<float> lastInputReadPos;
     std::vector<float> lastOutputReadPos;
+    
+    // Track previous recorded lengths to detect when buffers are cleared
+    std::vector<size_t> lastInputRecordedLength;
+    std::vector<size_t> lastOutputRecordedLength;
+    
+    // Copy of LooperTrack pointers for checking generation state (must be copy, not reference, to avoid dangling reference)
+    std::vector<LooperTrack*> looperTracks;
     
     // Logo image (load from file when available)
     juce::Image logoImage;
@@ -571,43 +582,53 @@ private:
         }
         
         auto& buffer = tapeLoop.getBuffer();
-        auto& gridData = isInput ? inputGrids[trackIdx] : outputGrids[trackIdx];
         
-        // Calculate time window to match tokens exactly
-        // Each token block represents SAMPLES_PER_BLOCK samples
-        size_t numBlocks = gridData.blocks.size();
+        // Calculate time window to match NUM_VISIBLE_COLUMNS token blocks
+        // Each token block represents SAMPLES_PER_BLOCK (512) consecutive samples
+        // The waveform should show samples corresponding to NUM_VISIBLE_COLUMNS token blocks
+        size_t samplesToShow = NUM_VISIBLE_COLUMNS * SAMPLES_PER_BLOCK;
         
-        if (numBlocks == 0)
+        if (totalRecorded == 0)
         {
             g.setColour(juce::Colour(0xff333333));
             g.drawRect(bounds);
             return;
         }
         
-        // The waveform should show exactly the samples corresponding to the token blocks we have
-        // Each token block represents SAMPLES_PER_BLOCK (512) consecutive samples
-        // We need to show all samples for all visible token blocks
-        size_t samplesToShow = numBlocks * SAMPLES_PER_BLOCK;
+        // Get the read head position - this is where tokens are being extracted from
+        auto& readHead = isInput ? track.recordReadHead : track.outputReadHead;
+        float currentReadPos = readHead.getPos();
         
-        // Match the token extraction: show the most recent samplesToShow samples from the buffer
-        // up to the total amount recorded
-        size_t displayEndSample;
+        // Show the waveform window ending at the current read head position
+        // This matches exactly where the tokens are being extracted from
+        size_t displayEndSample = static_cast<size_t>(currentReadPos);
         size_t displayStartSample;
         
-        if (totalRecorded >= samplesToShow)
+        if (displayEndSample >= samplesToShow)
         {
             // We have enough data to show a full window
-            displayEndSample = totalRecorded;
-            displayStartSample = totalRecorded - samplesToShow;
+            displayStartSample = displayEndSample - samplesToShow;
         }
         else
         {
-            // Show all available data
+            // Show from beginning up to current position
             displayStartSample = 0;
-            displayEndSample = totalRecorded;
         }
         
         size_t displayLength = displayEndSample - displayStartSample;
+        
+        // Debug output (only occasionally to avoid spam)
+        static int debugCounter = 0;
+        if (debugCounter++ % 100 == 0)
+        {
+            DBG("Track " + juce::String(trackIdx) + " " + juce::String(isInput ? "INPUT" : "OUTPUT") +
+                " - samplesToShow: " + juce::String(samplesToShow) +
+                ", totalRecorded: " + juce::String(totalRecorded) +
+                ", displayLength: " + juce::String(displayLength) +
+                ", bufferSize: " + juce::String(buffer.size()) +
+                ", displayStart: " + juce::String(displayStartSample) +
+                ", displayEnd: " + juce::String(displayEndSample));
+        }
         
         if (displayLength == 0)
         {
@@ -674,7 +695,7 @@ private:
         g.fillPath(waveformPath);
         
         // Draw playhead at the right edge (since we're showing up to last processed position)
-        if (track.isPlaying.load() && displayLength > 0 && numBlocks > 0)
+        if (track.isPlaying.load() && displayLength > 0)
         {
             // Playhead is always at the right edge in streaming mode
             float playheadX = bounds.getRight();
@@ -719,14 +740,20 @@ private:
     // Draw animated arrow
     void drawArrow(juce::Graphics& g, juce::Rectangle<int> bounds, int trackIdx)
     {
-        // Check if there's audio in both input and output (implying generation happened or is happening)
+        // Check if generation is in progress using LooperTrack's isGenerating() method
+        bool isGenerating = false;
+        if (trackIdx >= 0 && trackIdx < static_cast<int>(looperTracks.size()) && looperTracks[trackIdx] != nullptr)
+        {
+            isGenerating = looperTracks[trackIdx]->isGenerating();
+        }
+        
+        // Also check if we have input but haven't generated output yet (for initial state)
         auto& track = looperEngine.getTrack(trackIdx);
         bool hasInput = track.recordBuffer.recordedLength.load() > 0;
         bool hasOutput = track.outputBuffer.recordedLength.load() > 0;
         
-        // Show arrow if we have input but haven't generated output yet
-        // or if there's a significant difference between input and output (implies generating)
-        bool shouldShowArrow = hasInput && !hasOutput;
+        // Show arrow if generation is in progress OR if we have input but no output yet
+        bool shouldShowArrow = isGenerating || (hasInput && !hasOutput);
         
         if (!shouldShowArrow)
             return;
@@ -764,10 +791,23 @@ private:
                 const juce::ScopedLock sl(track.recordBuffer.lock);
                 const auto& buffer = track.recordBuffer.getBuffer();
                 
-                if (!buffer.empty() && track.recordBuffer.recordedLength.load() > 0)
+                size_t currentRecordedLength = track.recordBuffer.recordedLength.load();
+                size_t& lastRecordedLength = lastInputRecordedLength[trackIdx];
+                
+                // Detect if buffer was cleared (recordedLength went from non-zero to zero)
+                if (lastRecordedLength > 0 && currentRecordedLength == 0)
+                {
+                    // Buffer was cleared - reset token data for this track
+                    inputGrids[trackIdx].blocks.clear();
+                    lastInputReadPos[trackIdx] = 0.0f;
+                    DBG("Track " + juce::String(trackIdx) + " INPUT buffer cleared - resetting token data");
+                }
+                lastRecordedLength = currentRecordedLength;
+                
+                if (!buffer.empty() && currentRecordedLength > 0)
                 {
                     float readHeadPos = track.recordReadHead.getPos();
-                    size_t recordedLength = track.recordBuffer.recordedLength.load();
+                    size_t recordedLength = currentRecordedLength;
                     float& lastPos = lastInputReadPos[trackIdx];
                     
                     // Only process if read head has advanced by at least one block
@@ -805,6 +845,16 @@ private:
                             );
                             inputGrids[trackIdx].addBlock(block);
                             lastPos = readHeadPos;
+                            
+                            // Debug: Log when we add a token block
+                            static int inputBlockCounter = 0;
+                            if (inputBlockCounter++ % 10 == 0)
+                            {
+                                // DBG("Added INPUT token block - Track: " + juce::String(trackIdx) +
+                                //     ", readHeadPos: " + juce::String(readHeadPos) +
+                                //     ", recordedLength: " + juce::String(recordedLength) +
+                                //     ", numBlocks: " + juce::String(inputGrids[trackIdx].blocks.size()));
+                            }
                         }
                     }
                 }
@@ -815,10 +865,23 @@ private:
                 const juce::ScopedLock sl(track.outputBuffer.lock);
                 const auto& buffer = track.outputBuffer.getBuffer();
                 
-                if (!buffer.empty() && track.outputBuffer.recordedLength.load() > 0)
+                size_t currentRecordedLength = track.outputBuffer.recordedLength.load();
+                size_t& lastRecordedLength = lastOutputRecordedLength[trackIdx];
+                
+                // Detect if buffer was cleared (recordedLength went from non-zero to zero)
+                if (lastRecordedLength > 0 && currentRecordedLength == 0)
+                {
+                    // Buffer was cleared - reset token data for this track
+                    outputGrids[trackIdx].blocks.clear();
+                    lastOutputReadPos[trackIdx] = 0.0f;
+                    DBG("Track " + juce::String(trackIdx) + " OUTPUT buffer cleared - resetting token data");
+                }
+                lastRecordedLength = currentRecordedLength;
+                
+                if (!buffer.empty() && currentRecordedLength > 0)
                 {
                     float readHeadPos = track.outputReadHead.getPos();
-                    size_t recordedLength = track.outputBuffer.recordedLength.load();
+                    size_t recordedLength = currentRecordedLength;
                     float& lastPos = lastOutputReadPos[trackIdx];
                     
                     // Only process if read head has advanced by at least one block
@@ -856,6 +919,16 @@ private:
                             );
                             outputGrids[trackIdx].addBlock(block);
                             lastPos = readHeadPos;
+                            
+                            // Debug: Log when we add a token block
+                            static int outputBlockCounter = 0;
+                            if (outputBlockCounter++ % 10 == 0)
+                            {
+                                // DBG("Added OUTPUT token block - Track: " + juce::String(trackIdx) +
+                                //     ", readHeadPos: " + juce::String(readHeadPos) +
+                                //     ", recordedLength: " + juce::String(recordedLength) +
+                                //     ", numBlocks: " + juce::String(outputGrids[trackIdx].blocks.size()));
+                            }
                         }
                     }
                 }
@@ -870,26 +943,34 @@ private:
 // TokenVisualizerWindow implementation
 // ============================================================================
 
-TokenVisualizerWindow::TokenVisualizerWindow(VampNetMultiTrackLooperEngine& engine, int numTracks)
+TokenVisualizerWindow::TokenVisualizerWindow(VampNetMultiTrackLooperEngine& engine, int numTracks, const std::vector<LooperTrack*>& tracks)
     : juce::DialogWindow("WhAM - Token Visualizer",
                         juce::Colours::darkgrey,
                         true),
-      contentComponent(new TokenVisualizerComponent(engine, numTracks))
+      contentComponent(new TokenVisualizerComponent(engine, numTracks, tracks))
 {
     setContentOwned(contentComponent, true);
     setResizable(true, true);
     setUsingNativeTitleBar(true);
     
-    // Set to full screen
-    setFullScreen(true);
-    
-    // Allow window to be resizable if user exits fullscreen
+    // Make window large (most of the screen but not fullscreen)
     auto displays = juce::Desktop::getInstance().getDisplays();
     auto mainDisplay = displays.getPrimaryDisplay();
     if (mainDisplay != nullptr)
     {
         auto screenArea = mainDisplay->userArea;
+        // Use 90% of screen size to leave room for dock/menubar
+        int windowWidth = static_cast<int>(screenArea.getWidth() * 0.9f);
+        int windowHeight = static_cast<int>(screenArea.getHeight() * 0.9f);
+        
+        centreWithSize(windowWidth, windowHeight);
         setResizeLimits(800, 600, screenArea.getWidth(), screenArea.getHeight());
+    }
+    else
+    {
+        // Fallback to large default size
+        centreWithSize(1600, 1000);
+        setResizeLimits(800, 600, 3840, 2160);
     }
 }
 

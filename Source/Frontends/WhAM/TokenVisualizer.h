@@ -13,12 +13,13 @@ namespace WhAM
 // Forward declarations
 struct TokenBlock;
 struct TokenGridData;
+class LooperTrack;
 
 // TokenVisualizerWindow - UI window for visualizing tokens
 class TokenVisualizerWindow : public juce::DialogWindow
 {
 public:
-    TokenVisualizerWindow(VampNetMultiTrackLooperEngine& engine, int numTracks);
+    TokenVisualizerWindow(VampNetMultiTrackLooperEngine& engine, int numTracks, const std::vector<LooperTrack*>& tracks);
     ~TokenVisualizerWindow() override;
     
     void closeButtonPressed() override;
