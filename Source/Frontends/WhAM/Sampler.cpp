@@ -1,3 +1,4 @@
+#include "../VampNet/Sampler.h"
 #include "Sampler.h"
 #include <cmath>
 

@@ -1,4 +1,5 @@
 #include "ClickSynth.h"
+#include "../VampNet/ClickSynth.h"
 #include <cmath>
 
 using namespace WhAM;
