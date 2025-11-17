@@ -10,21 +10,21 @@ public:
     virtual ~Panner() = default;
 
     // Process a block of audio samples
-    // inputChannelData: array of input channel buffers
-    // numInputChannels: number of input channels
-    // outputChannelData: array of output channel buffers
-    // numOutputChannels: number of output channels
-    // numSamples: number of samples in the block
-    virtual void processBlock(const float* const* inputChannelData,
-                             int numInputChannels,
-                             float* const* outputChannelData,
-                             int numOutputChannels,
-                             int numSamples) = 0;
+    // input_channel_data: array of input channel buffers
+    // num_input_channels: number of input channels
+    // output_channel_data: array of output channel buffers
+    // num_output_channels: number of output channels
+    // num_samples: number of samples in the block
+    virtual void process_block(const float* const* input_channel_data,
+                             int num_input_channels,
+                             float* const* output_channel_data,
+                             int num_output_channels,
+                             int num_samples) = 0;
 
     // Get the number of input channels this panner expects
-    virtual int getNumInputChannels() const = 0;
+    virtual int get_num_input_channels() const = 0;
 
     // Get the number of output channels this panner produces
-    virtual int getNumOutputChannels() const = 0;
+    virtual int get_num_output_channels() const = 0;
 };
 

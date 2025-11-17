@@ -29,10 +29,10 @@ public:
         // This prevents conflicts when applying device settings from the startup dialog
         // Initialize buffers with default sample rate (will be updated when device starts)
         DBG_SEGFAULT("Initializing track engines");
-        for (size_t i = 0; i < trackEngines.size(); ++i)
+        for (size_t i = 0; i < m_track_engines.size(); ++i)
         {
             DBG_SEGFAULT("Initializing track engine " + juce::String(i));
-            trackEngines[i].initialize(44100.0, maxBufferDurationSeconds);
+            m_track_engines[i].initialize(44100.0, m_max_buffer_duration_seconds);
             DBG_SEGFAULT("Track engine " + juce::String(i) + " initialized");
         }
         DBG_SEGFAULT("EXIT: MultiTrackLooperEngineTemplate::MultiTrackLooperEngineTemplate");
@@ -40,8 +40,8 @@ public:
 
     ~MultiTrackLooperEngineTemplate()
     {
-        audioDeviceManager.removeAudioCallback(this);
-        audioDeviceManager.closeAudioDevice();
+        m_audio_device_manager.removeAudioCallback(this);
+        m_audio_device_manager.closeAudioDevice();
     }
 
     void audioDeviceAboutToStart(juce::AudioIODevice* device) override
@@ -51,21 +51,21 @@ public:
         if (device != nullptr)
         {
             DBG_SEGFAULT("Getting sample rate");
-            double sampleRate = device->getCurrentSampleRate();
-            DBG_SEGFAULT("Sample rate=" + juce::String(sampleRate));
-            currentSampleRate.store(sampleRate);
+            double sample_rate = device->getCurrentSampleRate();
+            DBG_SEGFAULT("Sample rate=" + juce::String(sample_rate));
+            m_current_sample_rate.store(sample_rate);
 
-            DBG("Device starting - SampleRate: " << sampleRate
+            DBG("Device starting - SampleRate: " << sample_rate
                 << " BufferSize: " << device->getCurrentBufferSizeSamples()
                 << " InputChannels: " << device->getActiveInputChannels().countNumberOfSetBits()
                 << " OutputChannels: " << device->getActiveOutputChannels().countNumberOfSetBits());
 
             // Reallocate buffers with correct sample rate
             DBG_SEGFAULT("Calling audioDeviceAboutToStart on track engines");
-            for (size_t i = 0; i < trackEngines.size(); ++i)
+            for (size_t i = 0; i < m_track_engines.size(); ++i)
             {
                 DBG_SEGFAULT("Calling audioDeviceAboutToStart on track " + juce::String(i));
-                trackEngines[i].audioDeviceAboutToStart(sampleRate);
+                m_track_engines[i].audio_device_about_to_start(sample_rate);
                 DBG_SEGFAULT("audioDeviceAboutToStart completed for track " + juce::String(i));
             }
             DBG_SEGFAULT("All track engines notified");
@@ -80,135 +80,135 @@ public:
     void audioDeviceStopped() override
     {
         // Stop all tracks
-        for (auto& trackEngine : trackEngines)
+        for (auto& track_engine : m_track_engines)
         {
-            trackEngine.audioDeviceStopped();
+            track_engine.audio_device_stopped();
         }
     }
 
-    void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
-                                         int numInputChannels,
-                                         float* const* outputChannelData,
-                                         int numOutputChannels,
-                                         int numSamples,
+    void audioDeviceIOCallbackWithContext(const float* const* input_channel_data,
+                                         int num_input_channels,
+                                         float* const* output_channel_data,
+                                         int num_output_channels,
+                                         int num_samples,
                                          const juce::AudioIODeviceCallbackContext& context) override
     {
-        static bool firstCallback = true;
-        static int callbackCount = 0;
-        callbackCount++;
+        static bool first_callback = true;
+        static int callback_count = 0;
+        callback_count++;
 
-        if (firstCallback)
+        if (first_callback)
         {
             DBG_SEGFAULT("ENTRY: audioDeviceIOCallbackWithContext (FIRST CALLBACK)");
-            juce::Logger::writeToLog("*** First audio callback! InputChannels: " + juce::String(numInputChannels)
-                + " OutputChannels: " + juce::String(numOutputChannels)
-                + " NumSamples: " + juce::String(numSamples));
-            firstCallback = false;
+            juce::Logger::writeToLog("*** First audio callback! InputChannels: " + juce::String(num_input_channels)
+                + " OutputChannels: " + juce::String(num_output_channels)
+                + " NumSamples: " + juce::String(num_samples));
+            first_callback = false;
         }
 
         // Log every 10000 callbacks to verify it's running
-        if (callbackCount % 10000 == 0)
+        if (callback_count % 10000 == 0)
         {
-            juce::Logger::writeToLog("Audio callback running - count: " + juce::String(callbackCount));
+            juce::Logger::writeToLog("Audio callback running - count: " + juce::String(callback_count));
         }
 
         // Clear output buffers
-        DBG_SEGFAULT("Clearing output buffers, numOutputChannels=" + juce::String(numOutputChannels));
-        for (int channel = 0; channel < numOutputChannels; ++channel)
+        DBG_SEGFAULT("Clearing output buffers, num_output_channels=" + juce::String(num_output_channels));
+        for (int channel = 0; channel < num_output_channels; ++channel)
         {
-            if (outputChannelData[channel] != nullptr)
+            if (output_channel_data[channel] != nullptr)
             {
-                juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
+                juce::FloatVectorOperations::clear(output_channel_data[channel], num_samples);
             }
         }
         DBG_SEGFAULT("Output buffers cleared");
 
         // Process each track
-        static int debugCounter = 0;
-        debugCounter++;
-        bool shouldDebug = debugCounter % 2000 == 0;
-        if (shouldDebug)
+        static int debug_counter = 0;
+        debug_counter++;
+        bool should_debug = debug_counter % 2000 == 0;
+        if (should_debug)
         {
             juce::Logger::writeToLog("\n--------------------------------");
         }
 
-        DBG_SEGFAULT("Processing tracks, numTracks=" + juce::String(numTracks));
-        if (shouldDebug)
+        DBG_SEGFAULT("Processing tracks, m_num_tracks=" + juce::String(m_num_tracks));
+        if (should_debug)
         {
-            auto* device = audioDeviceManager.getCurrentAudioDevice();
-            DBG("[MultiTrackLooperEngineTemplate] Processing " << numTracks << " tracks");
-            DBG("  numInputChannels: " << numInputChannels);
-            DBG("  numOutputChannels: " << numOutputChannels);
-            DBG("  numSamples: " << numSamples);
+            auto* device = m_audio_device_manager.getCurrentAudioDevice();
+            DBG("[MultiTrackLooperEngineTemplate] Processing " << m_num_tracks << " tracks");
+            DBG("  num_input_channels: " << num_input_channels);
+            DBG("  num_output_channels: " << num_output_channels);
+            DBG("  num_samples: " << num_samples);
             if (device != nullptr)
             {
-                auto activeOutputChannels = device->getActiveOutputChannels();
-                DBG("  Active output channels: " << activeOutputChannels.toString(2));
-                DBG("  Number of active output channels: " << activeOutputChannels.countNumberOfSetBits());
+                auto active_output_channels = device->getActiveOutputChannels();
+                DBG("  Active output channels: " << active_output_channels.toString(2));
+                DBG("  Number of active output channels: " << active_output_channels.countNumberOfSetBits());
             }
         }
-        for (int i = 0; i < numTracks; ++i)
+        for (int i = 0; i < m_num_tracks; ++i)
         {
             DBG_SEGFAULT("Processing track " + juce::String(i));
-            bool debugThisTrack = shouldDebug && i == 0;
-            trackEngines[i].processBlock(inputChannelData, numInputChannels,
-                                        outputChannelData, numOutputChannels,
-                                        numSamples, debugThisTrack);
+            bool debug_this_track = should_debug && i == 0;
+            m_track_engines[i].process_block(input_channel_data, num_input_channels,
+                                        output_channel_data, num_output_channels,
+                                        num_samples, debug_this_track);
             DBG_SEGFAULT("Track " + juce::String(i) + " processed");
         }
         
-        DBG_SEGFAULT("EXIT: audioDeviceIOCallbackWithContext");
+                DBG_SEGFAULT("EXIT: audioDeviceIOCallbackWithContext");
     }
 
-    auto& getTrack(int trackIndex)
+    auto& get_track(int track_index)
     {
-        jassert(trackIndex >= 0 && trackIndex < trackEngines.size());
-        return trackEngines[trackIndex].getTrackState();
+        jassert(track_index >= 0 && track_index < m_track_engines.size());
+        return m_track_engines[track_index].get_track_state();
     }
 
-    TrackEngineType& getTrackEngine(int trackIndex)
+    TrackEngineType& get_track_engine(int track_index)
     {
-        jassert(trackIndex >= 0 && trackIndex < trackEngines.size());
-        return trackEngines[trackIndex];
+        jassert(track_index >= 0 && track_index < m_track_engines.size());
+        return m_track_engines[track_index];
     }
 
-    int getNumTracks() const { return numTracks; }
+    int get_num_tracks() const { return m_num_tracks; }
 
-    void setNumTracks(int num)
+    void set_num_tracks(int num)
     {
         // For now, we keep it at 8 tracks as specified
         // This can be expanded later
         jassert(num > 0 && num <= 16); // Reasonable limit
     }
 
-    void syncAllTracks()
+    void sync_all_tracks()
     {
         // Reset all read head playheads to 0
-        for (auto& trackEngine : trackEngines)
+        for (auto& track_engine : m_track_engines)
         {
-            trackEngine.reset();
+            track_engine.reset();
         }
     }
 
-    juce::AudioDeviceManager& getAudioDeviceManager() { return audioDeviceManager; }
+    juce::AudioDeviceManager& get_audio_device_manager() { return m_audio_device_manager; }
     
-    void startAudio()
+    void start_audio()
     {
-        DBG("[MultiTrackLooperEngineTemplate] ENTRY: startAudio");
-        DBG_SEGFAULT("ENTRY: startAudio");
+        DBG("[MultiTrackLooperEngineTemplate] ENTRY: start_audio");
+        DBG_SEGFAULT("ENTRY: start_audio");
         
         // Check current device setup before proceeding
-        juce::AudioDeviceManager::AudioDeviceSetup currentSetup;
-        audioDeviceManager.getAudioDeviceSetup(currentSetup);
-        DBG("[MultiTrackLooperEngineTemplate] Current device setup before startAudio:");
-        DBG("  outputDeviceName: " << currentSetup.outputDeviceName);
-        DBG("  inputDeviceName: " << currentSetup.inputDeviceName);
-        DBG("  useDefaultInputChannels: " << (currentSetup.useDefaultInputChannels ? "true" : "false"));
-        DBG("  useDefaultOutputChannels: " << (currentSetup.useDefaultOutputChannels ? "true" : "false"));
+        juce::AudioDeviceManager::AudioDeviceSetup current_setup;
+        m_audio_device_manager.getAudioDeviceSetup(current_setup);
+        DBG("[MultiTrackLooperEngineTemplate] Current device setup before start_audio:");
+        DBG("  outputDeviceName: " << current_setup.outputDeviceName);
+        DBG("  inputDeviceName: " << current_setup.inputDeviceName);
+        DBG("  useDefaultInputChannels: " << (current_setup.useDefaultInputChannels ? "true" : "false"));
+        DBG("  useDefaultOutputChannels: " << (current_setup.useDefaultOutputChannels ? "true" : "false"));
         
         // Initialize audio device if not already initialized
         DBG_SEGFAULT("Getting current audio device");
-        auto* device = audioDeviceManager.getCurrentAudioDevice();
+        auto* device = m_audio_device_manager.getCurrentAudioDevice();
         DBG("[MultiTrackLooperEngineTemplate] Current device: " << (device != nullptr ? device->getName() : "null"));
         DBG_SEGFAULT("Current device=" + juce::String(device != nullptr ? "non-null" : "null"));
         
@@ -218,16 +218,16 @@ public:
             DBG("[MultiTrackLooperEngineTemplate] Checking if device setup has a device name...");
             
             // Check if we have a device name in the setup - if so, try to open it
-            if (currentSetup.outputDeviceName.isNotEmpty() || currentSetup.inputDeviceName.isNotEmpty())
+            if (current_setup.outputDeviceName.isNotEmpty() || current_setup.inputDeviceName.isNotEmpty())
             {
                 DBG("[MultiTrackLooperEngineTemplate] Device setup has device names, attempting to open device...");
-                juce::String error = audioDeviceManager.setAudioDeviceSetup(currentSetup, true);
+                juce::String error = m_audio_device_manager.setAudioDeviceSetup(current_setup, true);
                 if (error.isNotEmpty())
                 {
                     DBG("[MultiTrackLooperEngineTemplate] ERROR opening configured device: " << error);
                     DBG("[MultiTrackLooperEngineTemplate] Falling back to default devices...");
                     // Fall back to defaults only if the configured device fails
-                    error = audioDeviceManager.initialiseWithDefaultDevices(2, 2);
+                    error = m_audio_device_manager.initialiseWithDefaultDevices(2, 2);
                     if (error.isNotEmpty())
                     {
                         DBG("[MultiTrackLooperEngineTemplate] ERROR initializing with defaults: " << error);
@@ -245,7 +245,7 @@ public:
                 DBG("[MultiTrackLooperEngineTemplate] No device name in setup, initializing with defaults");
                 DBG_SEGFAULT("Device is null, initializing with defaults");
                 // Device wasn't initialized yet, initialize with default settings
-                juce::String error = audioDeviceManager.initialiseWithDefaultDevices(2, 2);
+                juce::String error = m_audio_device_manager.initialiseWithDefaultDevices(2, 2);
                 if (error.isNotEmpty())
                 {
                     DBG("[MultiTrackLooperEngineTemplate] Audio device initialization error: " << error);
@@ -255,7 +255,7 @@ public:
             }
             
             DBG_SEGFAULT("Getting device after initialization");
-            device = audioDeviceManager.getCurrentAudioDevice();
+            device = m_audio_device_manager.getCurrentAudioDevice();
             DBG("[MultiTrackLooperEngineTemplate] Device after init: " << (device != nullptr ? device->getName() : "null"));
             DBG_SEGFAULT("Device after init=" + juce::String(device != nullptr ? "non-null" : "null"));
         }
@@ -263,51 +263,51 @@ public:
         if (device != nullptr)
         {
             DBG_SEGFAULT("Getting sample rate");
-            double sampleRate = device->getCurrentSampleRate();
-            DBG_SEGFAULT("Sample rate=" + juce::String(sampleRate));
-            currentSampleRate.store(sampleRate);
+            double sample_rate = device->getCurrentSampleRate();
+            DBG_SEGFAULT("Sample rate=" + juce::String(sample_rate));
+            m_current_sample_rate.store(sample_rate);
 
             DBG("Audio device initialized: " << device->getName()
-                << " SampleRate: " << sampleRate
+                << " SampleRate: " << sample_rate
                 << " BufferSize: " << device->getCurrentBufferSizeSamples()
                 << " InputChannels: " << device->getActiveInputChannels().countNumberOfSetBits()
                 << " OutputChannels: " << device->getActiveOutputChannels().countNumberOfSetBits());
 
             // Update buffers with actual device sample rate
-            DBG_SEGFAULT("Calling audioDeviceAboutToStart on track engines");
-            for (size_t i = 0; i < trackEngines.size(); ++i)
+            DBG_SEGFAULT("Calling audio_device_about_to_start on track engines");
+            for (size_t i = 0; i < m_track_engines.size(); ++i)
             {
-                DBG_SEGFAULT("Calling audioDeviceAboutToStart on track " + juce::String(i));
-                trackEngines[i].audioDeviceAboutToStart(sampleRate);
-                DBG_SEGFAULT("audioDeviceAboutToStart completed for track " + juce::String(i));
+                DBG_SEGFAULT("Calling audio_device_about_to_start on track " + juce::String(i));
+                m_track_engines[i].audio_device_about_to_start(sample_rate);
+                DBG_SEGFAULT("audio_device_about_to_start completed for track " + juce::String(i));
             }
             DBG_SEGFAULT("All track engines notified");
         }
         
         // Add audio callback now that setup is complete
         DBG_SEGFAULT("Adding audio callback");
-        audioDeviceManager.addAudioCallback(this);
+        m_audio_device_manager.addAudioCallback(this);
         DBG("Audio callback added to device manager - audio processing started");
         DBG_SEGFAULT("Audio callback added");
         
         // Verify device is running
         DBG_SEGFAULT("Verifying device");
-        device = audioDeviceManager.getCurrentAudioDevice();
+        device = m_audio_device_manager.getCurrentAudioDevice();
         if (device != nullptr)
         {
             DBG("Device check - IsOpen: " << (device->isOpen() ? "YES" : "NO")
                 << " IsPlaying: " << (device->isPlaying() ? "YES" : "NO"));
         }
-        DBG_SEGFAULT("EXIT: startAudio");
+        DBG_SEGFAULT("EXIT: start_audio");
     }
 
 private:
-    static constexpr int numTracks = 8;
-    static constexpr double maxBufferDurationSeconds = 10.0;
+    static constexpr int m_num_tracks = 8;
+    static constexpr double m_max_buffer_duration_seconds = 10.0;
 
-    std::array<TrackEngineType, 8> trackEngines;
-    juce::AudioDeviceManager audioDeviceManager;
-    std::atomic<double> currentSampleRate{44100.0};
+    std::array<TrackEngineType, 8> m_track_engines;
+    juce::AudioDeviceManager m_audio_device_manager;
+    std::atomic<double> m_current_sample_rate{44100.0};
 };
 
 // Include track engine headers for type aliases

@@ -394,9 +394,9 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
         0.25, 4.0, 1.0, 0.01,
         "x",
         [this](double value) {
-            auto& track = looperEngine.getTrack(trackIndex);
-            track.recordReadHead.set_speed(static_cast<float>(value));
-            track.outputReadHead.set_speed(static_cast<float>(value));
+            auto& track = looperEngine.get_track(trackIndex);
+            track.m_record_read_head.set_speed(static_cast<float>(value));
+            track.m_output_read_head.set_speed(static_cast<float>(value));
         },
         ""  // parameterId - will be auto-generated
     });
@@ -406,7 +406,7 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
         0.0, 1.0, 0.5, 0.01,
         "",
         [this](double value) {
-            looperEngine.getTrack(trackIndex).writeHead.set_overdub_mix(static_cast<float>(value));
+            looperEngine.get_track(trackIndex).m_write_head.set_overdub_mix(static_cast<float>(value));
         },
         ""  // parameterId - will be auto-generated
     });
@@ -426,7 +426,7 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
         0.0, 1.0, 0.5, 0.01,
         "",
         [this](double value) {
-            looperEngine.getTrack(trackIndex).dryWetMix.store(static_cast<float>(value));
+            looperEngine.get_track(trackIndex).m_dry_wet_mix.store(static_cast<float>(value));
         },
         ""  // parameterId - will be auto-generated
     });
@@ -434,9 +434,9 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     
     // Setup level control (applies to both read heads)
     levelControl.onLevelChange = [this](double value) {
-        auto& track = looperEngine.getTrack(trackIndex);
-        track.recordReadHead.set_level_db(static_cast<float>(value));
-        track.outputReadHead.set_level_db(static_cast<float>(value));
+        auto& track = looperEngine.get_track(trackIndex);
+        track.m_record_read_head.set_level_db(static_cast<float>(value));
+        track.m_output_read_head.set_level_db(static_cast<float>(value));
     };
     addAndMakeVisible(levelControl);
     
@@ -452,13 +452,13 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     
     // Setup input selector
     inputSelector.onChannelChange = [this](int channel) {
-        looperEngine.getTrack(trackIndex).writeHead.set_input_channel(channel);
+        looperEngine.get_track(trackIndex).m_write_head.set_input_channel(channel);
     };
     addAndMakeVisible(inputSelector);
     
     // Initialize channel selector (will show "all" if device not ready yet)
     // It will be updated again after device is initialized via updateChannelSelectors()
-    inputSelector.updateChannels(looperEngine.getAudioDeviceManager());
+    inputSelector.updateChannels(looperEngine.get_audio_device_manager());
     
     // Setup panner based on type
     auto pannerTypeLower = pannerType.toLowerCase();
@@ -471,7 +471,7 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
             if (auto* stereoPanner = dynamic_cast<StereoPanner*>(panner.get()))
             {
                 float panValue = static_cast<float>(stereoPanSlider.getValue());
-                stereoPanner->setPan(panValue);
+                stereoPanner->set_pan(panValue);
                 panCoordLabel.setText(juce::String(panValue, 2), juce::dontSendNotification);
             }
         };
@@ -481,11 +481,11 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     {
         panner = std::make_unique<QuadPanner>();
         panner2DComponent = std::make_unique<Panner2DComponent>();
-        panner2DComponent->setPanPosition(0.5f, 0.5f); // Center
-        panner2DComponent->onPanChange = [this](float x, float y) {
+        panner2DComponent->set_pan_position(0.5f, 0.5f); // Center
+        panner2DComponent->m_on_pan_change = [this](float x, float y) {
             if (auto* quadPanner = dynamic_cast<QuadPanner*>(panner.get()))
             {
-                quadPanner->setPan(x, y);
+                quadPanner->set_pan(x, y);
                 panCoordLabel.setText(juce::String(x, 2) + ", " + juce::String(y, 2), juce::dontSendNotification);
             }
         };
@@ -495,11 +495,11 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     {
         panner = std::make_unique<CLEATPanner>();
         panner2DComponent = std::make_unique<Panner2DComponent>();
-        panner2DComponent->setPanPosition(0.5f, 0.5f); // Center
-        panner2DComponent->onPanChange = [this](float x, float y) {
+        panner2DComponent->set_pan_position(0.5f, 0.5f); // Center
+        panner2DComponent->m_on_pan_change = [this](float x, float y) {
             if (auto* cleatPanner = dynamic_cast<CLEATPanner*>(panner.get()))
             {
-                cleatPanner->setPan(x, y);
+                cleatPanner->set_pan(x, y);
                 panCoordLabel.setText(juce::String(x, 2) + ", " + juce::String(y, 2), juce::dontSendNotification);
             }
         };
@@ -509,7 +509,7 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     // Connect panner to engine for audio processing
     if (panner != nullptr)
     {
-        looperEngine.getTrackEngine(trackIndex).setPanner(panner.get());
+        looperEngine.get_track_engine(trackIndex).set_panner(panner.get());
     }
     
     // Apply custom look and feel to all child components
@@ -536,7 +536,7 @@ void LooperTrack::applyLookAndFeel()
 
 void LooperTrack::paint(juce::Graphics& g)
 {
-    auto& track = looperEngine.getTrack(trackIndex);
+    auto& track = looperEngine.get_track(trackIndex);
     
     // Background - pitch black
     g.fillAll(juce::Colours::black);
@@ -546,12 +546,12 @@ void LooperTrack::paint(juce::Graphics& g)
     g.drawRect(getLocalBounds(), 1);
 
     // Visual indicator for recording/playing
-    if (track.writeHead.get_record_enable())
+    if (track.m_write_head.get_record_enable())
     {
         g.setColour(juce::Colour(0xfff04e36).withAlpha(0.2f)); // Red-orange
         g.fillRect(getLocalBounds());
     }
-    else if (track.isPlaying.load() && track.recordBuffer.m_has_recorded.load())
+    else if (track.m_is_playing.load() && track.m_record_buffer.m_has_recorded.load())
     {
         g.setColour(juce::Colour(0xff1eb19d).withAlpha(0.15f)); // Teal
         g.fillRect(getLocalBounds());
@@ -655,38 +655,38 @@ void LooperTrack::resized()
 
 void LooperTrack::recordEnableButtonToggled(bool enabled)
 {
-    auto& track = looperEngine.getTrack(trackIndex);
-    track.writeHead.set_record_enable(enabled);
+    auto& track = looperEngine.get_track(trackIndex);
+    track.m_write_head.set_record_enable(enabled);
     repaint();
 }
 
 void LooperTrack::playButtonClicked(bool shouldPlay)
 {
-    auto& track = looperEngine.getTrack(trackIndex);
+    auto& track = looperEngine.get_track(trackIndex);
     
     if (shouldPlay)
     {
-        track.isPlaying.store(true);
-        track.recordReadHead.set_playing(true);
-        track.outputReadHead.set_playing(true);
+        track.m_is_playing.store(true);
+        track.m_record_read_head.set_playing(true);
+        track.m_output_read_head.set_playing(true);
         
-        if (track.writeHead.get_record_enable() && !track.recordBuffer.m_has_recorded.load())
+        if (track.m_write_head.get_record_enable() && !track.m_record_buffer.m_has_recorded.load())
         {
-            const juce::ScopedLock sl(track.recordBuffer.m_lock);
-            track.recordBuffer.clear_buffer();
-            track.writeHead.reset();
-            track.recordReadHead.reset();
-            track.outputReadHead.reset();
+            const juce::ScopedLock sl(track.m_record_buffer.m_lock);
+            track.m_record_buffer.clear_buffer();
+            track.m_write_head.reset();
+            track.m_record_read_head.reset();
+            track.m_output_read_head.reset();
         }
     }
     else
     {
-        track.isPlaying.store(false);
-        track.recordReadHead.set_playing(false);
-        track.outputReadHead.set_playing(false);
-        if (track.writeHead.get_record_enable())
+        track.m_is_playing.store(false);
+        track.m_record_read_head.set_playing(false);
+        track.m_output_read_head.set_playing(false);
+        if (track.m_write_head.get_record_enable())
         {
-            track.writeHead.finalize_recording(track.writeHead.get_pos());
+            track.m_write_head.finalize_recording(track.m_write_head.get_pos());
             juce::Logger::writeToLog("~~~ Playback just stopped, finalized recording");
         }
     }
@@ -696,14 +696,14 @@ void LooperTrack::playButtonClicked(bool shouldPlay)
 
 void LooperTrack::muteButtonToggled(bool muted)
 {
-    auto& track = looperEngine.getTrack(trackIndex);
-    track.recordReadHead.set_muted(muted);
-    track.outputReadHead.set_muted(muted);
+    auto& track = looperEngine.get_track(trackIndex);
+    track.m_record_read_head.set_muted(muted);
+    track.m_output_read_head.set_muted(muted);
 }
 
 void LooperTrack::generateButtonClicked()
 {
-    auto& track = looperEngine.getTrack(trackIndex);
+    auto& track = looperEngine.get_track(trackIndex);
     
     // Get periodic prompt value from knob
     float periodicPrompt = static_cast<float>(getPeriodicPrompt());
@@ -729,12 +729,12 @@ void LooperTrack::generateButtonClicked()
     bool hasAudio = false;
     if (useOutputAsInput)
     {
-        hasAudio = track.outputBuffer.m_has_recorded.load();
+        hasAudio = track.m_output_buffer.m_has_recorded.load();
         DBG("LooperTrack: Using output buffer as input, hasAudio=" + juce::String(hasAudio ? "YES" : "NO"));
     }
     else
     {
-        hasAudio = track.recordBuffer.m_has_recorded.load();
+        hasAudio = track.m_record_buffer.m_has_recorded.load();
         DBG("LooperTrack: Using record buffer as input, hasAudio=" + juce::String(hasAudio ? "YES" : "NO"));
     }
     
@@ -827,9 +827,9 @@ void LooperTrack::onVampNetComplete(juce::Result result, juce::File outputFile)
     }
 
     // Load the generated audio back into the track
-    auto& trackEngine = looperEngine.getTrackEngine(trackIndex);
+    auto& trackEngine = looperEngine.get_track_engine(trackIndex);
     
-    if (trackEngine.loadFromFile(outputFile))
+    if (trackEngine.load_from_file(outputFile))
     {
         repaint(); // Refresh waveform display
         
@@ -855,7 +855,7 @@ void LooperTrack::onVampNetComplete(juce::Result result, juce::File outputFile)
 
 void LooperTrack::resetButtonClicked()
 {
-    auto& track = looperEngine.getTrack(trackIndex);
+    auto& track = looperEngine.get_track(trackIndex);
     
     // Stop any ongoing generation
     if (vampNetWorkerThread != nullptr)
@@ -867,44 +867,44 @@ void LooperTrack::resetButtonClicked()
     generateButton.setButtonText("generate");
     
     // Stop playback
-    track.isPlaying.store(false);
-    track.recordReadHead.set_playing(false);
-    track.outputReadHead.set_playing(false);
+    track.m_is_playing.store(false);
+    track.m_record_read_head.set_playing(false);
+    track.m_output_read_head.set_playing(false);
     transportControls.setPlayState(false);
     
     // Disable recording
-    track.writeHead.set_record_enable(false);
+    track.m_write_head.set_record_enable(false);
     transportControls.setRecordState(false);
     
     // Clear both buffers
-    const juce::ScopedLock sl1(track.recordBuffer.m_lock);
-    const juce::ScopedLock sl2(track.outputBuffer.m_lock);
-    track.recordBuffer.clear_buffer();
-    track.outputBuffer.clear_buffer();
-    track.writeHead.reset();
-    track.recordReadHead.reset();
-    track.outputReadHead.reset();
+    const juce::ScopedLock sl1(track.m_record_buffer.m_lock);
+    const juce::ScopedLock sl2(track.m_output_buffer.m_lock);
+    track.m_record_buffer.clear_buffer();
+    track.m_output_buffer.clear_buffer();
+    track.m_write_head.reset();
+    track.m_record_read_head.reset();
+    track.m_output_read_head.reset();
     
     // Reset controls to defaults
     parameterKnobs.setKnobValue(0, 1.0, juce::dontSendNotification); // speed
-    track.recordReadHead.set_speed(1.0f);
-    track.outputReadHead.set_speed(1.0f);
+    track.m_record_read_head.set_speed(1.0f);
+    track.m_output_read_head.set_speed(1.0f);
     
     parameterKnobs.setKnobValue(1, 0.5, juce::dontSendNotification); // overdub
-    track.writeHead.set_overdub_mix(0.5f);
+    track.m_write_head.set_overdub_mix(0.5f);
     
     parameterKnobs.setKnobValue(2, 8.0, juce::dontSendNotification); // periodic prompt
     
     parameterKnobs.setKnobValue(3, 0.5, juce::dontSendNotification); // dry/wet
-    track.dryWetMix.store(0.5f);
+    track.m_dry_wet_mix.store(0.5f);
     
     levelControl.setLevelValue(0.0, juce::dontSendNotification);
-    track.recordReadHead.set_level_db(0.0f);
-    track.outputReadHead.set_level_db(0.0f);
+    track.m_record_read_head.set_level_db(0.0f);
+    track.m_output_read_head.set_level_db(0.0f);
     
     // Unmute
-    track.recordReadHead.set_muted(false);
-    track.outputReadHead.set_muted(false);
+    track.m_record_read_head.set_muted(false);
+    track.m_output_read_head.set_muted(false);
     transportControls.setMuteState(false);
     
     repaint();
@@ -935,9 +935,9 @@ LooperTrack::~LooperTrack()
 void LooperTrack::setPlaybackSpeed(float speed)
 {
     parameterKnobs.setKnobValue(0, speed, juce::dontSendNotification);
-    auto& track = looperEngine.getTrack(trackIndex);
-    track.recordReadHead.set_speed(speed);
-    track.outputReadHead.set_speed(speed);
+    auto& track = looperEngine.get_track(trackIndex);
+    track.m_record_read_head.set_speed(speed);
+    track.m_output_read_head.set_speed(speed);
 }
 
 float LooperTrack::getPlaybackSpeed() const
@@ -953,12 +953,12 @@ float LooperTrack::getPeriodicPrompt() const
 void LooperTrack::timerCallback()
 {
     // Sync button states with model state
-    auto& track = looperEngine.getTrack(trackIndex);
+    auto& track = looperEngine.get_track(trackIndex);
     
-    bool modelRecordEnable = track.writeHead.get_record_enable();
+    bool modelRecordEnable = track.m_write_head.get_record_enable();
     transportControls.setRecordState(modelRecordEnable);
     
-    bool modelIsPlaying = track.isPlaying.load();
+    bool modelIsPlaying = track.m_is_playing.load();
     transportControls.setPlayState(modelIsPlaying);
     
     // Update displays
@@ -970,5 +970,5 @@ void LooperTrack::timerCallback()
 void LooperTrack::updateChannelSelectors()
 {
     // Update channel selector based on current audio device
-    inputSelector.updateChannels(looperEngine.getAudioDeviceManager());
+    inputSelector.updateChannels(looperEngine.get_audio_device_manager());
 }

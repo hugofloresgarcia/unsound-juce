@@ -5,16 +5,16 @@
 Panner2DComponent::Panner2DComponent()
 {
     setOpaque(true);
-    panX = 0.5f;
-    panY = 0.5f;
-    isDragging = false;
-    recordingState = Idle;
-    trajectoryRecordingEnabled = false;
-    onsetTriggeringEnabled = false;
-    smoothingTime = 0.0;
-    smoothedPanX.setCurrentAndTargetValue(0.5f);
-    smoothedPanY.setCurrentAndTargetValue(0.5f);
-    lastSampleRate = 44100.0;
+    m_pan_x = 0.5f;
+    m_pan_y = 0.5f;
+    m_is_dragging = false;
+    m_recording_state = Idle;
+    m_trajectory_recording_enabled = false;
+    m_onset_triggering_enabled = false;
+    m_smoothing_time = 0.0;
+    m_smoothed_pan_x.setCurrentAndTargetValue(0.5f);
+    m_smoothed_pan_y.setCurrentAndTargetValue(0.5f);
+    m_last_sample_rate = 44100.0;
 }
 
 Panner2DComponent::~Panner2DComponent()
@@ -36,45 +36,45 @@ void Panner2DComponent::paint(juce::Graphics& g)
     
     // Draw dense grid (16x16)
     g.setColour(juce::Colour(0xff333333));
-    const int gridDivisions = 16;
-    float gridSpacingX = bounds.getWidth() / gridDivisions;
-    float gridSpacingY = bounds.getHeight() / gridDivisions;
-    for (int i = 1; i < gridDivisions; ++i)
+    const int grid_divisions = 16;
+    float grid_spacing_x = bounds.getWidth() / grid_divisions;
+    float grid_spacing_y = bounds.getHeight() / grid_divisions;
+    for (int i = 1; i < grid_divisions; ++i)
     {
         // Vertical lines
-        g.drawLine(bounds.getX() + i * gridSpacingX, bounds.getY(),
-                   bounds.getX() + i * gridSpacingX, bounds.getBottom(), 0.5f);
+        g.drawLine(bounds.getX() + i * grid_spacing_x, bounds.getY(),
+                   bounds.getX() + i * grid_spacing_x, bounds.getBottom(), 0.5f);
         // Horizontal lines
-        g.drawLine(bounds.getX(), bounds.getY() + i * gridSpacingY,
-                   bounds.getRight(), bounds.getY() + i * gridSpacingY, 0.5f);
+        g.drawLine(bounds.getX(), bounds.getY() + i * grid_spacing_y,
+                   bounds.getRight(), bounds.getY() + i * grid_spacing_y, 0.5f);
     }
     
     // Draw center crosshair
     g.setColour(juce::Colour(0xff555555));
-    float centerX = bounds.getCentreX();
-    float centerY = bounds.getCentreY();
-    float crosshairSize = 8.0f;
-    g.drawLine(centerX - crosshairSize, centerY, centerX + crosshairSize, centerY, 1.0f);
-    g.drawLine(centerX, centerY - crosshairSize, centerX, centerY + crosshairSize, 1.0f);
+    float center_x = bounds.getCentreX();
+    float center_y = bounds.getCentreY();
+    float crosshair_size = 8.0f;
+    g.drawLine(center_x - crosshair_size, center_y, center_x + crosshair_size, center_y, 1.0f);
+    g.drawLine(center_x, center_y - crosshair_size, center_x, center_y + crosshair_size, 1.0f);
     
     // Draw pan indicator
-    auto panPos = panToComponent(panX, panY);
-    float indicatorRadius = 8.0f;
+    auto pan_pos = pan_to_component(m_pan_x, m_pan_y);
+    float indicator_radius = 8.0f;
     
     // Draw indicator shadow
     g.setColour(juce::Colours::black.withAlpha(0.5f));
-    g.fillEllipse(panPos.x - indicatorRadius + 1.0f, panPos.y - indicatorRadius + 1.0f,
-                  indicatorRadius * 2.0f, indicatorRadius * 2.0f);
+    g.fillEllipse(pan_pos.x - indicator_radius + 1.0f, pan_pos.y - indicator_radius + 1.0f,
+                  indicator_radius * 2.0f, indicator_radius * 2.0f);
     
     // Draw indicator
     g.setColour(juce::Colour(0xffed1683)); // Pink from CustomLookAndFeel
-    g.fillEllipse(panPos.x - indicatorRadius, panPos.y - indicatorRadius,
-                  indicatorRadius * 2.0f, indicatorRadius * 2.0f);
+    g.fillEllipse(pan_pos.x - indicator_radius, pan_pos.y - indicator_radius,
+                  indicator_radius * 2.0f, indicator_radius * 2.0f);
     
     // Draw indicator outline
     g.setColour(juce::Colour(0xfff3d430)); // Yellow from CustomLookAndFeel
-    g.drawEllipse(panPos.x - indicatorRadius, panPos.y - indicatorRadius,
-                  indicatorRadius * 2.0f, indicatorRadius * 2.0f, 2.0f);
+    g.drawEllipse(pan_pos.x - indicator_radius, pan_pos.y - indicator_radius,
+                  indicator_radius * 2.0f, indicator_radius * 2.0f, 2.0f);
 }
 
 void Panner2DComponent::resized()
@@ -87,41 +87,41 @@ void Panner2DComponent::mouseDown(const juce::MouseEvent& e)
 {
     if (e.mods.isLeftButtonDown())
     {
-        isDragging = true;
-        auto panPos = componentToPan(e.position);
-        setPanPosition(panPos.x, panPos.y, juce::sendNotification);
+        m_is_dragging = true;
+        auto pan_pos = component_to_pan(e.position);
+        set_pan_position(pan_pos.x, pan_pos.y, juce::sendNotification);
         
         // Start recording if trajectory recording is enabled
-        if (trajectoryRecordingEnabled && recordingState == Idle)
+        if (m_trajectory_recording_enabled && m_recording_state == Idle)
         {
-            startRecording();
+            start_recording();
         }
     }
 }
 
 void Panner2DComponent::mouseDrag(const juce::MouseEvent& e)
 {
-    if (isDragging && e.mods.isLeftButtonDown())
+    if (m_is_dragging && e.mods.isLeftButtonDown())
     {
-        auto panPos = componentToPan(e.position);
-        setPanPosition(panPos.x, panPos.y, juce::sendNotification);
+        auto pan_pos = component_to_pan(e.position);
+        set_pan_position(pan_pos.x, pan_pos.y, juce::sendNotification);
         
         // Record trajectory point if recording
-        if (recordingState == Recording)
+        if (m_recording_state == Recording)
         {
-            double currentTime = juce::Time::getMillisecondCounterHiRes() / 1000.0;
-            double elapsedTime = currentTime - recordingStartTime;
+            double current_time = juce::Time::getMillisecondCounterHiRes() / 1000.0;
+            double elapsed_time = current_time - m_recording_start_time;
             
             // Record at 10fps (every 100ms)
-            if (currentTime - lastRecordTime >= recordInterval)
+            if (current_time - m_last_record_time >= m_record_interval)
             {
                 TrajectoryPoint point;
-                point.x = panPos.x;
-                point.y = panPos.y;
-                point.time = elapsedTime;
-                trajectory.push_back(point);
-                originalTrajectory.push_back(point);
-                lastRecordTime = currentTime;
+                point.x = pan_pos.x;
+                point.y = pan_pos.y;
+                point.time = elapsed_time;
+                m_trajectory.push_back(point);
+                m_original_trajectory.push_back(point);
+                m_last_record_time = current_time;
             }
         }
     }
@@ -129,48 +129,48 @@ void Panner2DComponent::mouseDrag(const juce::MouseEvent& e)
 
 void Panner2DComponent::mouseUp(const juce::MouseEvent& e)
 {
-    if (isDragging)
+    if (m_is_dragging)
     {
-        isDragging = false;
+        m_is_dragging = false;
         
         // Stop recording and start playback if we were recording
-        if (recordingState == Recording && !trajectory.empty())
+        if (m_recording_state == Recording && !m_trajectory.empty())
         {
-            stopRecording();
-            startPlayback();
+            stop_recording();
+            start_playback();
         }
     }
 }
 
-void Panner2DComponent::setPanPosition(float x, float y, juce::NotificationType notification)
+void Panner2DComponent::set_pan_position(float x, float y, juce::NotificationType notification)
 {
-    clampPan(x, y);
+    clamp_pan(x, y);
     
-    if (panX != x || panY != y)
+    if (m_pan_x != x || m_pan_y != y)
     {
-        panX = x;
-        panY = y;
+        m_pan_x = x;
+        m_pan_y = y;
         
         repaint();
         
-        if (notification == juce::sendNotification && onPanChange)
+        if (notification == juce::sendNotification && m_on_pan_change)
         {
-            onPanChange(panX, panY);
+            m_on_pan_change(m_pan_x, m_pan_y);
         }
     }
 }
 
-juce::Point<float> Panner2DComponent::componentToPan(juce::Point<float> componentPos) const
+juce::Point<float> Panner2DComponent::component_to_pan(juce::Point<float> component_pos) const
 {
     auto bounds = getLocalBounds().toFloat();
     
     // Clamp to component bounds
-    componentPos.x = juce::jlimit(bounds.getX(), bounds.getRight(), componentPos.x);
-    componentPos.y = juce::jlimit(bounds.getY(), bounds.getBottom(), componentPos.y);
+    component_pos.x = juce::jlimit(bounds.getX(), bounds.getRight(), component_pos.x);
+    component_pos.y = juce::jlimit(bounds.getY(), bounds.getBottom(), component_pos.y);
     
     // Convert to normalized coordinates (0-1)
-    float x = (componentPos.x - bounds.getX()) / bounds.getWidth();
-    float y = (componentPos.y - bounds.getY()) / bounds.getHeight();
+    float x = (component_pos.x - bounds.getX()) / bounds.getWidth();
+    float y = (component_pos.y - bounds.getY()) / bounds.getHeight();
     
     // Invert Y axis: 0 = bottom, 1 = top
     y = 1.0f - y;
@@ -178,7 +178,7 @@ juce::Point<float> Panner2DComponent::componentToPan(juce::Point<float> componen
     return {x, y};
 }
 
-juce::Point<float> Panner2DComponent::panToComponent(float x, float y) const
+juce::Point<float> Panner2DComponent::pan_to_component(float x, float y) const
 {
     auto bounds = getLocalBounds().toFloat();
     
@@ -190,64 +190,64 @@ juce::Point<float> Panner2DComponent::panToComponent(float x, float y) const
     y = 1.0f - y;
     
     // Convert to component coordinates
-    float componentX = bounds.getX() + x * bounds.getWidth();
-    float componentY = bounds.getY() + y * bounds.getHeight();
+    float component_x = bounds.getX() + x * bounds.getWidth();
+    float component_y = bounds.getY() + y * bounds.getHeight();
     
-    return {componentX, componentY};
+    return {component_x, component_y};
 }
 
-void Panner2DComponent::clampPan(float& x, float& y) const
+void Panner2DComponent::clamp_pan(float& x, float& y) const
 {
     x = juce::jlimit(0.0f, 1.0f, x);
     y = juce::jlimit(0.0f, 1.0f, y);
 }
 
-void Panner2DComponent::startRecording()
+void Panner2DComponent::start_recording()
 {
     DBG("Panner2DComponent: Starting trajectory recording");
-    recordingState = Recording;
-    trajectory.clear();
-    originalTrajectory.clear();
-    recordingStartTime = juce::Time::getMillisecondCounterHiRes() / 1000.0;
-    lastRecordTime = recordingStartTime;
+    m_recording_state = Recording;
+    m_trajectory.clear();
+    m_original_trajectory.clear();
+    m_recording_start_time = juce::Time::getMillisecondCounterHiRes() / 1000.0;
+    m_last_record_time = m_recording_start_time;
     
     // Record initial position
-    TrajectoryPoint initialPoint;
-    initialPoint.x = panX;
-    initialPoint.y = panY;
-    initialPoint.time = 0.0;
-    trajectory.push_back(initialPoint);
-    originalTrajectory.push_back(initialPoint);
+    TrajectoryPoint initial_point;
+    initial_point.x = m_pan_x;
+    initial_point.y = m_pan_y;
+    initial_point.time = 0.0;
+    m_trajectory.push_back(initial_point);
+    m_original_trajectory.push_back(initial_point);
 }
 
-void Panner2DComponent::stopRecording()
+void Panner2DComponent::stop_recording()
 {
-    DBG("Panner2DComponent: Stopping trajectory recording, recorded " + juce::String(trajectory.size()) + " points");
-    recordingState = Idle;
+    DBG("Panner2DComponent: Stopping trajectory recording, recorded " + juce::String(m_trajectory.size()) + " points");
+    m_recording_state = Idle;
 }
 
-void Panner2DComponent::startPlayback()
+void Panner2DComponent::start_playback()
 {
-    if (trajectory.empty())
+    if (m_trajectory.empty())
     {
         DBG("Panner2DComponent: Cannot start playback, trajectory is empty");
         return;
     }
     
-    DBG("Panner2DComponent: Starting trajectory playback, " + juce::String(trajectory.size()) + " points");
-    recordingState = Playing;
-    currentPlaybackIndex = 0;
-    playbackStartTime = juce::Time::getMillisecondCounterHiRes() / 1000.0;
-    lastPlaybackTime = playbackStartTime;
+    DBG("Panner2DComponent: Starting trajectory playback, " + juce::String(m_trajectory.size()) + " points");
+    m_recording_state = Playing;
+    m_current_playback_index = 0;
+    m_playback_start_time = juce::Time::getMillisecondCounterHiRes() / 1000.0;
+    m_last_playback_time = m_playback_start_time;
     
     // Initialize smoothed values to current position
-    smoothedPanX.setCurrentAndTargetValue(panX);
-    smoothedPanY.setCurrentAndTargetValue(panY);
+    m_smoothed_pan_x.setCurrentAndTargetValue(m_pan_x);
+    m_smoothed_pan_y.setCurrentAndTargetValue(m_pan_y);
     
     // Start timer for playback animation
     // If smoothing is enabled, we need timer for smooth updates
     // If onset triggering is disabled, we need timer for trajectory advancement
-    if (!onsetTriggeringEnabled || smoothingTime > 0.0)
+    if (!m_onset_triggering_enabled || m_smoothing_time > 0.0)
     {
         startTimer(16); // ~60fps for smooth updates (especially important for smoothing)
     }
@@ -258,39 +258,39 @@ void Panner2DComponent::startPlayback()
     }
 }
 
-void Panner2DComponent::stopPlayback()
+void Panner2DComponent::stop_playback()
 {
     DBG("Panner2DComponent: Stopping trajectory playback");
-    recordingState = Idle;
+    m_recording_state = Idle;
     stopTimer();
 }
 
-void Panner2DComponent::setTrajectoryRecordingEnabled(bool enabled)
+void Panner2DComponent::set_trajectory_recording_enabled(bool enabled)
 {
-    trajectoryRecordingEnabled = enabled;
-    if (!enabled && recordingState == Recording)
+    m_trajectory_recording_enabled = enabled;
+    if (!enabled && m_recording_state == Recording)
     {
-        stopRecording();
+        stop_recording();
     }
-    if (!enabled && recordingState == Playing)
+    if (!enabled && m_recording_state == Playing)
     {
-        stopPlayback();
+        stop_playback();
     }
 }
 
-void Panner2DComponent::setOnsetTriggeringEnabled(bool enabled)
+void Panner2DComponent::set_onset_triggering_enabled(bool enabled)
 {
-    bool wasEnabled = onsetTriggeringEnabled;
-    onsetTriggeringEnabled = enabled;
+    bool was_enabled = m_onset_triggering_enabled;
+    m_onset_triggering_enabled = enabled;
     
     // If playback is active, update timer state
-    if (recordingState == Playing)
+    if (m_recording_state == Playing)
     {
         if (enabled)
         {
             // If smoothing is enabled, we still need timer for smooth updates
             // Otherwise, stop timer - will advance ONLY on onsets
-            if (smoothingTime > 0.0)
+            if (m_smoothing_time > 0.0)
             {
                 startTimer(16); // ~60fps for smooth updates
                 DBG("Panner2DComponent: Onset triggering enabled with smoothing - timer running for smooth updates only");
@@ -304,7 +304,7 @@ void Panner2DComponent::setOnsetTriggeringEnabled(bool enabled)
         else
         {
             // Start timer - will advance at fixed rate (and smooth if enabled)
-            if (smoothingTime > 0.0)
+            if (m_smoothing_time > 0.0)
             {
                 startTimer(16); // ~60fps for smooth updates
             }
@@ -317,28 +317,28 @@ void Panner2DComponent::setOnsetTriggeringEnabled(bool enabled)
     }
 }
 
-void Panner2DComponent::setSmoothingTime(double smoothingTimeSeconds)
+void Panner2DComponent::set_smoothing_time(double smoothing_time_seconds)
 {
-    smoothingTime = smoothingTimeSeconds;
+    m_smoothing_time = smoothing_time_seconds;
     
     // Update smoothed values with new smoothing time
     // Use 60Hz update rate for UI smoothing (timer runs at ~60fps)
-    const double uiUpdateRate = 60.0;
-    smoothedPanX.reset(uiUpdateRate, smoothingTime);
-    smoothedPanY.reset(uiUpdateRate, smoothingTime);
-    smoothedPanX.setCurrentAndTargetValue(panX);
-    smoothedPanY.setCurrentAndTargetValue(panY);
-    lastSampleRate = uiUpdateRate; // Store for reference
+    const double ui_update_rate = 60.0;
+    m_smoothed_pan_x.reset(ui_update_rate, m_smoothing_time);
+    m_smoothed_pan_y.reset(ui_update_rate, m_smoothing_time);
+    m_smoothed_pan_x.setCurrentAndTargetValue(m_pan_x);
+    m_smoothed_pan_y.setCurrentAndTargetValue(m_pan_y);
+    m_last_sample_rate = ui_update_rate; // Store for reference
     
     // If playback is active, update timer state based on smoothing
-    if (recordingState == Playing)
+    if (m_recording_state == Playing)
     {
-        if (smoothingTime > 0.0)
+        if (m_smoothing_time > 0.0)
         {
             // Need timer for smooth updates
             startTimer(16); // ~60fps for smooth updates
         }
-        else if (!onsetTriggeringEnabled)
+        else if (!m_onset_triggering_enabled)
         {
             // No smoothing, but timer needed for trajectory advancement
             startTimer(100); // 100ms = 10fps
@@ -350,102 +350,102 @@ void Panner2DComponent::setSmoothingTime(double smoothingTimeSeconds)
         }
     }
     
-    DBG("Panner2DComponent: Smoothing time set to " + juce::String(smoothingTime) + " seconds");
+    DBG("Panner2DComponent: Smoothing time set to " + juce::String(m_smoothing_time) + " seconds");
 }
 
-void Panner2DComponent::advanceTrajectoryOnset()
+void Panner2DComponent::advance_trajectory_onset()
 {
-    if (recordingState != Playing || trajectory.empty())
+    if (m_recording_state != Playing || m_trajectory.empty())
         return;
     
     // Advance to next point in trajectory
-    currentPlaybackIndex++;
+    m_current_playback_index++;
     
     // Loop if we've reached the end
-    if (currentPlaybackIndex >= trajectory.size())
+    if (m_current_playback_index >= m_trajectory.size())
     {
-        currentPlaybackIndex = 0;
+        m_current_playback_index = 0;
     }
     
     // Update pan position with smoothing
-    const auto& point = trajectory[currentPlaybackIndex];
-    updatePanPositionWithSmoothing(point.x, point.y);
+    const auto& point = m_trajectory[m_current_playback_index];
+    update_pan_position_with_smoothing(point.x, point.y);
 }
 
-void Panner2DComponent::advanceTrajectoryTimer()
+void Panner2DComponent::advance_trajectory_timer()
 {
-    if (recordingState != Playing || trajectory.empty())
+    if (m_recording_state != Playing || m_trajectory.empty())
         return;
     
     // Advance to next point in trajectory
-    currentPlaybackIndex++;
+    m_current_playback_index++;
     
     // Loop if we've reached the end
-    if (currentPlaybackIndex >= trajectory.size())
+    if (m_current_playback_index >= m_trajectory.size())
     {
-        currentPlaybackIndex = 0;
+        m_current_playback_index = 0;
     }
     
     // Update pan position with smoothing
-    const auto& point = trajectory[currentPlaybackIndex];
-    updatePanPositionWithSmoothing(point.x, point.y);
+    const auto& point = m_trajectory[m_current_playback_index];
+    update_pan_position_with_smoothing(point.x, point.y);
 }
 
 void Panner2DComponent::timerCallback()
 {
-    if (recordingState != Playing || trajectory.empty())
+    if (m_recording_state != Playing || m_trajectory.empty())
     {
         stopTimer();
         return;
     }
     
     // Update smoothed values if smoothing is enabled (always check this first)
-    bool needsRepaint = false;
-    if (smoothingTime > 0.0)
+    bool needs_repaint = false;
+    if (m_smoothing_time > 0.0)
     {
-        smoothedPanX.skip(1);
-        smoothedPanY.skip(1);
+        m_smoothed_pan_x.skip(1);
+        m_smoothed_pan_y.skip(1);
         
-        float smoothedX = smoothedPanX.getNextValue();
-        float smoothedY = smoothedPanY.getNextValue();
+        float smoothed_x = m_smoothed_pan_x.getNextValue();
+        float smoothed_y = m_smoothed_pan_y.getNextValue();
         
         // Only update if values changed (to avoid unnecessary repaints)
-        if (std::abs(panX - smoothedX) > 0.001f || std::abs(panY - smoothedY) > 0.001f)
+        if (std::abs(m_pan_x - smoothed_x) > 0.001f || std::abs(m_pan_y - smoothed_y) > 0.001f)
         {
-            panX = smoothedX;
-            panY = smoothedY;
-            needsRepaint = true;
+            m_pan_x = smoothed_x;
+            m_pan_y = smoothed_y;
+            needs_repaint = true;
         }
     }
     
     // Advance trajectory on timer ONLY if onset triggering is disabled
-    // If onset triggering is enabled, trajectory advances only via advanceTrajectoryOnset()
-    if (!onsetTriggeringEnabled)
+    // If onset triggering is enabled, trajectory advances only via advance_trajectory_onset()
+    if (!m_onset_triggering_enabled)
     {
-        double currentTime = juce::Time::getMillisecondCounterHiRes() / 1000.0;
+        double current_time = juce::Time::getMillisecondCounterHiRes() / 1000.0;
         
-        // Advance at rate determined by playbackInterval (adjusted by speed)
+        // Advance at rate determined by m_playback_interval (adjusted by speed)
         // If we're running at 60fps for smoothing, we need to check time difference
-        if (currentTime - lastPlaybackTime >= playbackInterval)
+        if (current_time - m_last_playback_time >= m_playback_interval)
         {
-            advanceTrajectoryTimer();
-            lastPlaybackTime = currentTime;
-            needsRepaint = true; // Trajectory advanced, will need repaint
+            advance_trajectory_timer();
+            m_last_playback_time = current_time;
+            needs_repaint = true; // Trajectory advanced, will need repaint
         }
     }
     
     // Repaint if needed
-    if (needsRepaint)
+    if (needs_repaint)
     {
         repaint();
-        if (onPanChange)
+        if (m_on_pan_change)
         {
-            onPanChange(panX, panY);
+            m_on_pan_change(m_pan_x, m_pan_y);
         }
     }
 }
 
-Panner2DComponent::TrajectoryPoint Panner2DComponent::interpolateTrajectory(const TrajectoryPoint& p1, const TrajectoryPoint& p2, float t) const
+Panner2DComponent::TrajectoryPoint Panner2DComponent::interpolate_trajectory(const TrajectoryPoint& p1, const TrajectoryPoint& p2, float t) const
 {
     TrajectoryPoint result;
     result.x = p1.x + (p2.x - p1.x) * t;
@@ -454,119 +454,119 @@ Panner2DComponent::TrajectoryPoint Panner2DComponent::interpolateTrajectory(cons
     return result;
 }
 
-void Panner2DComponent::updatePanPositionWithSmoothing(float x, float y)
+void Panner2DComponent::update_pan_position_with_smoothing(float x, float y)
 {
-    clampPan(x, y);
+    clamp_pan(x, y);
     
-    if (smoothingTime > 0.0)
+    if (m_smoothing_time > 0.0)
     {
         // Use smoothed values - set target, actual update happens in timer callback
-        smoothedPanX.setTargetValue(x);
-        smoothedPanY.setTargetValue(y);
+        m_smoothed_pan_x.setTargetValue(x);
+        m_smoothed_pan_y.setTargetValue(y);
     }
     else
     {
         // No smoothing - update directly
-        if (panX != x || panY != y)
+        if (m_pan_x != x || m_pan_y != y)
         {
-            panX = x;
-            panY = y;
-            smoothedPanX.setCurrentAndTargetValue(x);
-            smoothedPanY.setCurrentAndTargetValue(y);
+            m_pan_x = x;
+            m_pan_y = y;
+            m_smoothed_pan_x.setCurrentAndTargetValue(x);
+            m_smoothed_pan_y.setCurrentAndTargetValue(y);
             repaint();
-            if (onPanChange)
+            if (m_on_pan_change)
             {
-                onPanChange(panX, panY);
+                m_on_pan_change(m_pan_x, m_pan_y);
             }
         }
     }
 }
 
-void Panner2DComponent::setTrajectory(const std::vector<TrajectoryPoint>& points, bool startPlaybackImmediately)
+void Panner2DComponent::set_trajectory(const std::vector<TrajectoryPoint>& points, bool start_playback_immediately)
 {
     DBG("Panner2DComponent: Setting trajectory with " + juce::String(points.size()) + " points");
     
     // Stop any current playback
-    if (recordingState == Playing)
+    if (m_recording_state == Playing)
     {
-        stopPlayback();
+        stop_playback();
     }
     
     // Store original trajectory and apply current scale
-    originalTrajectory = points;
-    trajectory = points;
+    m_original_trajectory = points;
+    m_trajectory = points;
     
     // Apply current scale to trajectory
-    applyTrajectoryScale();
+    apply_trajectory_scale();
     
     // Start playback if requested
-    if (startPlaybackImmediately && !trajectory.empty())
+    if (start_playback_immediately && !m_trajectory.empty())
     {
-        startPlayback();
+        start_playback();
     }
 }
 
-std::vector<Panner2DComponent::TrajectoryPoint> Panner2DComponent::getTrajectory() const
+std::vector<Panner2DComponent::TrajectoryPoint> Panner2DComponent::get_trajectory() const
 {
     // Return original unscaled trajectory
-    return originalTrajectory;
+    return m_original_trajectory;
 }
 
-void Panner2DComponent::setPlaybackSpeed(float speed)
+void Panner2DComponent::set_playback_speed(float speed)
 {
-    playbackSpeed = juce::jlimit(0.1f, 2.0f, speed);
-    playbackInterval = basePlaybackInterval / playbackSpeed;
-    DBG("Panner2DComponent: Playback speed set to " + juce::String(playbackSpeed) + "x, interval = " + juce::String(playbackInterval));
+    m_playback_speed = juce::jlimit(0.1f, 2.0f, speed);
+    m_playback_interval = m_base_playback_interval / m_playback_speed;
+    DBG("Panner2DComponent: Playback speed set to " + juce::String(m_playback_speed) + "x, interval = " + juce::String(m_playback_interval));
 }
 
-void Panner2DComponent::setTrajectoryScale(float scale)
+void Panner2DComponent::set_trajectory_scale(float scale)
 {
-    trajectoryScale = juce::jlimit(0.0f, 2.0f, scale);
-    DBG("Panner2DComponent: Trajectory scale set to " + juce::String(trajectoryScale));
+    m_trajectory_scale = juce::jlimit(0.0f, 2.0f, scale);
+    DBG("Panner2DComponent: Trajectory scale set to " + juce::String(m_trajectory_scale));
     
     // Apply scale to trajectory if we have one
-    if (!originalTrajectory.empty())
+    if (!m_original_trajectory.empty())
     {
-        applyTrajectoryScale();
+        apply_trajectory_scale();
         
         // If currently playing, update current position
-        if (recordingState == Playing && currentPlaybackIndex < trajectory.size())
+        if (m_recording_state == Playing && m_current_playback_index < m_trajectory.size())
         {
-            const auto& point = trajectory[currentPlaybackIndex];
-            updatePanPositionWithSmoothing(point.x, point.y);
+            const auto& point = m_trajectory[m_current_playback_index];
+            update_pan_position_with_smoothing(point.x, point.y);
         }
     }
 }
 
-void Panner2DComponent::applyTrajectoryScale()
+void Panner2DComponent::apply_trajectory_scale()
 {
-    if (originalTrajectory.empty())
+    if (m_original_trajectory.empty())
         return;
     
-    trajectory.clear();
-    trajectory.reserve(originalTrajectory.size());
+    m_trajectory.clear();
+    m_trajectory.reserve(m_original_trajectory.size());
     
-    const float centerX = 0.5f;
-    const float centerY = 0.5f;
+    const float center_x = 0.5f;
+    const float center_y = 0.5f;
     
-    for (const auto& point : originalTrajectory)
+    for (const auto& point : m_original_trajectory)
     {
-        TrajectoryPoint scaledPoint;
+        TrajectoryPoint scaled_point;
         
         // Convert to center-relative coordinates
-        float relX = point.x - centerX;
-        float relY = point.y - centerY;
+        float rel_x = point.x - center_x;
+        float rel_y = point.y - center_y;
         
         // Scale
-        relX *= trajectoryScale;
-        relY *= trajectoryScale;
+        rel_x *= m_trajectory_scale;
+        rel_y *= m_trajectory_scale;
         
         // Convert back and clamp
-        scaledPoint.x = juce::jlimit(0.0f, 1.0f, centerX + relX);
-        scaledPoint.y = juce::jlimit(0.0f, 1.0f, centerY + relY);
-        scaledPoint.time = point.time;
+        scaled_point.x = juce::jlimit(0.0f, 1.0f, center_x + rel_x);
+        scaled_point.y = juce::jlimit(0.0f, 1.0f, center_y + rel_y);
+        scaled_point.time = point.time;
         
-        trajectory.push_back(scaledPoint);
+        m_trajectory.push_back(scaled_point);
     }
 }
 

@@ -82,8 +82,8 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
 
-    void setPlaybackSpeed(float speed);
-    float getPlaybackSpeed() const;
+    void set_playback_speed(float speed);
+    float get_playback_speed() const;
     
     juce::String getTextPrompt() const { return textPromptEditor.getText(); }
     
@@ -213,7 +213,7 @@ private:
     int currentVariationIndex = 0;
     int numVariations = 2; // Default to 2 variations
     bool autoCycleVariations = true;
-    float lastReadHeadPosition = 0.0f; // Track position for wrap detection
+    float m_last_read_head_position = 0.0f; // Track position for wrap detection
     
     // Pending variations waiting for loop end
     juce::Array<juce::File> pendingVariationFiles;

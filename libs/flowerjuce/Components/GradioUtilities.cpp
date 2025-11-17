@@ -11,10 +11,10 @@ juce::Result saveTrackBufferToWavFile(
     juce::File& outputFile,
     const juce::String& filePrefix)
 {
-    auto& track = engine.getTrack(trackIndex);
+    auto& track = engine.get_track(trackIndex);
     
-    const juce::ScopedLock sl(track.tapeLoop.m_lock);
-    const auto& buffer = track.tapeLoop.get_buffer();
+    const juce::ScopedLock sl(track.m_tape_loop.m_lock);
+    const auto& buffer = track.m_tape_loop.get_buffer();
     
     if (buffer.empty())
     {
@@ -22,29 +22,29 @@ juce::Result saveTrackBufferToWavFile(
     }
 
     // Get wrapPos to determine how much to save
-    size_t wrapPos = track.writeHead.get_wrap_pos();
-    if (wrapPos == 0)
+    size_t wrap_pos = track.m_write_head.get_wrap_pos();
+    if (wrap_pos == 0)
     {
-        wrapPos = track.tapeLoop.m_recorded_length.load();
+        wrap_pos = track.m_tape_loop.m_recorded_length.load();
     }
-    if (wrapPos == 0)
+    if (wrap_pos == 0)
     {
-        wrapPos = buffer.size(); // Fallback to full buffer
+        wrap_pos = buffer.size(); // Fallback to full buffer
     }
     
     // Clamp wrapPos to buffer size
-    wrapPos = juce::jmin(wrapPos, buffer.size());
+    wrap_pos = juce::jmin(wrap_pos, buffer.size());
     
-    if (wrapPos == 0)
+    if (wrap_pos == 0)
     {
         return juce::Result::fail("No audio data to save");
     }
 
     // Get sample rate
-    double sampleRate = track.writeHead.get_sample_rate();
-    if (sampleRate <= 0)
+    double sample_rate = track.m_write_head.get_sample_rate();
+    if (sample_rate <= 0)
     {
-        sampleRate = 44100.0; // Default sample rate
+        sample_rate = 44100.0; // Default sample rate
     }
 
     // Create temporary file
@@ -69,7 +69,7 @@ juce::Result saveTrackBufferToWavFile(
     // Create WAV writer
     juce::WavAudioFormat wavFormat;
     using Opts = juce::AudioFormatWriterOptions;
-    auto options = Opts{}.withSampleRate(sampleRate)
+    auto options = Opts{}.withSampleRate(sample_rate)
                           .withNumChannels(1)  // Mono
                           .withBitsPerSample(16);
 
@@ -82,11 +82,11 @@ juce::Result saveTrackBufferToWavFile(
 
     // Write audio data (cropped to wrapPos)
     // Convert float buffer to AudioBuffer for writing
-    juce::AudioBuffer<float> audioBuffer(1, static_cast<int>(wrapPos));
+    juce::AudioBuffer<float> audioBuffer(1, static_cast<int>(wrap_pos));
     const float* source = buffer.data();
     float* dest = audioBuffer.getWritePointer(0);
     
-    for (size_t i = 0; i < wrapPos; ++i)
+    for (size_t i = 0; i < wrap_pos; ++i)
     {
         dest[i] = source[i];
     }
@@ -100,7 +100,7 @@ juce::Result saveTrackBufferToWavFile(
     // Writer will flush and close when destroyed
     writer.reset();
 
-    DBG("GradioUtilities: Saved " + juce::String(wrapPos) + " samples to " + outputFile.getFullPathName());
+    DBG("GradioUtilities: Saved " + juce::String(wrap_pos) + " samples to " + outputFile.getFullPathName());
     return juce::Result::ok();
 }
 
@@ -111,10 +111,10 @@ juce::Result saveTrackBufferToWavFile(
     juce::File& outputFile,
     const juce::String& filePrefix)
 {
-    auto& track = engine.getTrack(trackIndex);
+    auto& track = engine.get_track(trackIndex);
     
-    const juce::ScopedLock sl(track.recordBuffer.m_lock);
-    const auto& buffer = track.recordBuffer.get_buffer();
+    const juce::ScopedLock sl(track.m_record_buffer.m_lock);
+    const auto& buffer = track.m_record_buffer.get_buffer();
     
     if (buffer.empty())
     {
@@ -122,29 +122,29 @@ juce::Result saveTrackBufferToWavFile(
     }
 
     // Get wrapPos to determine how much to save
-    size_t wrapPos = track.writeHead.get_wrap_pos();
-    if (wrapPos == 0)
+    size_t wrap_pos = track.m_write_head.get_wrap_pos();
+    if (wrap_pos == 0)
     {
-        wrapPos = track.recordBuffer.m_recorded_length.load();
+        wrap_pos = track.m_record_buffer.m_recorded_length.load();
     }
-    if (wrapPos == 0)
+    if (wrap_pos == 0)
     {
-        wrapPos = buffer.size(); // Fallback to full buffer
+        wrap_pos = buffer.size(); // Fallback to full buffer
     }
     
     // Clamp wrapPos to buffer size
-    wrapPos = juce::jmin(wrapPos, buffer.size());
+    wrap_pos = juce::jmin(wrap_pos, buffer.size());
     
-    if (wrapPos == 0)
+    if (wrap_pos == 0)
     {
         return juce::Result::fail("No audio data to save");
     }
 
     // Get sample rate
-    double sampleRate = track.writeHead.get_sample_rate();
-    if (sampleRate <= 0)
+    double sample_rate = track.m_write_head.get_sample_rate();
+    if (sample_rate <= 0)
     {
-        sampleRate = 44100.0; // Default sample rate
+        sample_rate = 44100.0; // Default sample rate
     }
 
     // Create temporary file
@@ -169,7 +169,7 @@ juce::Result saveTrackBufferToWavFile(
     // Create WAV writer
     juce::WavAudioFormat wavFormat;
     using Opts = juce::AudioFormatWriterOptions;
-    auto options = Opts{}.withSampleRate(sampleRate)
+    auto options = Opts{}.withSampleRate(sample_rate)
                           .withNumChannels(1)  // Mono
                           .withBitsPerSample(16);
 
@@ -182,11 +182,11 @@ juce::Result saveTrackBufferToWavFile(
 
     // Write audio data (cropped to wrapPos)
     // Convert float buffer to AudioBuffer for writing
-    juce::AudioBuffer<float> audioBuffer(1, static_cast<int>(wrapPos));
+    juce::AudioBuffer<float> audioBuffer(1, static_cast<int>(wrap_pos));
     const float* source = buffer.data();
     float* dest = audioBuffer.getWritePointer(0);
     
-    for (size_t i = 0; i < wrapPos; ++i)
+    for (size_t i = 0; i < wrap_pos; ++i)
     {
         dest[i] = source[i];
     }
@@ -200,7 +200,7 @@ juce::Result saveTrackBufferToWavFile(
     // Writer will flush and close when destroyed
     writer.reset();
 
-    DBG("GradioUtilities: Saved " + juce::String(wrapPos) + " samples to " + outputFile.getFullPathName());
+    DBG("GradioUtilities: Saved " + juce::String(wrap_pos) + " samples to " + outputFile.getFullPathName());
     return juce::Result::ok();
 }
 
@@ -211,10 +211,10 @@ juce::Result saveVampNetOutputBufferToWavFile(
     juce::File& outputFile,
     const juce::String& filePrefix)
 {
-    auto& track = engine.getTrack(trackIndex);
+    auto& track = engine.get_track(trackIndex);
     
-    const juce::ScopedLock sl(track.outputBuffer.m_lock);
-    const auto& buffer = track.outputBuffer.get_buffer();
+    const juce::ScopedLock sl(track.m_output_buffer.m_lock);
+    const auto& buffer = track.m_output_buffer.get_buffer();
     
     if (buffer.empty())
     {
@@ -222,25 +222,25 @@ juce::Result saveVampNetOutputBufferToWavFile(
     }
 
     // Get recorded length to determine how much to save
-    size_t recordedLength = track.outputBuffer.m_recorded_length.load();
-    if (recordedLength == 0)
+    size_t recorded_length = track.m_output_buffer.m_recorded_length.load();
+    if (recorded_length == 0)
     {
-        recordedLength = buffer.size(); // Fallback to full buffer
+        recorded_length = buffer.size(); // Fallback to full buffer
     }
     
     // Clamp recordedLength to buffer size
-    recordedLength = juce::jmin(recordedLength, buffer.size());
+    recorded_length = juce::jmin(recorded_length, buffer.size());
     
-    if (recordedLength == 0)
+    if (recorded_length == 0)
     {
         return juce::Result::fail("No audio data in output buffer");
     }
 
     // Get sample rate from write head (should be same for all buffers)
-    double sampleRate = track.writeHead.get_sample_rate();
-    if (sampleRate <= 0)
+    double sample_rate = track.m_write_head.get_sample_rate();
+    if (sample_rate <= 0)
     {
-        sampleRate = 44100.0; // Default sample rate
+        sample_rate = 44100.0; // Default sample rate
     }
 
     // Create temporary file
@@ -265,7 +265,7 @@ juce::Result saveVampNetOutputBufferToWavFile(
     // Create WAV writer
     juce::WavAudioFormat wavFormat;
     using Opts = juce::AudioFormatWriterOptions;
-    auto options = Opts{}.withSampleRate(sampleRate)
+    auto options = Opts{}.withSampleRate(sample_rate)
                           .withNumChannels(1)  // Mono
                           .withBitsPerSample(16);
 
@@ -278,11 +278,11 @@ juce::Result saveVampNetOutputBufferToWavFile(
 
     // Write audio data (cropped to recordedLength)
     // Convert float buffer to AudioBuffer for writing
-    juce::AudioBuffer<float> audioBuffer(1, static_cast<int>(recordedLength));
+    juce::AudioBuffer<float> audioBuffer(1, static_cast<int>(recorded_length));
     const float* source = buffer.data();
     float* dest = audioBuffer.getWritePointer(0);
     
-    for (size_t i = 0; i < recordedLength; ++i)
+    for (size_t i = 0; i < recorded_length; ++i)
     {
         dest[i] = source[i];
     }
@@ -296,7 +296,7 @@ juce::Result saveVampNetOutputBufferToWavFile(
     // Writer will flush and close when destroyed
     writer.reset();
 
-    DBG("GradioUtilities: Saved " + juce::String(recordedLength) + " samples from output buffer to " + outputFile.getFullPathName());
+    DBG("GradioUtilities: Saved " + juce::String(recorded_length) + " samples from output buffer to " + outputFile.getFullPathName());
     return juce::Result::ok();
 }
 

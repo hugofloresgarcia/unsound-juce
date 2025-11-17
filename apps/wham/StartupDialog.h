@@ -11,7 +11,7 @@ class StartupDialog : public juce::Component,
 public:
     StartupDialog(juce::AudioDeviceManager& deviceManager);
     
-    int getNumTracks() const { return numTracks; }
+    int get_num_tracks() const { return numTracks; }
     juce::String getSelectedPanner() const { return selectedPanner; }
     juce::AudioDeviceManager::AudioDeviceSetup getDeviceSetup() const;
     

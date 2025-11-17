@@ -20,19 +20,19 @@ void DualWaveformDisplay::paint(juce::Graphics& g)
     auto separatorY = recordArea.getBottom();
     auto outputArea = bounds;
     
-    auto& track = looperEngine.getTrack(trackIndex);
+    auto& track = looperEngine.get_track(trackIndex);
     
     // Draw record buffer waveform (top)
-    drawWaveform(g, recordArea, track.recordBuffer, track.recordReadHead, track.writeHead, true);
-    drawPlayhead(g, recordArea, track.recordBuffer, track.recordReadHead, track.isPlaying.load());
+    drawWaveform(g, recordArea, track.m_record_buffer, track.m_record_read_head, track.m_write_head, true);
+    drawPlayhead(g, recordArea, track.m_record_buffer, track.m_record_read_head, track.m_is_playing.load());
     
     // Draw separator line between the two waveforms
     g.setColour(juce::Colour(0xff333333));
     g.drawLine(bounds.getX(), separatorY, bounds.getRight(), separatorY, 2.0f);
     
     // Draw output buffer waveform (bottom)
-    drawWaveform(g, outputArea, track.outputBuffer, track.outputReadHead, track.writeHead, false);
-    drawPlayhead(g, outputArea, track.outputBuffer, track.outputReadHead, track.isPlaying.load());
+    drawWaveform(g, outputArea, track.m_output_buffer, track.m_output_read_head, track.m_write_head, false);
+    drawPlayhead(g, outputArea, track.m_output_buffer, track.m_output_read_head, track.m_is_playing.load());
     
     // Draw labels
     g.setColour(juce::Colour(0xfff3d430));

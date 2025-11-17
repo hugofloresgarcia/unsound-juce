@@ -3,59 +3,59 @@
 
 CLEATPanner::CLEATPanner()
 {
-    panX.store(0.5f); // Default to center
-    panY.store(0.5f); // Default to center
+    m_pan_x.store(0.5f); // Default to center
+    m_pan_y.store(0.5f); // Default to center
 }
 
-void CLEATPanner::setPan(float x, float y)
+void CLEATPanner::set_pan(float x, float y)
 {
     x = juce::jlimit(0.0f, 1.0f, x);
     y = juce::jlimit(0.0f, 1.0f, y);
-    panX.store(x);
-    panY.store(y);
+    m_pan_x.store(x);
+    m_pan_y.store(y);
 }
 
-float CLEATPanner::getPanX() const
+float CLEATPanner::get_pan_x() const
 {
-    return panX.load();
+    return m_pan_x.load();
 }
 
-float CLEATPanner::getPanY() const
+float CLEATPanner::get_pan_y() const
 {
-    return panY.load();
+    return m_pan_y.load();
 }
 
-void CLEATPanner::processBlock(const float* const* inputChannelData,
-                               int numInputChannels,
-                               float* const* outputChannelData,
-                               int numOutputChannels,
-                               int numSamples)
+void CLEATPanner::process_block(const float* const* input_channel_data,
+                               int num_input_channels,
+                               float* const* output_channel_data,
+                               int num_output_channels,
+                               int num_samples)
 {
     // Verify we have the expected channels
-    if (numInputChannels < 1 || numOutputChannels < 16)
+    if (num_input_channels < 1 || num_output_channels < 16)
         return;
 
     // Get current pan position
-    float x = panX.load();
-    float y = panY.load();
+    float x = m_pan_x.load();
+    float y = m_pan_y.load();
     
     // Compute panning gains (16 channels, row-major)
-    auto gains = PanningUtils::computeCLEATGains(x, y);
+    auto gains = PanningUtils::compute_cleat_gains(x, y);
     
     // Get input channel (mono)
-    const float* input = inputChannelData[0];
+    const float* input = input_channel_data[0];
     
     // Process samples
-    for (int sample = 0; sample < numSamples; ++sample)
+    for (int sample = 0; sample < num_samples; ++sample)
     {
-        float inputSample = input[sample];
+        float input_sample = input[sample];
         
         // Apply gains to all 16 output channels (accumulate for multi-track mixing)
         for (int channel = 0; channel < 16; ++channel)
         {
-            if (outputChannelData[channel] != nullptr)
+            if (output_channel_data[channel] != nullptr)
             {
-                outputChannelData[channel][sample] += inputSample * gains[channel];
+                output_channel_data[channel][sample] += input_sample * gains[channel];
             }
         }
     }

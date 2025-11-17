@@ -29,8 +29,8 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
 
-    void setPlaybackSpeed(float speed);
-    float getPlaybackSpeed() const;
+    void set_playback_speed(float speed);
+    float get_playback_speed() const;
     
     // Update channel selectors based on current audio device
     void updateChannelSelectors();

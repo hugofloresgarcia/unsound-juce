@@ -38,8 +38,8 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
 
     // Create looper tracks (limit to available engines, max 4 for now)
     DBG_SEGFAULT("Creating tracks, numTracks=" + juce::String(numTracks));
-    int actualNumTracks = juce::jmin(numTracks, looperEngine.getNumTracks());
-    DBG_SEGFAULT("actualNumTracks=" + juce::String(actualNumTracks) + " (limited by engine max=" + juce::String(looperEngine.getNumTracks()) + ")");
+    int actualNumTracks = juce::jmin(numTracks, looperEngine.get_num_tracks());
+    DBG_SEGFAULT("actualNumTracks=" + juce::String(actualNumTracks) + " (limited by engine max=" + juce::String(looperEngine.get_num_tracks()) + ")");
     std::function<juce::String()> gradioUrlProvider = [this]() { return getGradioUrl(); };
     for (int i = 0; i < actualNumTracks; ++i)
     {
@@ -336,12 +336,12 @@ void MainComponent::timerCallback()
 
 void MainComponent::syncButtonClicked()
 {
-    looperEngine.syncAllTracks();
+    looperEngine.sync_all_tracks();
 }
 
 void MainComponent::updateAudioDeviceDebugInfo()
 {
-    auto* device = looperEngine.getAudioDeviceManager().getCurrentAudioDevice();
+    auto* device = looperEngine.get_audio_device_manager().getCurrentAudioDevice();
     if (device != nullptr)
     {
         juce::String deviceName = device->getName();
@@ -416,15 +416,15 @@ bool MainComponent::keyPressed(const juce::KeyPress& key, juce::Component* origi
             if (selectedTrack >= 0 && selectedTrack < static_cast<int>(tracks.size()))
             {
                 // Single track selected
-                auto& trackEngine = looperEngine.getTrackEngine(selectedTrack);
-                if (trackEngine.getSampler().hasSample())
+                auto& trackEngine = looperEngine.get_track_engine(selectedTrack);
+                if (trackEngine.get_sampler().hasSample())
                 {
-                    trackEngine.getSampler().trigger();
+                    trackEngine.get_sampler().trigger();
                     
-                    auto& track = looperEngine.getTrack(selectedTrack);
-                    if (!track.writeHead.get_record_enable())
+                    auto& track = looperEngine.get_track(selectedTrack);
+                    if (!track.m_write_head.get_record_enable())
                     {
-                        track.writeHead.set_record_enable(true);
+                        track.m_write_head.set_record_enable(true);
                         tracks[selectedTrack]->repaint();
                     }
                 }
@@ -434,15 +434,15 @@ bool MainComponent::keyPressed(const juce::KeyPress& key, juce::Component* origi
                 // All tracks - trigger sampler on all tracks
                 for (size_t i = 0; i < tracks.size(); ++i)
                 {
-                    auto& trackEngine = looperEngine.getTrackEngine(static_cast<int>(i));
-                    if (trackEngine.getSampler().hasSample())
+                    auto& trackEngine = looperEngine.get_track_engine(static_cast<int>(i));
+                    if (trackEngine.get_sampler().hasSample())
                     {
-                        trackEngine.getSampler().trigger();
+                        trackEngine.get_sampler().trigger();
                         
-                        auto& track = looperEngine.getTrack(static_cast<int>(i));
-                        if (!track.writeHead.get_record_enable())
+                        auto& track = looperEngine.get_track(static_cast<int>(i));
+                        if (!track.m_write_head.get_record_enable())
                         {
-                            track.writeHead.set_record_enable(true);
+                            track.m_write_head.set_record_enable(true);
                             tracks[i]->repaint();
                         }
                     }
@@ -458,13 +458,13 @@ bool MainComponent::keyPressed(const juce::KeyPress& key, juce::Component* origi
             if (selectedTrack >= 0 && selectedTrack < static_cast<int>(tracks.size()))
             {
                 // Single track selected
-                auto& trackEngine = looperEngine.getTrackEngine(selectedTrack);
-                trackEngine.getClickSynth().triggerClick();
+                auto& trackEngine = looperEngine.get_track_engine(selectedTrack);
+                trackEngine.get_click_synth().triggerClick();
                 
-                auto& track = looperEngine.getTrack(selectedTrack);
-                if (!track.writeHead.get_record_enable())
+                auto& track = looperEngine.get_track(selectedTrack);
+                if (!track.m_write_head.get_record_enable())
                 {
-                    track.writeHead.set_record_enable(true);
+                    track.m_write_head.set_record_enable(true);
                     tracks[selectedTrack]->repaint();
                 }
             }
@@ -473,13 +473,13 @@ bool MainComponent::keyPressed(const juce::KeyPress& key, juce::Component* origi
                 // All tracks - trigger click on all tracks
                 for (size_t i = 0; i < tracks.size(); ++i)
                 {
-                    auto& trackEngine = looperEngine.getTrackEngine(static_cast<int>(i));
-                    trackEngine.getClickSynth().triggerClick();
+                    auto& trackEngine = looperEngine.get_track_engine(static_cast<int>(i));
+                    trackEngine.get_click_synth().triggerClick();
                     
-                    auto& track = looperEngine.getTrack(static_cast<int>(i));
-                    if (!track.writeHead.get_record_enable())
+                    auto& track = looperEngine.get_track(static_cast<int>(i));
+                    if (!track.m_write_head.get_record_enable())
                     {
-                        track.writeHead.set_record_enable(true);
+                        track.m_write_head.set_record_enable(true);
                         tracks[i]->repaint();
                     }
                 }
@@ -503,15 +503,15 @@ bool MainComponent::keyStateChanged(bool isKeyDown, juce::Component* originating
             
             if (activeTrackIndex < static_cast<int>(tracks.size()))
             {
-                auto& track = looperEngine.getTrack(activeTrackIndex);
+                auto& track = looperEngine.get_track(activeTrackIndex);
                 
                 // Enable recording
-                track.writeHead.set_record_enable(true);
+                track.m_write_head.set_record_enable(true);
                 
                 // Start playback if not already playing
-                if (!track.isPlaying.load())
+                if (!track.m_is_playing.load())
                 {
-                    track.isPlaying = true;
+                    track.m_is_playing = true;
                 }
                 
                 DBG("Started recording on track " + juce::String(activeTrackIndex + 1));
@@ -527,10 +527,10 @@ bool MainComponent::keyStateChanged(bool isKeyDown, juce::Component* originating
         
         if (activeTrackIndex < static_cast<int>(tracks.size()))
         {
-            auto& track = looperEngine.getTrack(activeTrackIndex);
+            auto& track = looperEngine.get_track(activeTrackIndex);
             
             // Disable recording
-            track.writeHead.set_record_enable(false);
+            track.m_write_head.set_record_enable(false);
             
             DBG("Stopped recording on track " + juce::String(activeTrackIndex + 1) + ", triggering generation");
             

@@ -18,78 +18,79 @@
 #endif
 
 VampNetTrackEngine::VampNetTrackEngine()
-    : clickSynth(std::make_unique<VampNet::ClickSynth>()),
-      sampler(std::make_unique<VampNet::Sampler>())
+    : m_click_synth(std::make_unique<VampNet::ClickSynth>()),
+      m_sampler(std::make_unique<VampNet::Sampler>())
 {
-    formatManager.registerBasicFormats();
+    m_format_manager.registerBasicFormats();
 }
 
 VampNetTrackEngine::~VampNetTrackEngine() = default;
 
-void VampNetTrackEngine::initialize(double sampleRate, double maxBufferDurationSeconds)
+void VampNetTrackEngine::initialize(double sample_rate, double max_buffer_duration_seconds)
 {
-    trackState.recordBuffer.allocate_buffer(sampleRate, maxBufferDurationSeconds);
-    trackState.outputBuffer.allocate_buffer(sampleRate, maxBufferDurationSeconds);
+    m_track_state.m_record_buffer.allocate_buffer(sample_rate, max_buffer_duration_seconds);
+    m_track_state.m_output_buffer.allocate_buffer(sample_rate, max_buffer_duration_seconds);
+    m_max_buffer_duration_seconds = max_buffer_duration_seconds;
 }
 
-void VampNetTrackEngine::audioDeviceAboutToStart(double sampleRate)
+void VampNetTrackEngine::audio_device_about_to_start(double sample_rate)
 {
-    trackState.recordBuffer.allocate_buffer(sampleRate, maxBufferDurationSeconds);
-    trackState.outputBuffer.allocate_buffer(sampleRate, maxBufferDurationSeconds);
-    trackState.writeHead.set_sample_rate(sampleRate);
-    trackState.recordReadHead.set_sample_rate(sampleRate);
-    trackState.outputReadHead.set_sample_rate(sampleRate);
-    trackState.writeHead.reset();
-    trackState.recordReadHead.reset();
-    trackState.outputReadHead.reset();
+    m_track_state.m_record_buffer.allocate_buffer(sample_rate, m_max_buffer_duration_seconds);
+    m_track_state.m_output_buffer.allocate_buffer(sample_rate, m_max_buffer_duration_seconds);
+    m_track_state.m_write_head.set_sample_rate(sample_rate);
+    m_track_state.m_record_read_head.set_sample_rate(sample_rate);
+    m_track_state.m_output_read_head.set_sample_rate(sample_rate);
+    m_track_state.m_write_head.reset();
+    m_track_state.m_record_read_head.reset();
+    m_track_state.m_output_read_head.reset();
 }
 
-void VampNetTrackEngine::audioDeviceStopped()
+void VampNetTrackEngine::audio_device_stopped()
 {
-    trackState.isPlaying.store(false);
-    trackState.recordReadHead.set_playing(false);
-    trackState.outputReadHead.set_playing(false);
+    m_track_state.m_is_playing.store(false);
+    m_track_state.m_record_read_head.set_playing(false);
+    m_track_state.m_output_read_head.set_playing(false);
 }
 
 void VampNetTrackEngine::reset()
 {
-    trackState.recordReadHead.reset();
-    trackState.outputReadHead.reset();
+    m_track_state.m_record_read_head.reset();
+    m_track_state.m_output_read_head.reset();
 }
 
-bool VampNetTrackEngine::loadFromFile(const juce::File& audioFile)
+bool VampNetTrackEngine::load_from_file(const juce::File& audio_file)
 {
-    if (!audioFile.existsAsFile())
+    if (!audio_file.existsAsFile())
     {
-        DBG("Audio file does not exist: " << audioFile.getFullPathName());
+        DBG("Audio file does not exist: " << audio_file.getFullPathName());
         return false;
     }
 
     // Create reader for the audio file
-    std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(audioFile));
+    std::unique_ptr<juce::AudioFormatReader> reader(m_format_manager.createReaderFor(audio_file));
     if (reader == nullptr)
     {
-        DBG("Could not create reader for file: " << audioFile.getFullPathName());
+        DBG("Could not create reader for file: " << audio_file.getFullPathName());
         return false;
     }
 
     // Get the record buffer's length to truncate output buffer to match
-    size_t recordBufferLength = trackState.recordBuffer.m_recorded_length.load();
-    size_t recordBufferWrapPos = trackState.writeHead.get_wrap_pos();
-    if (recordBufferWrapPos > 0)
+    size_t record_buffer_length = m_track_state.m_record_buffer.m_recorded_length.load();
+    size_t record_buffer_wrap_pos = m_track_state.m_write_head.get_wrap_pos();
+    if (record_buffer_wrap_pos > 0)
     {
-        recordBufferLength = recordBufferWrapPos;
+        record_buffer_length = record_buffer_wrap_pos;
     }
     
     // If no record buffer length, we can't truncate - return error
-    if (recordBufferLength == 0)
+    if (record_buffer_length == 0)
     {
         DBG("Cannot load output buffer: record buffer has no recorded audio");
         return false;
     }
 
-    const juce::ScopedLock sl(trackState.outputBuffer.m_lock);
-    auto& buffer = trackState.outputBuffer.get_buffer();
+    const juce::ScopedLock sl(m_track_state.m_output_buffer.m_lock);
+    auto& buffer = m_track_state.m_output_buffer.get_buffer();
     
     if (buffer.empty())
     {
@@ -98,16 +99,16 @@ bool VampNetTrackEngine::loadFromFile(const juce::File& audioFile)
     }
 
     // Clear the output buffer first
-    trackState.outputBuffer.clear_buffer();
+    m_track_state.m_output_buffer.clear_buffer();
 
     // Determine how many samples to read - truncate to record buffer length
-    juce::int64 numSamplesToRead = juce::jmin(
+    juce::int64 num_samples_to_read = juce::jmin(
         reader->lengthInSamples, 
         static_cast<juce::int64>(buffer.size()),
-        static_cast<juce::int64>(recordBufferLength)
+        static_cast<juce::int64>(record_buffer_length)
     );
     
-    if (numSamplesToRead <= 0)
+    if (num_samples_to_read <= 0)
     {
         DBG("Audio file has no samples or buffer is empty");
         return false;
@@ -115,9 +116,9 @@ bool VampNetTrackEngine::loadFromFile(const juce::File& audioFile)
 
     // Read audio data
     // If multi-channel, we'll mix down to mono by averaging channels
-    juce::AudioBuffer<float> tempBuffer(static_cast<int>(reader->numChannels), static_cast<int>(numSamplesToRead));
+    juce::AudioBuffer<float> temp_buffer(static_cast<int>(reader->numChannels), static_cast<int>(num_samples_to_read));
     
-    if (!reader->read(&tempBuffer, 0, static_cast<int>(numSamplesToRead), 0, true, true))
+    if (!reader->read(&temp_buffer, 0, static_cast<int>(num_samples_to_read), 0, true, true))
     {
         DBG("Failed to read audio data from file");
         return false;
@@ -125,11 +126,11 @@ bool VampNetTrackEngine::loadFromFile(const juce::File& audioFile)
 
     // Convert to mono and write to output buffer
     // If single channel, just copy. If multi-channel, average them.
-    if (tempBuffer.getNumChannels() == 1)
+    if (temp_buffer.getNumChannels() == 1)
     {
         // Direct copy
-        const float* source = tempBuffer.getReadPointer(0);
-        for (int i = 0; i < static_cast<int>(numSamplesToRead); ++i)
+        const float* source = temp_buffer.getReadPointer(0);
+        for (int i = 0; i < static_cast<int>(num_samples_to_read); ++i)
         {
             buffer[i] = source[i];
         }
@@ -137,296 +138,296 @@ bool VampNetTrackEngine::loadFromFile(const juce::File& audioFile)
     else
     {
         // Mix down to mono by averaging all channels
-        for (int i = 0; i < static_cast<int>(numSamplesToRead); ++i)
+        for (int i = 0; i < static_cast<int>(num_samples_to_read); ++i)
         {
             float sum = 0.0f;
-            for (int channel = 0; channel < tempBuffer.getNumChannels(); ++channel)
+            for (int channel = 0; channel < temp_buffer.getNumChannels(); ++channel)
             {
-                sum += tempBuffer.getSample(channel, i);
+                sum += temp_buffer.getSample(channel, i);
             }
-            buffer[i] = sum / static_cast<float>(tempBuffer.getNumChannels());
+            buffer[i] = sum / static_cast<float>(temp_buffer.getNumChannels());
         }
     }
 
     // Update output buffer metadata - always truncate to record buffer length
     // This ensures output buffer matches input buffer bounds exactly
-    size_t loadedLength = static_cast<size_t>(numSamplesToRead);
+    size_t loaded_length = static_cast<size_t>(num_samples_to_read);
     
     // Always use record buffer length as the final length (truncate if needed)
     // This ensures both buffers have the same playback length
-    trackState.outputBuffer.m_recorded_length.store(recordBufferLength);
-    trackState.outputBuffer.m_has_recorded.store(true);
+    m_track_state.m_output_buffer.m_recorded_length.store(record_buffer_length);
+    m_track_state.m_output_buffer.m_has_recorded.store(true);
     
     // If the loaded audio is shorter than the record buffer, pad with silence
-    // If longer, it's already truncated by numSamplesToRead calculation above
-    if (loadedLength < recordBufferLength)
+    // If longer, it's already truncated by num_samples_to_read calculation above
+    if (loaded_length < record_buffer_length)
     {
         // Zero out the remaining samples
-        for (size_t i = loadedLength; i < recordBufferLength && i < buffer.size(); ++i)
+        for (size_t i = loaded_length; i < record_buffer_length && i < buffer.size(); ++i)
         {
             buffer[i] = 0.0f;
         }
     }
     
     // Reset read heads to start (both buffers share the same playhead position)
-    trackState.recordReadHead.reset();
-    trackState.outputReadHead.reset();
-    trackState.recordReadHead.set_pos(0.0f);
-    trackState.outputReadHead.set_pos(0.0f);
+    m_track_state.m_record_read_head.reset();
+    m_track_state.m_output_read_head.reset();
+    m_track_state.m_record_read_head.set_pos(0.0f);
+    m_track_state.m_output_read_head.set_pos(0.0f);
 
-    DBG("Loaded audio file into output buffer: " << audioFile.getFileName() 
-        << " (" << numSamplesToRead << " samples, "
-        << (numSamplesToRead / reader->sampleRate) << " seconds)");
+    DBG("Loaded audio file into output buffer: " << audio_file.getFileName() 
+        << " (" << num_samples_to_read << " samples, "
+        << (num_samples_to_read / reader->sampleRate) << " seconds)");
 
     return true;
 }
 
-bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
-                                     int numInputChannels,
-                                     float* const* outputChannelData,
-                                     int numOutputChannels,
-                                     int numSamples,
-                                     bool shouldDebug)
+bool VampNetTrackEngine::process_block(const float* const* input_channel_data,
+                                     int num_input_channels,
+                                     float* const* output_channel_data,
+                                     int num_output_channels,
+                                     int num_samples,
+                                     bool should_debug)
 {
-    static int callCount = 0;
-    callCount++;
-    bool isFirstCall = (callCount == 1);
+    static int call_count = 0;
+    call_count++;
+    bool is_first_call = (call_count == 1);
     
-    if (isFirstCall)
-        DBG_SEGFAULT("ENTRY: VampNetTrackEngine::processBlock, numSamples=" + juce::String(numSamples));
+    if (is_first_call)
+        DBG_SEGFAULT("ENTRY: VampNetTrackEngine::process_block, num_samples=" + juce::String(num_samples));
     
-    auto& track = trackState;
-    if (isFirstCall)
+    auto& track = m_track_state;
+    if (is_first_call)
         DBG_SEGFAULT("Got track reference");
 
     // Safety check: if buffers are not allocated, return early
     {
-        const juce::ScopedLock sl1(track.recordBuffer.m_lock);
-        const juce::ScopedLock sl2(track.outputBuffer.m_lock);
-        if (isFirstCall)
+        const juce::ScopedLock sl1(track.m_record_buffer.m_lock);
+        const juce::ScopedLock sl2(track.m_output_buffer.m_lock);
+        if (is_first_call)
             DBG_SEGFAULT("Checking if buffers are empty");
-        if (track.recordBuffer.get_buffer().empty() || track.outputBuffer.get_buffer().empty()) {
-            juce::Logger::writeToLog("WARNING: Buffers are empty in processBlock");
-            if (isFirstCall)
+        if (track.m_record_buffer.get_buffer().empty() || track.m_output_buffer.get_buffer().empty()) {
+            juce::Logger::writeToLog("WARNING: Buffers are empty in process_block");
+            if (is_first_call)
                 DBG_SEGFAULT("Buffers are empty, returning false");
             return false;
         }
-        if (isFirstCall)
+        if (is_first_call)
             DBG_SEGFAULT("Buffers are not empty");
     }
 
-    bool isPlaying = track.isPlaying.load();
-    bool hasExistingAudio = track.recordBuffer.m_has_recorded.load();
+    bool is_playing = track.m_is_playing.load();
+    bool has_existing_audio = track.m_record_buffer.m_has_recorded.load();
     
-    if (isFirstCall && shouldDebug)
+    if (is_first_call && should_debug)
     {
         DBG("[VampNetTrackEngine] Track state check:");
-        DBG("  isPlaying: " << (isPlaying ? "YES" : "NO"));
-        DBG("  hasExistingAudio: " << (hasExistingAudio ? "YES" : "NO"));
-        DBG("  recordedLength: " << track.recordBuffer.m_recorded_length.load());
-        DBG("  recordEnable: " << (track.writeHead.get_record_enable() ? "YES" : "NO"));
+        DBG("  is_playing: " << (is_playing ? "YES" : "NO"));
+        DBG("  has_existing_audio: " << (has_existing_audio ? "YES" : "NO"));
+        DBG("  recorded_length: " << track.m_record_buffer.m_recorded_length.load());
+        DBG("  record_enable: " << (track.m_write_head.get_record_enable() ? "YES" : "NO"));
     }
-    size_t recordedLength = track.recordBuffer.m_recorded_length.load();
-    float playheadPos = track.recordReadHead.get_pos();
+    size_t recorded_length = track.m_record_buffer.m_recorded_length.load();
+    float playhead_pos = track.m_record_read_head.get_pos();
 
     // Debug output
-    if (shouldDebug)
+    if (should_debug)
     {
-        float inputLevel = 0.0f;
-        float maxInput = 0.0f;
-        if (inputChannelData[0] != nullptr && numInputChannels > 0 && numSamples > 0)
+        float input_level = 0.0f;
+        float max_input = 0.0f;
+        if (input_channel_data[0] != nullptr && num_input_channels > 0 && num_samples > 0)
         {
-            inputLevel = std::abs(inputChannelData[0][0]);
-            for (int s = 0; s < numSamples && s < 100; ++s)
+            input_level = std::abs(input_channel_data[0][0]);
+            for (int s = 0; s < num_samples && s < 100; ++s)
             {
-                maxInput = juce::jmax(maxInput, std::abs(inputChannelData[0][s]));
+                max_input = juce::jmax(max_input, std::abs(input_channel_data[0][s]));
             }
         }
 
         juce::Logger::writeToLog(juce::String("VampNetTrack")
-            + "\t - Play: " + (isPlaying ? "YES" : "NO")
-            + "\t RecEnable: " + (track.writeHead.get_record_enable() ? "YES" : "NO")
-            + "\t Playhead: " + juce::String(playheadPos)
-            + "\t RecordedLen: " + juce::String(recordedLength)
-            + "\t HasAudio: " + (hasExistingAudio ? "YES" : "NO")
-            + "\t InputLevel: " + juce::String(inputLevel)
-            + "\t MaxInput: " + juce::String(maxInput)
-            + "\t InputChannels: " + juce::String(numInputChannels)
-            + "\t NumSamples: " + juce::String(numSamples)
-            + "\t WrapPos: " + juce::String(track.writeHead.get_wrap_pos())
-            + "\t DryWetMix: " + juce::String(track.dryWetMix.load())
+            + "\t - Play: " + (is_playing ? "YES" : "NO")
+            + "\t RecEnable: " + (track.m_write_head.get_record_enable() ? "YES" : "NO")
+            + "\t Playhead: " + juce::String(playhead_pos)
+            + "\t RecordedLen: " + juce::String(recorded_length)
+            + "\t HasAudio: " + (has_existing_audio ? "YES" : "NO")
+            + "\t InputLevel: " + juce::String(input_level)
+            + "\t MaxInput: " + juce::String(max_input)
+            + "\t InputChannels: " + juce::String(num_input_channels)
+            + "\t NumSamples: " + juce::String(num_samples)
+            + "\t WrapPos: " + juce::String(track.m_write_head.get_wrap_pos())
+            + "\t DryWetMix: " + juce::String(track.m_dry_wet_mix.load())
         );
     }
 
     // Check if we just started recording (wasn't recording before, but are now)
-    bool thisBlockIsFirstTimeRecording = !wasRecording && track.writeHead.get_record_enable() && !hasExistingAudio;
+    bool this_block_is_first_time_recording = !m_was_recording && track.m_write_head.get_record_enable() && !has_existing_audio;
 
     // If we just stopped recording (record enable turned off), finalize the loop
-    bool recordingFinalized = false;
-    if (wasRecording && !track.writeHead.get_record_enable() && isPlaying && !hasExistingAudio)
+    bool recording_finalized = false;
+    if (m_was_recording && !track.m_write_head.get_record_enable() && is_playing && !has_existing_audio)
     {
-        track.writeHead.finalize_recording(track.writeHead.get_pos());
-        track.recordReadHead.reset(); // Reset playhead to start of loop
-        track.outputReadHead.reset();
-        recordingFinalized = true;
+        track.m_write_head.finalize_recording(track.m_write_head.get_pos());
+        track.m_record_read_head.reset(); // Reset playhead to start of loop
+        track.m_output_read_head.reset();
+        recording_finalized = true;
         juce::Logger::writeToLog("~~~ Finalized initial recording");
     }
 
     // Update wasRecording for next callback
-    wasRecording = track.writeHead.get_record_enable();
-    bool playbackJustStopped = wasPlaying && !isPlaying;
-    wasPlaying = isPlaying;
+    m_was_recording = track.m_write_head.get_record_enable();
+    bool playback_just_stopped = m_was_playing && !is_playing;
+    m_was_playing = is_playing;
 
-    if (isPlaying)
+    if (is_playing)
     {
         // If we just started recording, reset everything to 0 BEFORE processing
-        if (thisBlockIsFirstTimeRecording) // REC_INIT state
+        if (this_block_is_first_time_recording) // REC_INIT state
         {
-            const juce::ScopedLock sl(track.recordBuffer.m_lock);
-            track.recordBuffer.clear_buffer(); // TODO: should NOT be in callback.
-            track.writeHead.reset();
-            track.recordReadHead.reset();
-            track.outputReadHead.reset();
+            const juce::ScopedLock sl(track.m_record_buffer.m_lock);
+            track.m_record_buffer.clear_buffer(); // TODO: should NOT be in callback.
+            track.m_write_head.reset();
+            track.m_record_read_head.reset();
+            track.m_output_read_head.reset();
             juce::Logger::writeToLog("~~~ Reset playhead for new recording");
         }
 
         // Update read head states
-        track.recordReadHead.set_playing(true);
-        track.outputReadHead.set_playing(true);
+        track.m_record_read_head.set_playing(true);
+        track.m_output_read_head.set_playing(true);
 
         // Allocate temporary mono buffer for playback samples
-        juce::HeapBlock<float> monoBuffer(numSamples);
-        const float* monoInputChannelData[1] = { monoBuffer.getData() };
+        juce::HeapBlock<float> mono_buffer(num_samples);
+        const float* mono_input_channel_data[1] = { mono_buffer.getData() };
 
-        if (isFirstCall)
-            DBG_SEGFAULT("Entering sample loop, numSamples=" + juce::String(numSamples));
+        if (is_first_call)
+            DBG_SEGFAULT("Entering sample loop, num_samples=" + juce::String(num_samples));
         
         // OPTIMIZATION: Pre-cache values that don't change during the block
-        float wrapPos = static_cast<float>(track.writeHead.get_wrap_pos());
-        bool isRecording = track.writeHead.get_record_enable() && numInputChannels > 0;
-        int inputChannel = track.writeHead.get_input_channel();
-        bool clickActive = clickSynth->isClickActive();
-        bool samplerActive = sampler->isPlaying();
-        double sampleRate = track.writeHead.get_sample_rate();
-        float mix = track.dryWetMix.load();
+        float wrap_pos = static_cast<float>(track.m_write_head.get_wrap_pos());
+        bool is_recording = track.m_write_head.get_record_enable() && num_input_channels > 0;
+        int input_channel = track.m_write_head.get_input_channel();
+        bool click_active = m_click_synth->isClickActive();
+        bool sampler_active = m_sampler->isPlaying();
+        double sample_rate = track.m_write_head.get_sample_rate();
+        float mix = track.m_dry_wet_mix.load();
         
         // Store positions and input samples for writing (since writeHead locks internally)
-        juce::Array<float> writePositions;
-        juce::Array<float> writeSamples;
-        if (isRecording)
+        juce::Array<float> write_positions;
+        juce::Array<float> write_samples;
+        if (is_recording)
         {
-            writePositions.resize(numSamples);
-            writeSamples.resize(numSamples);
+            write_positions.resize(num_samples);
+            write_samples.resize(num_samples);
         }
         
         // OPTIMIZATION: Lock buffers once per block for reading instead of per-sample
-        // This dramatically reduces lock contention (from numSamples locks to 1 lock per block)
+        // This dramatically reduces lock contention (from num_samples locks to 1 lock per block)
         {
-            const juce::ScopedLock sl1(track.recordBuffer.m_lock);
-            const juce::ScopedLock sl2(track.outputBuffer.m_lock);
+            const juce::ScopedLock sl1(track.m_record_buffer.m_lock);
+            const juce::ScopedLock sl2(track.m_output_buffer.m_lock);
             
-            for (int sample = 0; sample < numSamples; ++sample)
+            for (int sample = 0; sample < num_samples; ++sample)
             {
-                if (isFirstCall && sample == 0)
+                if (is_first_call && sample == 0)
                     DBG_SEGFAULT("First sample iteration");
                 
-                float currentPosition = track.recordReadHead.get_pos();
+                float current_position = track.m_record_read_head.get_pos();
 
                 // Prepare input sample for recording (store for writing after releasing locks)
-                if (isRecording)
+                if (is_recording)
                 {
-                    float inputSample = 0.0f;
+                    float input_sample = 0.0f;
                     // Get input sample from selected channel
-                    if (inputChannel == -1)
+                    if (input_channel == -1)
                     {
                         // All channels: use channel 0 (mono sum could be added later)
-                        if (inputChannelData[0] != nullptr)
-                            inputSample = inputChannelData[0][sample];
+                        if (input_channel_data[0] != nullptr)
+                            input_sample = input_channel_data[0][sample];
                     }
-                    else if (inputChannel >= 0 && inputChannel < numInputChannels && inputChannelData[inputChannel] != nullptr)
+                    else if (input_channel >= 0 && input_channel < num_input_channels && input_channel_data[input_channel] != nullptr)
                     {
-                        inputSample = inputChannelData[inputChannel][sample];
+                        input_sample = input_channel_data[input_channel][sample];
                     }
                     
                     // Mix in click audio if click synth is active
-                    if (clickActive)
+                    if (click_active)
                     {
-                        float clickSample = clickSynth->getNextSample(sampleRate);
-                        inputSample += clickSample; // Mix click into input
+                        float click_sample = m_click_synth->getNextSample(sample_rate);
+                        input_sample += click_sample; // Mix click into input
                     }
                     
                     // Mix in sampler audio if sampler is playing
-                    if (samplerActive)
+                    if (sampler_active)
                     {
-                        float samplerSample = sampler->getNextSample();
-                        inputSample += samplerSample; // Mix sampler into input
+                        float sampler_sample = m_sampler->getNextSample();
+                        input_sample += sampler_sample; // Mix sampler into input
                     }
                     
                     // Store position and sample for later writing
-                    writePositions.set(sample, currentPosition);
-                    writeSamples.set(sample, inputSample);
+                    write_positions.set(sample, current_position);
+                    write_samples.set(sample, input_sample);
                 }
 
                 // Playback - read from both buffers and mix dry/wet
                 // Sync output read head position to match record read head
-                track.outputReadHead.set_pos(track.recordReadHead.get_pos());
+                track.m_output_read_head.set_pos(track.m_record_read_head.get_pos());
                 
-                float drySample = track.recordReadHead.process_sample();
-                float wetSample = track.outputReadHead.process_sample();
+                float dry_sample = track.m_record_read_head.process_sample();
+                float wet_sample = track.m_output_read_head.process_sample();
                 
                 // Mix dry and wet based on dry/wet mix parameter
-                // dryWetMix: 0.0 = all dry (record buffer), 1.0 = all wet (output buffer)
-                float sampleValue = drySample * (1.0f - mix) + wetSample * mix;
+                // m_dry_wet_mix: 0.0 = all dry (record buffer), 1.0 = all wet (output buffer)
+                float sample_value = dry_sample * (1.0f - mix) + wet_sample * mix;
                 
                 // Store sample in mono buffer for panner processing
-                monoBuffer[sample] = sampleValue;
+                mono_buffer[sample] = sample_value;
 
                 // Advance both read heads together (same playhead position)
-                bool wrappedRecord = track.recordReadHead.advance(wrapPos);
-                bool wrappedOutput = track.outputReadHead.advance(wrapPos);
+                bool wrapped_record = track.m_record_read_head.advance(wrap_pos);
+                bool wrapped_output = track.m_output_read_head.advance(wrap_pos);
                 
                 // Sync positions in case they diverged
-                track.outputReadHead.set_pos(track.recordReadHead.get_pos());
+                track.m_output_read_head.set_pos(track.m_record_read_head.get_pos());
                 
-                if (wrappedRecord && !hasExistingAudio)
+                if (wrapped_record && !has_existing_audio)
                 {
-                    recordingFinalized = true;
+                    recording_finalized = true;
                     juce::Logger::writeToLog("~~~ WRAPPED! Finalized recording");
-                    track.writeHead.set_record_enable(false);
-                    track.writeHead.finalize_recording(wrapPos);
+                    track.m_write_head.set_record_enable(false);
+                    track.m_write_head.finalize_recording(wrap_pos);
                     // Sync output buffer wrapPos to match record buffer
-                    track.outputBuffer.m_recorded_length.store(track.recordBuffer.m_recorded_length.load());
+                    track.m_output_buffer.m_recorded_length.store(track.m_record_buffer.m_recorded_length.load());
                 }
             }
         } // Locks released here
         
         // Apply panner to distribute audio to all output channels
-        if (track.panner != nullptr)
+        if (track.m_panner != nullptr)
         {
             // Use panner to distribute mono audio to all output channels with proper gains
-            track.panner->processBlock(monoInputChannelData, 1, outputChannelData, numOutputChannels, numSamples);
+            track.m_panner->process_block(mono_input_channel_data, 1, output_channel_data, num_output_channels, num_samples);
             
-            if (isFirstCall && shouldDebug)
+            if (is_first_call && should_debug)
             {
-                DBG("[VampNetTrackEngine] Panner applied - routing to all " << numOutputChannels << " channels");
+                DBG("[VampNetTrackEngine] Panner applied - routing to all " << num_output_channels << " channels");
             }
         }
         else
         {
             // Fallback: route to all channels at unity gain (when panner not set)
-            for (int sample = 0; sample < numSamples; ++sample)
+            for (int sample = 0; sample < num_samples; ++sample)
             {
-                float sampleValue = monoBuffer[sample];
-                for (int channel = 0; channel < numOutputChannels; ++channel)
+                float sample_value = mono_buffer[sample];
+                for (int channel = 0; channel < num_output_channels; ++channel)
                 {
-                    if (outputChannelData[channel] != nullptr)
+                    if (output_channel_data[channel] != nullptr)
                     {
-                        outputChannelData[channel][sample] += sampleValue;
+                        output_channel_data[channel][sample] += sample_value;
                     }
                 }
             }
             
-            if (isFirstCall && shouldDebug)
+            if (is_first_call && should_debug)
             {
                 DBG("[VampNetTrackEngine] No panner set - routing to all channels at unity gain");
             }
@@ -434,38 +435,38 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
         
         // Process writes after releasing read locks to avoid deadlock
         // WriteHead locks internally, so we can safely call it now
-        if (isRecording)
+        if (is_recording)
         {
-            for (int sample = 0; sample < numSamples; ++sample)
+            for (int sample = 0; sample < num_samples; ++sample)
             {
-                float inputSample = writeSamples[sample];
-                if (inputSample != 0.0f)
+                float input_sample = write_samples[sample];
+                if (input_sample != 0.0f)
                 {
-                    float currentWritePos = writePositions[sample];
-                    track.writeHead.process_sample(inputSample, currentWritePos);
+                    float current_write_pos = write_positions[sample];
+                    track.m_write_head.process_sample(input_sample, current_write_pos);
                 }
             }
         }
-        if (isFirstCall)
+        if (is_first_call)
             DBG_SEGFAULT("Sample loop completed");
     }
     else
     {
         // Not playing - stop read heads
-        track.recordReadHead.set_playing(false);
-        track.outputReadHead.set_playing(false);
+        track.m_record_read_head.set_playing(false);
+        track.m_output_read_head.set_playing(false);
 
-        if (track.writeHead.get_record_enable() && playbackJustStopped)
+        if (track.m_write_head.get_record_enable() && playback_just_stopped)
         {
             // finalize recording if we were recording and playback just stopped
-            track.writeHead.finalize_recording(track.writeHead.get_pos());
-            recordingFinalized = true;
+            track.m_write_head.finalize_recording(track.m_write_head.get_pos());
+            recording_finalized = true;
             // Record enable is on but playback just stopped - prepare for new recording
             juce::Logger::writeToLog("WARNING: ActuallyRecording but not playing.");
         }
     }
 
-    return recordingFinalized;
+    return recording_finalized;
 }
 
 

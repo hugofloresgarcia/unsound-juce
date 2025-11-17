@@ -13,20 +13,20 @@ public:
     ~StereoPanner() override = default;
 
     // Panner interface
-    void processBlock(const float* const* inputChannelData,
-                     int numInputChannels,
-                     float* const* outputChannelData,
-                     int numOutputChannels,
-                     int numSamples) override;
+    void process_block(const float* const* input_channel_data,
+                     int num_input_channels,
+                     float* const* output_channel_data,
+                     int num_output_channels,
+                     int num_samples) override;
 
-    int getNumInputChannels() const override { return 1; }
-    int getNumOutputChannels() const override { return 2; }
+    int get_num_input_channels() const override { return 1; }
+    int get_num_output_channels() const override { return 2; }
 
     // Pan control (0.0 to 1.0)
-    void setPan(float pan);
-    float getPan() const;
+    void set_pan(float pan);
+    float get_pan() const;
 
 private:
-    std::atomic<float> panPosition{0.5f}; // Default to center
+    std::atomic<float> m_pan_position{0.5f}; // Default to center
 };
 

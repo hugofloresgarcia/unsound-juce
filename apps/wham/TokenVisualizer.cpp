@@ -566,8 +566,8 @@ private:
     // Draw waveform for a track (streaming, time-aligned with tokens)
     void drawWaveform(juce::Graphics& g, juce::Rectangle<int> bounds, int trackIdx, bool isInput)
     {
-        auto& track = looperEngine.getTrack(trackIdx);
-        auto& tapeLoop = isInput ? track.recordBuffer : track.outputBuffer;
+        auto& track = looperEngine.get_track(trackIdx);
+        auto& tapeLoop = isInput ? track.m_record_buffer : track.m_output_buffer;
         
         const juce::ScopedLock sl(tapeLoop.m_lock);
         
@@ -596,7 +596,7 @@ private:
         }
         
         // Get the read head position - this is where tokens are being extracted from
-        auto& readHead = isInput ? track.recordReadHead : track.outputReadHead;
+        auto& readHead = isInput ? track.m_record_read_head : track.m_output_read_head;
         float currentReadPos = readHead.get_pos();
         
         // Show the waveform window ending at the current read head position
@@ -695,7 +695,7 @@ private:
         g.fillPath(waveformPath);
         
         // Draw playhead at the right edge (since we're showing up to last processed position)
-        if (track.isPlaying.load() && displayLength > 0)
+        if (track.m_is_playing.load() && displayLength > 0)
         {
             // Playhead is always at the right edge in streaming mode
             float playheadX = bounds.getRight();
@@ -748,9 +748,9 @@ private:
         }
         
         // Also check if we have input but haven't generated output yet (for initial state)
-        auto& track = looperEngine.getTrack(trackIdx);
-        bool hasInput = track.recordBuffer.m_recorded_length.load() > 0;
-        bool hasOutput = track.outputBuffer.m_recorded_length.load() > 0;
+        auto& track = looperEngine.get_track(trackIdx);
+        bool hasInput = track.m_record_buffer.m_recorded_length.load() > 0;
+        bool hasOutput = track.m_output_buffer.m_recorded_length.load() > 0;
         
         // Show arrow if generation is in progress OR if we have input but no output yet
         bool shouldShowArrow = isGenerating || (hasInput && !hasOutput);
@@ -784,14 +784,14 @@ private:
     {
         for (int trackIdx = 0; trackIdx < numTracks; ++trackIdx)
         {
-            auto& track = looperEngine.getTrack(trackIdx);
+            auto& track = looperEngine.get_track(trackIdx);
             
             // Process input buffer - sample from current read head position (handles circular buffer)
             {
-                const juce::ScopedLock sl(track.recordBuffer.m_lock);
-                const auto& buffer = track.recordBuffer.get_buffer();
+                const juce::ScopedLock sl(track.m_record_buffer.m_lock);
+                const auto& buffer = track.m_record_buffer.get_buffer();
                 
-                size_t currentRecordedLength = track.recordBuffer.m_recorded_length.load();
+                size_t currentRecordedLength = track.m_record_buffer.m_recorded_length.load();
                 size_t& lastRecordedLength = lastInputRecordedLength[trackIdx];
                 
                 // Detect if buffer was cleared (recordedLength went from non-zero to zero)
@@ -806,7 +806,7 @@ private:
                 
                 if (!buffer.empty() && currentRecordedLength > 0)
                 {
-                    float readHeadPos = track.recordReadHead.get_pos();
+                    float readHeadPos = track.m_record_read_head.get_pos();
                     size_t recordedLength = currentRecordedLength;
                     float& lastPos = lastInputReadPos[trackIdx];
                     
@@ -832,8 +832,8 @@ private:
                         {
                             TokenBlock block;
                             // Get sample rate from audio device
-                            double sampleRate = looperEngine.getAudioDeviceManager().getCurrentAudioDevice() != nullptr
-                                ? looperEngine.getAudioDeviceManager().getCurrentAudioDevice()->getCurrentSampleRate()
+                            double sampleRate = looperEngine.get_audio_device_manager().getCurrentAudioDevice() != nullptr
+                                ? looperEngine.get_audio_device_manager().getCurrentAudioDevice()->getCurrentSampleRate()
                                 : 44100.0;
                             block.rms = processAudioBlock(
                                 samples.data(),
@@ -862,10 +862,10 @@ private:
             
             // Process output buffer - sample from current read head position
             {
-                const juce::ScopedLock sl(track.outputBuffer.m_lock);
-                const auto& buffer = track.outputBuffer.get_buffer();
+                const juce::ScopedLock sl(track.m_output_buffer.m_lock);
+                const auto& buffer = track.m_output_buffer.get_buffer();
                 
-                size_t currentRecordedLength = track.outputBuffer.m_recorded_length.load();
+                size_t currentRecordedLength = track.m_output_buffer.m_recorded_length.load();
                 size_t& lastRecordedLength = lastOutputRecordedLength[trackIdx];
                 
                 // Detect if buffer was cleared (recordedLength went from non-zero to zero)
@@ -880,7 +880,7 @@ private:
                 
                 if (!buffer.empty() && currentRecordedLength > 0)
                 {
-                    float readHeadPos = track.outputReadHead.get_pos();
+                    float readHeadPos = track.m_output_read_head.get_pos();
                     size_t recordedLength = currentRecordedLength;
                     float& lastPos = lastOutputReadPos[trackIdx];
                     
@@ -906,8 +906,8 @@ private:
                         {
                             TokenBlock block;
                             // Get sample rate from audio device
-                            double sampleRate = looperEngine.getAudioDeviceManager().getCurrentAudioDevice() != nullptr
-                                ? looperEngine.getAudioDeviceManager().getCurrentAudioDevice()->getCurrentSampleRate()
+                            double sampleRate = looperEngine.get_audio_device_manager().getCurrentAudioDevice() != nullptr
+                                ? looperEngine.get_audio_device_manager().getCurrentAudioDevice()->getCurrentSampleRate()
                                 : 44100.0;
                             block.rms = processAudioBlock(
                                 samples.data(),

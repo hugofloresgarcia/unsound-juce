@@ -53,7 +53,7 @@ public:
             {
                 if (dialogPtr->wasOkClicked())
                 {
-                    numTracks = dialogPtr->getNumTracks();
+                    numTracks = dialogPtr->get_num_tracks();
                     selectedPanner = dialogPtr->getSelectedPanner();
                     juce::Logger::writeToLog("Selected number of tracks: " + juce::String(numTracks));
                     juce::Logger::writeToLog("Selected panner: " + selectedPanner);
@@ -139,7 +139,7 @@ public:
             auto* whamComponent = new WhAM::MainComponent(numTracks, pannerType);
             
             DBG("[MainWindow] Setting device setup on WhAM looper engine...");
-            auto& deviceManager = whamComponent->getLooperEngine().getAudioDeviceManager();
+            auto& deviceManager = whamComponent->getLooperEngine().get_audio_device_manager();
             
             // CRITICAL: Set device type first, otherwise setAudioDeviceSetup will fail silently
             juce::String deviceType;
@@ -180,7 +180,7 @@ public:
             }
             
             DBG("[MainWindow] Starting audio...");
-            whamComponent->getLooperEngine().startAudio();
+            whamComponent->getLooperEngine().start_audio();
             
             setContentOwned(whamComponent, true);
 

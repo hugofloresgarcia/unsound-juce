@@ -9,60 +9,60 @@ namespace PanningUtils
     CosinePanningLaw::CosinePanningLaw()
     {
         // Initialize cosine table: maps angle (0 to π/2) to cos(angle)
-        cosineTable.initialise(
+        m_cosine_table.initialise(
             [] (float angle) { return std::cos(angle); },
             0.0f,
             juce::MathConstants<float>::halfPi,
-            numPoints
+            m_num_points
         );
         
         // Initialize sine table: maps angle (0 to π/2) to sin(angle)
-        sineTable.initialise(
+        m_sine_table.initialise(
             [] (float angle) { return std::sin(angle); },
             0.0f,
             juce::MathConstants<float>::halfPi,
-            numPoints
+            m_num_points
         );
     }
 
-    float CosinePanningLaw::getCosine(float angle) const
+    float CosinePanningLaw::get_cosine(float angle) const
     {
         angle = juce::jlimit(0.0f, juce::MathConstants<float>::halfPi, angle);
-        return cosineTable.processSampleUnchecked(angle);
+        return m_cosine_table.processSampleUnchecked(angle);
     }
 
-    float CosinePanningLaw::getSine(float angle) const
+    float CosinePanningLaw::get_sine(float angle) const
     {
         angle = juce::jlimit(0.0f, juce::MathConstants<float>::halfPi, angle);
-        return sineTable.processSampleUnchecked(angle);
+        return m_sine_table.processSampleUnchecked(angle);
     }
 
     //==============================================================================
     // Singleton instance
-    static CosinePanningLaw g_cosinePanningLaw;
+    static CosinePanningLaw g_cosine_panning_law;
 
-    const CosinePanningLaw& getCosinePanningLaw()
+    const CosinePanningLaw& get_cosine_panning_law()
     {
-        return g_cosinePanningLaw;
+        return g_cosine_panning_law;
     }
 
     //==============================================================================
-    std::pair<float, float> computeStereoGains(float pan)
+    std::pair<float, float> compute_stereo_gains(float pan)
     {
         pan = juce::jlimit(0.0f, 1.0f, pan);
         
         // Map pan (0-1) to angle (0 to π/2)
         float angle = pan * juce::MathConstants<float>::halfPi;
         
-        const auto& law = getCosinePanningLaw();
-        float left = law.getCosine(angle);
-        float right = law.getSine(angle);
+        const auto& law = get_cosine_panning_law();
+        float left = law.get_cosine(angle);
+        float right = law.get_sine(angle);
         
         return {left, right};
     }
 
     //==============================================================================
-    std::array<float, 4> computeQuadGains(float x, float y)
+    std::array<float, 4> compute_quad_gains(float x, float y)
     {
         x = juce::jlimit(0.0f, 1.0f, x);
         y = juce::jlimit(0.0f, 1.0f, y);
@@ -74,47 +74,47 @@ namespace PanningUtils
         // BR: (1, 0) - Back Right
         
         // Calculate distances from pan position to each speaker
-        float dxFL = x - 0.0f;  // distance to left edge
-        float dxFR = x - 1.0f;  // distance to right edge
-        float dyF = y - 1.0f;   // distance to front edge
-        float dyB = y - 0.0f;   // distance to back edge
+        float dx_fl = x - 0.0f;  // distance to left edge
+        float dx_fr = x - 1.0f;  // distance to right edge
+        float dy_f = y - 1.0f;   // distance to front edge
+        float dy_b = y - 0.0f;   // distance to back edge
         
         // Normalize distances to 0-1 range (max distance is diagonal = √2)
-        float maxDist = std::sqrt(2.0f);
-        float distFL = std::sqrt(dxFL * dxFL + dyF * dyF) / maxDist;
-        float distFR = std::sqrt(dxFR * dxFR + dyF * dyF) / maxDist;
-        float distBL = std::sqrt(dxFL * dxFL + dyB * dyB) / maxDist;
-        float distBR = std::sqrt(dxFR * dxFR + dyB * dyB) / maxDist;
+        float max_dist = std::sqrt(2.0f);
+        float dist_fl = std::sqrt(dx_fl * dx_fl + dy_f * dy_f) / max_dist;
+        float dist_fr = std::sqrt(dx_fr * dx_fr + dy_f * dy_f) / max_dist;
+        float dist_bl = std::sqrt(dx_fl * dx_fl + dy_b * dy_b) / max_dist;
+        float dist_br = std::sqrt(dx_fr * dx_fr + dy_b * dy_b) / max_dist;
         
         // Convert distances to angles (closer = higher gain)
         // Use cosine law: gain = cos(angle), where angle is proportional to distance
-        const auto& law = getCosinePanningLaw();
-        float angleFL = distFL * juce::MathConstants<float>::halfPi;
-        float angleFR = distFR * juce::MathConstants<float>::halfPi;
-        float angleBL = distBL * juce::MathConstants<float>::halfPi;
-        float angleBR = distBR * juce::MathConstants<float>::halfPi;
+        const auto& law = get_cosine_panning_law();
+        float angle_fl = dist_fl * juce::MathConstants<float>::halfPi;
+        float angle_fr = dist_fr * juce::MathConstants<float>::halfPi;
+        float angle_bl = dist_bl * juce::MathConstants<float>::halfPi;
+        float angle_br = dist_br * juce::MathConstants<float>::halfPi;
         
-        float gainFL = law.getCosine(angleFL);
-        float gainFR = law.getCosine(angleFR);
-        float gainBL = law.getCosine(angleBL);
-        float gainBR = law.getCosine(angleBR);
+        float gain_fl = law.get_cosine(angle_fl);
+        float gain_fr = law.get_cosine(angle_fr);
+        float gain_bl = law.get_cosine(angle_bl);
+        float gain_br = law.get_cosine(angle_br);
         
         // Normalize gains to preserve energy
-        float sum = gainFL + gainFR + gainBL + gainBR;
+        float sum = gain_fl + gain_fr + gain_bl + gain_br;
         if (sum > 0.0f)
         {
             float norm = 1.0f / sum;
-            gainFL *= norm;
-            gainFR *= norm;
-            gainBL *= norm;
-            gainBR *= norm;
+            gain_fl *= norm;
+            gain_fr *= norm;
+            gain_bl *= norm;
+            gain_br *= norm;
         }
         
-        return {gainFL, gainFR, gainBL, gainBR};
+        return {gain_fl, gain_fr, gain_bl, gain_br};
     }
 
     //==============================================================================
-    std::array<float, 16> computeCLEATGains(float x, float y)
+    std::array<float, 16> compute_cleat_gains(float x, float y)
     {
         x = juce::jlimit(0.0f, 1.0f, x);
         y = juce::jlimit(0.0f, 1.0f, y);
@@ -135,22 +135,22 @@ namespace PanningUtils
                 int channel = row * 4 + col;
                 
                 // Speaker position in normalized 0-1 space
-                float speakerX = col / 3.0f;  // 0, 1/3, 2/3, 1
-                float speakerY = row / 3.0f; // 0, 1/3, 2/3, 1
+                float speaker_x = col / 3.0f;  // 0, 1/3, 2/3, 1
+                float speaker_y = row / 3.0f; // 0, 1/3, 2/3, 1
                 
                 // Calculate distance from pan position to speaker
-                float dx = x - speakerX;
-                float dy = y - speakerY;
+                float dx = x - speaker_x;
+                float dy = y - speaker_y;
                 float dist = std::sqrt(dx * dx + dy * dy);
                 
                 // Normalize distance (max distance is diagonal = √2)
-                float maxDist = std::sqrt(2.0f);
-                float normalizedDist = dist / maxDist;
+                float max_dist = std::sqrt(2.0f);
+                float normalized_dist = dist / max_dist;
                 
                 // Convert distance to angle and apply cosine law
-                float angle = normalizedDist * juce::MathConstants<float>::halfPi;
-                const auto& law = getCosinePanningLaw();
-                gains[channel] = law.getCosine(angle);
+                float angle = normalized_dist * juce::MathConstants<float>::halfPi;
+                const auto& law = get_cosine_panning_law();
+                gains[channel] = law.get_cosine(angle);
             }
         }
         
@@ -173,7 +173,7 @@ namespace PanningUtils
     // Path generation functions
     
     // Helper function to sample a random origin point within r=0.25 from center (0.5, 0.5)
-    static std::pair<float, float> sampleRandomOrigin()
+    static std::pair<float, float> sample_random_origin()
     {
         static std::random_device rd;
         static std::mt19937 gen(rd());
@@ -189,15 +189,15 @@ namespace PanningUtils
             // Check if point is within circle of radius 0.25 centered at (0.5, 0.5)
             float dx = x - 0.5f;
             float dy = y - 0.5f;
-            float distSq = dx * dx + dy * dy;
-            if (distSq <= 0.0625f) // r^2 = 0.25^2 = 0.0625
+            float dist_sq = dx * dx + dy * dy;
+            if (dist_sq <= 0.0625f) // r^2 = 0.25^2 = 0.0625
                 break;
         } while (true);
         
         return {x, y};
     }
     
-    std::vector<std::pair<float, float>> generateCirclePath(int numPoints)
+    std::vector<std::pair<float, float>> generate_circle_path(int num_points)
     {
         std::vector<std::pair<float, float>> coords;
         
@@ -205,46 +205,46 @@ namespace PanningUtils
         static std::random_device rd;
         static std::mt19937 gen(rd());
         std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-        std::uniform_int_distribution<int> pointDist(50, 100);
-        std::uniform_int_distribution<int> dirDist(0, 1);
+        std::uniform_int_distribution<int> point_dist(50, 100);
+        std::uniform_int_distribution<int> dir_dist(0, 1);
         
         // Generate random number of points if not specified
-        if (numPoints <= 0)
-            numPoints = pointDist(gen);
+        if (num_points <= 0)
+            num_points = point_dist(gen);
         
         // Sample random origin within r=0.5 from center
-        auto origin = sampleRandomOrigin();
-        float originX = origin.first;
-        float originY = origin.second;
+        auto origin = sample_random_origin();
+        float origin_x = origin.first;
+        float origin_y = origin.second;
         
         // Random starting angle
         float angle = dist(gen) * 2.0f * juce::MathConstants<float>::pi;
         
         // Random direction (clockwise or counterclockwise)
-        int direction = dirDist(gen) == 0 ? 1 : -1;
+        int direction = dir_dist(gen) == 0 ? 1 : -1;
         
         // Random radius (0.15 to 0.3, relative to origin)
         float radius = 0.15f + dist(gen) * 0.15f;
         
-        float angleStep = (2.0f * juce::MathConstants<float>::pi / numPoints) * direction;
+        float angle_step = (2.0f * juce::MathConstants<float>::pi / num_points) * direction;
         
-        for (int i = 0; i < numPoints; ++i)
+        for (int i = 0; i < num_points; ++i)
         {
-            float x = originX + radius * std::cos(angle);
-            float y = originY + radius * std::sin(angle);
+            float x = origin_x + radius * std::cos(angle);
+            float y = origin_y + radius * std::sin(angle);
             
             // Clamp to 0-1 range
             x = juce::jlimit(0.0f, 1.0f, x);
             y = juce::jlimit(0.0f, 1.0f, y);
             
             coords.push_back({x, y});
-            angle += angleStep;
+            angle += angle_step;
         }
         
         return coords;
     }
     
-    std::vector<std::pair<float, float>> generateRandomPath(int numPoints)
+    std::vector<std::pair<float, float>> generate_random_path(int num_points)
     {
         std::vector<std::pair<float, float>> coords;
         
@@ -252,30 +252,30 @@ namespace PanningUtils
         static std::random_device rd;
         static std::mt19937 gen(rd());
         std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-        std::uniform_int_distribution<int> pointDist(50, 100);
+        std::uniform_int_distribution<int> point_dist(50, 100);
         
         // Generate random number of points if not specified
-        if (numPoints <= 0)
-            numPoints = pointDist(gen);
+        if (num_points <= 0)
+            num_points = point_dist(gen);
         
         // Ensure minimum points
-        if (numPoints < 4)
-            numPoints = 4;
+        if (num_points < 4)
+            num_points = 4;
         
         // Sample random origin within r=0.5 from center
-        auto origin = sampleRandomOrigin();
-        float originX = origin.first;
-        float originY = origin.second;
+        auto origin = sample_random_origin();
+        float origin_x = origin.first;
+        float origin_y = origin.second;
         
         // Generate random points around the origin, ensuring they stay within bounds
-        for (int i = 0; i < numPoints; ++i)
+        for (int i = 0; i < num_points; ++i)
         {
             // Generate offset from origin (smaller range to ensure bounds)
-            float offsetX = (dist(gen) - 0.5f) * 0.8f; // Scale to keep within bounds
-            float offsetY = (dist(gen) - 0.5f) * 0.8f;
+            float offset_x = (dist(gen) - 0.5f) * 0.8f; // Scale to keep within bounds
+            float offset_y = (dist(gen) - 0.5f) * 0.8f;
             
-            float x = originX + offsetX;
-            float y = originY + offsetY;
+            float x = origin_x + offset_x;
+            float y = origin_y + offset_y;
             
             // Clamp to 0-1 range
             x = juce::jlimit(0.0f, 1.0f, x);
@@ -287,7 +287,7 @@ namespace PanningUtils
         return coords;
     }
     
-    std::vector<std::pair<float, float>> generateWanderPath(int numPoints)
+    std::vector<std::pair<float, float>> generate_wander_path(int num_points)
     {
         std::vector<std::pair<float, float>> coords;
         
@@ -295,23 +295,23 @@ namespace PanningUtils
         static std::random_device rd;
         static std::mt19937 gen(rd());
         std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-        std::uniform_real_distribution<float> wanderDist(-0.1f, 0.1f);
-        std::uniform_int_distribution<int> pointDist(50, 100);
+        std::uniform_real_distribution<float> wander_dist(-0.1f, 0.1f);
+        std::uniform_int_distribution<int> point_dist(50, 100);
         
         // Generate random number of points if not specified
-        if (numPoints <= 0)
-            numPoints = pointDist(gen);
+        if (num_points <= 0)
+            num_points = point_dist(gen);
         
         // Sample random origin within r=0.5 from center
-        auto origin = sampleRandomOrigin();
+        auto origin = sample_random_origin();
         float x = origin.first;
         float y = origin.second;
         
-        for (int i = 0; i < numPoints; ++i)
+        for (int i = 0; i < num_points; ++i)
         {
             // Add random wander
-            x += wanderDist(gen);
-            y += wanderDist(gen);
+            x += wander_dist(gen);
+            y += wander_dist(gen);
             
             // Clamp to 0-1 range
             x = juce::jlimit(0.0f, 1.0f, x);
@@ -323,7 +323,7 @@ namespace PanningUtils
         return coords;
     }
     
-    std::vector<std::pair<float, float>> generateSwirlsPath(int numPoints)
+    std::vector<std::pair<float, float>> generate_swirls_path(int num_points)
     {
         std::vector<std::pair<float, float>> coords;
         
@@ -331,53 +331,53 @@ namespace PanningUtils
         static std::random_device rd;
         static std::mt19937 gen(rd());
         std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-        std::uniform_int_distribution<int> pointDist(50, 100);
+        std::uniform_int_distribution<int> point_dist(50, 100);
         
         // Generate random number of points if not specified
-        if (numPoints <= 0)
-            numPoints = pointDist(gen);
+        if (num_points <= 0)
+            num_points = point_dist(gen);
         
         // Sample random origin within r=0.5 from center
-        auto origin = sampleRandomOrigin();
-        float originX = origin.first;
-        float originY = origin.second;
+        auto origin = sample_random_origin();
+        float origin_x = origin.first;
+        float origin_y = origin.second;
         
         // Create multiple overlapping circular motions
-        const int numSwirls = 2 + (gen() % 3); // 2-4 swirls
-        std::vector<float> angles(numSwirls);
-        std::vector<float> radii(numSwirls);
-        std::vector<float> centersX(numSwirls);
-        std::vector<float> centersY(numSwirls);
-        std::vector<float> speeds(numSwirls);
+        const int num_swirls = 2 + (gen() % 3); // 2-4 swirls
+        std::vector<float> angles(num_swirls);
+        std::vector<float> radii(num_swirls);
+        std::vector<float> centers_x(num_swirls);
+        std::vector<float> centers_y(num_swirls);
+        std::vector<float> speeds(num_swirls);
         
-        for (int s = 0; s < numSwirls; ++s)
+        for (int s = 0; s < num_swirls; ++s)
         {
             angles[s] = dist(gen) * 2.0f * juce::MathConstants<float>::pi;
             radii[s] = 0.08f + dist(gen) * 0.15f; // Smaller radii to keep within bounds
             // Place swirl centers relative to origin
-            centersX[s] = originX + (dist(gen) - 0.5f) * 0.3f;
-            centersY[s] = originY + (dist(gen) - 0.5f) * 0.3f;
+            centers_x[s] = origin_x + (dist(gen) - 0.5f) * 0.3f;
+            centers_y[s] = origin_y + (dist(gen) - 0.5f) * 0.3f;
             speeds[s] = (dist(gen) < 0.5f ? 1.0f : -1.0f) * (0.5f + dist(gen) * 0.5f);
         }
         
-        float angleStep = 2.0f * juce::MathConstants<float>::pi / numPoints;
+        float angle_step = 2.0f * juce::MathConstants<float>::pi / num_points;
         
-        for (int i = 0; i < numPoints; ++i)
+        for (int i = 0; i < num_points; ++i)
         {
-            float x = originX;
-            float y = originY;
+            float x = origin_x;
+            float y = origin_y;
             
             // Sum contributions from all swirls
-            for (int s = 0; s < numSwirls; ++s)
+            for (int s = 0; s < num_swirls; ++s)
             {
-                float swirlX = centersX[s] + radii[s] * std::cos(angles[s]);
-                float swirlY = centersY[s] + radii[s] * std::sin(angles[s]);
+                float swirl_x = centers_x[s] + radii[s] * std::cos(angles[s]);
+                float swirl_y = centers_y[s] + radii[s] * std::sin(angles[s]);
                 
                 // Blend with center
-                x = x * 0.5f + swirlX * 0.5f;
-                y = y * 0.5f + swirlY * 0.5f;
+                x = x * 0.5f + swirl_x * 0.5f;
+                y = y * 0.5f + swirl_y * 0.5f;
                 
-                angles[s] += angleStep * speeds[s];
+                angles[s] += angle_step * speeds[s];
             }
             
             // Clamp to 0-1 range
@@ -390,7 +390,7 @@ namespace PanningUtils
         return coords;
     }
     
-    std::vector<std::pair<float, float>> generateBouncePath()
+    std::vector<std::pair<float, float>> generate_bounce_path()
     {
         std::vector<std::pair<float, float>> coords;
         
@@ -401,7 +401,7 @@ namespace PanningUtils
         
         // Define quadrants
         struct Quadrant {
-            float xSign, ySign;
+            float x_sign, y_sign;
         };
         
         Quadrant quads[4] = {
@@ -412,30 +412,30 @@ namespace PanningUtils
         };
         
         // Pick two random quadrants
-        std::vector<int> quadIndices = {0, 1, 2, 3};
-        std::shuffle(quadIndices.begin(), quadIndices.end(), gen);
+        std::vector<int> quad_indices = {0, 1, 2, 3};
+        std::shuffle(quad_indices.begin(), quad_indices.end(), gen);
         
-        int quadIdx1 = quadIndices[0];
-        int quadIdx2 = quadIndices[1];
+        int quad_idx1 = quad_indices[0];
+        int quad_idx2 = quad_indices[1];
         
-        Quadrant quad1 = quads[quadIdx1];
-        Quadrant quad2 = quads[quadIdx2];
+        Quadrant quad1 = quads[quad_idx1];
+        Quadrant quad2 = quads[quad_idx2];
         
         // Sample random origin within r=0.5 from center
-        auto origin = sampleRandomOrigin();
-        float originX = origin.first;
-        float originY = origin.second;
+        auto origin = sample_random_origin();
+        float origin_x = origin.first;
+        float origin_y = origin.second;
         
         // Pick point 1: offset from origin in quadrant direction
         // Use smaller offset to ensure bounds
         float offset1 = 0.2f + dist(gen) * 0.2f; // 0.2 to 0.4
-        float x1 = originX + offset1 * quad1.xSign;
-        float y1 = originY + offset1 * quad1.ySign;
+        float x1 = origin_x + offset1 * quad1.x_sign;
+        float y1 = origin_y + offset1 * quad1.y_sign;
         
         // Pick point 2: offset from origin in quadrant direction
         float offset2 = 0.2f + dist(gen) * 0.2f; // 0.2 to 0.4
-        float x2 = originX + offset2 * quad2.xSign;
-        float y2 = originY + offset2 * quad2.ySign;
+        float x2 = origin_x + offset2 * quad2.x_sign;
+        float y2 = origin_y + offset2 * quad2.y_sign;
         
         // Clamp to valid range
         x1 = juce::jlimit(0.0f, 1.0f, x1);
@@ -449,7 +449,7 @@ namespace PanningUtils
         return coords;
     }
     
-    std::vector<std::pair<float, float>> generateSpiralPath(int numPoints)
+    std::vector<std::pair<float, float>> generate_spiral_path(int num_points)
     {
         std::vector<std::pair<float, float>> coords;
         
@@ -457,36 +457,36 @@ namespace PanningUtils
         static std::random_device rd;
         static std::mt19937 gen(rd());
         std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-        std::uniform_int_distribution<int> pointDist(50, 100);
-        std::uniform_int_distribution<int> dirDist(0, 1);
+        std::uniform_int_distribution<int> point_dist(50, 100);
+        std::uniform_int_distribution<int> dir_dist(0, 1);
         
         // Generate random number of points if not specified
-        if (numPoints <= 0)
-            numPoints = pointDist(gen);
+        if (num_points <= 0)
+            num_points = point_dist(gen);
         
         // Random direction
-        int direction = dirDist(gen) == 0 ? 1 : -1;
+        int direction = dir_dist(gen) == 0 ? 1 : -1;
         
         // Sample random origin within r=0.5 from center
-        auto origin = sampleRandomOrigin();
-        float originX = origin.first;
-        float originY = origin.second;
+        auto origin = sample_random_origin();
+        float origin_x = origin.first;
+        float origin_y = origin.second;
         
         // Random number of turns
-        float numTurns = 1.0f + dist(gen) * 2.0f; // 1-3 turns
+        float num_turns = 1.0f + dist(gen) * 2.0f; // 1-3 turns
         
         // Start from origin and spiral outward
         // Use smaller max radius to ensure we stay within bounds
-        float maxRadius = 0.3f;
+        float max_radius = 0.3f;
         
-        for (int i = 0; i < numPoints; ++i)
+        for (int i = 0; i < num_points; ++i)
         {
-            float t = static_cast<float>(i) / static_cast<float>(numPoints - 1);
-            float angle = t * numTurns * 2.0f * juce::MathConstants<float>::pi * direction;
-            float radius = t * maxRadius;
+            float t = static_cast<float>(i) / static_cast<float>(num_points - 1);
+            float angle = t * num_turns * 2.0f * juce::MathConstants<float>::pi * direction;
+            float radius = t * max_radius;
             
-            float x = originX + radius * std::cos(angle);
-            float y = originY + radius * std::sin(angle);
+            float x = origin_x + radius * std::cos(angle);
+            float y = origin_y + radius * std::sin(angle);
             
             // Clamp to 0-1 range
             x = juce::jlimit(0.0f, 1.0f, x);

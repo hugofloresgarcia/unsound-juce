@@ -139,7 +139,7 @@ public:
             auto* text2SoundComponent = new Text2Sound::MainComponent(numTracks, pannerType);
             
             DBG("[MainWindow] Setting device setup on Text2Sound looper engine...");
-            auto& deviceManager = text2SoundComponent->getLooperEngine().getAudioDeviceManager();
+            auto& deviceManager = text2SoundComponent->getLooperEngine().get_audio_device_manager();
             
             // CRITICAL: Set device type first, otherwise setAudioDeviceSetup will fail silently
             juce::String deviceType;
@@ -180,7 +180,7 @@ public:
             }
             
             DBG("[MainWindow] Starting audio...");
-            text2SoundComponent->getLooperEngine().startAudio();
+            text2SoundComponent->getLooperEngine().start_audio();
             
             setContentOwned(text2SoundComponent, true);
 

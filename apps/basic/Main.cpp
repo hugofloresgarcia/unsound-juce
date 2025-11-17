@@ -162,7 +162,7 @@ public:
             auto* basicComponent = new Basic::MainComponent(numTracks, pannerType);
             
             DBG("[MainWindow] Setting device setup on Basic looper engine...");
-            auto& deviceManager = basicComponent->getLooperEngine().getAudioDeviceManager();
+            auto& deviceManager = basicComponent->getLooperEngine().get_audio_device_manager();
             
             // CRITICAL: Set device type first, otherwise setAudioDeviceSetup will fail silently
             // Find the device type that contains our device
@@ -222,7 +222,7 @@ public:
             }
             
             DBG("[MainWindow] Starting audio...");
-            basicComponent->getLooperEngine().startAudio();
+            basicComponent->getLooperEngine().start_audio();
             
             // Update channel selectors now that device is initialized
             basicComponent->updateAllChannelSelectors();

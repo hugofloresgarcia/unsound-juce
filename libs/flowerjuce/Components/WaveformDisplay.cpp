@@ -39,19 +39,19 @@ void WaveformDisplay::drawWaveform(juce::Graphics& g, juce::Rectangle<int> area)
     
     if (engineType == Basic)
     {
-        auto& track = looperEngine.basicEngine->getTrack(trackIndex);
-        tapeLoop = &track.tapeLoop;
-        writeHead = &track.writeHead;
-        isPlaying = &track.isPlaying;
-        readHead = &track.readHead;
+        auto& track = looperEngine.basicEngine->get_track(trackIndex);
+        tapeLoop = &track.m_tape_loop;
+        writeHead = &track.m_write_head;
+        isPlaying = &track.m_is_playing;
+        readHead = &track.m_read_head;
     }
     else // VampNet
     {
-        auto& track = looperEngine.vampNetEngine->getTrack(trackIndex);
-        tapeLoop = &track.recordBuffer; // Show record buffer in waveform
-        writeHead = &track.writeHead;
-        isPlaying = &track.isPlaying;
-        readHead = &track.recordReadHead; // Use record read head for playhead position
+        auto& track = looperEngine.vampNetEngine->get_track(trackIndex);
+        tapeLoop = &track.m_record_buffer; // Show record buffer in waveform
+        writeHead = &track.m_write_head;
+        isPlaying = &track.m_is_playing;
+        readHead = &track.m_record_read_head; // Use record read head for playhead position
     }
     
     const juce::ScopedLock sl(tapeLoop->m_lock);
@@ -158,19 +158,19 @@ void WaveformDisplay::drawPlayhead(juce::Graphics& g, juce::Rectangle<int> wavef
     
     if (engineType == Basic)
     {
-        auto& track = looperEngine.basicEngine->getTrack(trackIndex);
-        tapeLoop = &track.tapeLoop;
-        writeHead = &track.writeHead;
-        isPlaying = &track.isPlaying;
-        readHead = &track.readHead;
+        auto& track = looperEngine.basicEngine->get_track(trackIndex);
+        tapeLoop = &track.m_tape_loop;
+        writeHead = &track.m_write_head;
+        isPlaying = &track.m_is_playing;
+        readHead = &track.m_read_head;
     }
     else // VampNet
     {
-        auto& track = looperEngine.vampNetEngine->getTrack(trackIndex);
-        tapeLoop = &track.recordBuffer;
-        writeHead = &track.writeHead;
-        isPlaying = &track.isPlaying;
-        readHead = &track.recordReadHead;
+        auto& track = looperEngine.vampNetEngine->get_track(trackIndex);
+        tapeLoop = &track.m_record_buffer;
+        writeHead = &track.m_write_head;
+        isPlaying = &track.m_is_playing;
+        readHead = &track.m_record_read_head;
     }
     
     // Show playhead if playing (even during recording before audio is recorded)

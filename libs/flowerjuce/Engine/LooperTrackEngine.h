@@ -16,16 +16,16 @@ class LooperTrackEngine
 public:
     struct TrackState
     {
-        TapeLoop tapeLoop;
-        LooperWriteHead writeHead;
-        LooperReadHead readHead;
-        OutputBus outputBus;
-        Panner* panner{nullptr}; // Panner for spatial audio distribution
+        TapeLoop m_tape_loop;
+        LooperWriteHead m_write_head;
+        LooperReadHead m_read_head;
+        OutputBus m_output_bus;
+        Panner* m_panner{nullptr}; // Panner for spatial audio distribution
         
         // UI state (these could eventually be moved to the UI layer)
-        std::atomic<bool> isPlaying{false};
+        std::atomic<bool> m_is_playing{false};
         
-        TrackState() : writeHead(tapeLoop), readHead(tapeLoop) {}
+        TrackState() : m_write_head(m_tape_loop), m_read_head(m_tape_loop) {}
         
         // Non-copyable
         TrackState(const TrackState&) = delete;
@@ -36,55 +36,55 @@ public:
     ~LooperTrackEngine() = default;
 
     // Initialize the track with sample rate and buffer duration
-    void initialize(double sampleRate, double maxBufferDurationSeconds);
+    void initialize(double sample_rate, double max_buffer_duration_seconds);
 
     // Process a block of audio samples for this track
     // Returns true if recording was finalized during this block
-    bool processBlock(const float* const* inputChannelData,
-                     int numInputChannels,
-                     float* const* outputChannelData,
-                     int numOutputChannels,
-                     int numSamples,
-                     bool shouldDebug = false);
+    bool process_block(const float* const* input_channel_data,
+                     int num_input_channels,
+                     float* const* output_channel_data,
+                     int num_output_channels,
+                     int num_samples,
+                     bool should_debug = false);
 
     // Handle audio device starting (update sample rate)
-    void audioDeviceAboutToStart(double sampleRate);
+    void audio_device_about_to_start(double sample_rate);
 
     // Handle audio device stopping
-    void audioDeviceStopped();
+    void audio_device_stopped();
 
     // Reset playhead to start
     void reset();
 
     // Load audio file into the loop
     // Returns true if successful, false otherwise
-    bool loadFromFile(const juce::File& audioFile);
+    bool load_from_file(const juce::File& audio_file);
 
     // Access to track state
-    TrackState& getTrackState() { return trackState; }
-    const TrackState& getTrackState() const { return trackState; }
+    TrackState& get_track_state() { return m_track_state; }
+    const TrackState& get_track_state() const { return m_track_state; }
     
     // Set callback for audio samples (for onset detection, etc.)
-    void setAudioSampleCallback(std::function<void(float)> callback) { audioSampleCallback = callback; }
+    void set_audio_sample_callback(std::function<void(float)> callback) { m_audio_sample_callback = callback; }
     
     // Set panner for spatial audio distribution
-    void setPanner(Panner* panner) { trackState.panner = panner; }
+    void set_panner(Panner* panner) { m_track_state.m_panner = panner; }
 
 protected:
     // Helper methods factored out for reuse by VampNetTrackEngine
-    void processRecording(TrackState& track, const float* const* inputChannelData, 
-                         int numInputChannels, float currentPosition, int sample, bool isFirstCall);
-    float processPlayback(TrackState& track, bool isFirstCall);
-    bool finalizeRecordingIfNeeded(TrackState& track, bool wasRecording, bool isPlaying, 
-                                   bool hasExistingAudio, bool& recordingFinalized);
+    void process_recording(TrackState& track, const float* const* input_channel_data, 
+                         int num_input_channels, float current_position, int sample, bool is_first_call);
+    float process_playback(TrackState& track, bool is_first_call);
+    bool finalize_recording_if_needed(TrackState& track, bool was_recording, bool is_playing, 
+                                   bool has_existing_audio, bool& recording_finalized);
 
 private:
-    TrackState trackState;
-    bool wasRecording{false};
-    bool wasPlaying{false};
-    static constexpr double maxBufferDurationSeconds = 10.0;
+    TrackState m_track_state;
+    bool m_was_recording{false};
+    bool m_was_playing{false};
+    double m_max_buffer_duration_seconds{10.0};
     
-    juce::AudioFormatManager formatManager;
-    std::function<void(float)> audioSampleCallback; // Callback for audio samples (for onset detection)
+    juce::AudioFormatManager m_format_manager;
+    std::function<void(float)> m_audio_sample_callback; // Callback for audio samples (for onset detection)
 };
 

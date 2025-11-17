@@ -17,17 +17,17 @@ struct PanningUtilsTests final : public juce::UnitTest
         beginTest("Stereo gains at extremes");
         {
             // Pan = 0.0 (all left)
-            auto [left, right] = PanningUtils::computeStereoGains(0.0f);
+            auto [left, right] = PanningUtils::compute_stereo_gains(0.0f);
             expectWithinAbsoluteError(left, 1.0f, 0.01f, "Left gain should be 1.0 at pan=0");
             expectWithinAbsoluteError(right, 0.0f, 0.01f, "Right gain should be 0.0 at pan=0");
             
             // Pan = 1.0 (all right)
-            std::tie(left, right) = PanningUtils::computeStereoGains(1.0f);
+            std::tie(left, right) = PanningUtils::compute_stereo_gains(1.0f);
             expectWithinAbsoluteError(left, 0.0f, 0.01f, "Left gain should be 0.0 at pan=1");
             expectWithinAbsoluteError(right, 1.0f, 0.01f, "Right gain should be 1.0 at pan=1");
             
             // Pan = 0.5 (center)
-            std::tie(left, right) = PanningUtils::computeStereoGains(0.5f);
+            std::tie(left, right) = PanningUtils::compute_stereo_gains(0.5f);
             float expectedCenter = std::cos(juce::MathConstants<float>::pi / 4.0f); // cos(π/4) = √2/2
             expectWithinAbsoluteError(left, expectedCenter, 0.01f, "Left gain should be √2/2 at pan=0.5");
             expectWithinAbsoluteError(right, expectedCenter, 0.01f, "Right gain should be √2/2 at pan=0.5");
@@ -40,7 +40,7 @@ struct PanningUtilsTests final : public juce::UnitTest
             // At extremes (pan=0 or 1), sum should be 1.0
             for (float pan = 0.0f; pan <= 1.0f; pan += 0.1f)
             {
-                auto [left, right] = PanningUtils::computeStereoGains(pan);
+                auto [left, right] = PanningUtils::compute_stereo_gains(pan);
                 float sum = left + right;
                 
                 if (std::abs(pan - 0.0f) < 0.01f || std::abs(pan - 1.0f) < 0.01f)
@@ -66,22 +66,22 @@ struct PanningUtilsTests final : public juce::UnitTest
         beginTest("Quad gains at corners");
         {
             // Bottom-left corner (0, 0)
-            auto gains = PanningUtils::computeQuadGains(0.0f, 0.0f);
+            auto gains = PanningUtils::compute_quad_gains(0.0f, 0.0f);
             expect(gains[2] > gains[0] && gains[2] > gains[1] && gains[2] > gains[3],
                    "BL should have highest gain at (0,0)");
             
             // Bottom-right corner (1, 0)
-            gains = PanningUtils::computeQuadGains(1.0f, 0.0f);
+            gains = PanningUtils::compute_quad_gains(1.0f, 0.0f);
             expect(gains[3] > gains[0] && gains[3] > gains[1] && gains[3] > gains[2],
                    "BR should have highest gain at (1,0)");
             
             // Top-left corner (0, 1)
-            gains = PanningUtils::computeQuadGains(0.0f, 1.0f);
+            gains = PanningUtils::compute_quad_gains(0.0f, 1.0f);
             expect(gains[0] > gains[1] && gains[0] > gains[2] && gains[0] > gains[3],
                    "FL should have highest gain at (0,1)");
             
             // Top-right corner (1, 1)
-            gains = PanningUtils::computeQuadGains(1.0f, 1.0f);
+            gains = PanningUtils::compute_quad_gains(1.0f, 1.0f);
             expect(gains[1] > gains[0] && gains[1] > gains[2] && gains[1] > gains[3],
                    "FR should have highest gain at (1,1)");
         }
@@ -92,7 +92,7 @@ struct PanningUtilsTests final : public juce::UnitTest
             {
                 for (float y = 0.0f; y <= 1.0f; y += 0.2f)
                 {
-                    auto gains = PanningUtils::computeQuadGains(x, y);
+                    auto gains = PanningUtils::compute_quad_gains(x, y);
                     float sum = gains[0] + gains[1] + gains[2] + gains[3];
                     expectWithinAbsoluteError(sum, 1.0f, 0.01f,
                         "Gain sum should be 1.0 at (" + juce::String(x) + "," + juce::String(y) + ")");
@@ -103,19 +103,19 @@ struct PanningUtilsTests final : public juce::UnitTest
         beginTest("CLEAT gains at corners");
         {
             // Bottom-left corner (0, 0) - should favor channel 0
-            auto gains = PanningUtils::computeCLEATGains(0.0f, 0.0f);
+            auto gains = PanningUtils::compute_cleat_gains(0.0f, 0.0f);
             expect(gains[0] > gains[15], "Channel 0 should have higher gain than channel 15 at (0,0)");
             
             // Bottom-right corner (1, 0) - should favor channel 3
-            gains = PanningUtils::computeCLEATGains(1.0f, 0.0f);
+            gains = PanningUtils::compute_cleat_gains(1.0f, 0.0f);
             expect(gains[3] > gains[12], "Channel 3 should have higher gain than channel 12 at (1,0)");
             
             // Top-left corner (0, 1) - should favor channel 12
-            gains = PanningUtils::computeCLEATGains(0.0f, 1.0f);
+            gains = PanningUtils::compute_cleat_gains(0.0f, 1.0f);
             expect(gains[12] > gains[0], "Channel 12 should have higher gain than channel 0 at (0,1)");
             
             // Top-right corner (1, 1) - should favor channel 15
-            gains = PanningUtils::computeCLEATGains(1.0f, 1.0f);
+            gains = PanningUtils::compute_cleat_gains(1.0f, 1.0f);
             expect(gains[15] > gains[0], "Channel 15 should have higher gain than channel 0 at (1,1)");
         }
 
@@ -125,7 +125,7 @@ struct PanningUtilsTests final : public juce::UnitTest
             {
                 for (float y = 0.0f; y <= 1.0f; y += 0.25f)
                 {
-                    auto gains = PanningUtils::computeCLEATGains(x, y);
+                    auto gains = PanningUtils::compute_cleat_gains(x, y);
                     float sum = 0.0f;
                     for (float gain : gains)
                         sum += gain;
@@ -147,31 +147,31 @@ struct StereoPannerTests final : public juce::UnitTest
         beginTest("Channel counts");
         {
             StereoPanner panner;
-            expectEquals(panner.getNumInputChannels(), 1, "Should have 1 input channel");
-            expectEquals(panner.getNumOutputChannels(), 2, "Should have 2 output channels");
+            expectEquals(panner.get_num_input_channels(), 1, "Should have 1 input channel");
+            expectEquals(panner.get_num_output_channels(), 2, "Should have 2 output channels");
         }
 
         beginTest("Pan position get/set");
         {
             StereoPanner panner;
-            panner.setPan(0.25f);
-            expectWithinAbsoluteError(panner.getPan(), 0.25f, 0.001f, "Pan should be 0.25");
+            panner.set_pan(0.25f);
+            expectWithinAbsoluteError(panner.get_pan(), 0.25f, 0.001f, "Pan should be 0.25");
             
-            panner.setPan(0.75f);
-            expectWithinAbsoluteError(panner.getPan(), 0.75f, 0.001f, "Pan should be 0.75");
+            panner.set_pan(0.75f);
+            expectWithinAbsoluteError(panner.get_pan(), 0.75f, 0.001f, "Pan should be 0.75");
             
             // Test clamping
-            panner.setPan(-0.5f);
-            expectWithinAbsoluteError(panner.getPan(), 0.0f, 0.001f, "Pan should clamp to 0.0");
+            panner.set_pan(-0.5f);
+            expectWithinAbsoluteError(panner.get_pan(), 0.0f, 0.001f, "Pan should clamp to 0.0");
             
-            panner.setPan(1.5f);
-            expectWithinAbsoluteError(panner.getPan(), 1.0f, 0.001f, "Pan should clamp to 1.0");
+            panner.set_pan(1.5f);
+            expectWithinAbsoluteError(panner.get_pan(), 1.0f, 0.001f, "Pan should clamp to 1.0");
         }
 
         beginTest("ProcessBlock mono to stereo");
         {
             StereoPanner panner;
-            panner.setPan(0.0f); // All left
+            panner.set_pan(0.0f); // All left
             
             constexpr int numSamples = 64;
             float inputBuffer[numSamples];
@@ -185,7 +185,7 @@ struct StereoPannerTests final : public juce::UnitTest
             for (int i = 0; i < numSamples; ++i)
                 inputBuffer[i] = 1.0f;
             
-            panner.processBlock(inputChannels, 1, outputChannels, 2, numSamples);
+            panner.process_block(inputChannels, 1, outputChannels, 2, numSamples);
             
             // At pan=0, all signal should go to left
             for (int i = 0; i < numSamples; ++i)
@@ -200,7 +200,7 @@ struct StereoPannerTests final : public juce::UnitTest
         beginTest("ProcessBlock center pan");
         {
             StereoPanner panner;
-            panner.setPan(0.5f); // Center
+            panner.set_pan(0.5f); // Center
             
             constexpr int numSamples = 64;
             float inputBuffer[numSamples];
@@ -214,7 +214,7 @@ struct StereoPannerTests final : public juce::UnitTest
             for (int i = 0; i < numSamples; ++i)
                 inputBuffer[i] = 1.0f;
             
-            panner.processBlock(inputChannels, 1, outputChannels, 2, numSamples);
+            panner.process_block(inputChannels, 1, outputChannels, 2, numSamples);
             
             // At pan=0.5, signal should be split equally
             float expectedCenter = std::cos(juce::MathConstants<float>::pi / 4.0f);
@@ -239,27 +239,27 @@ struct QuadPannerTests final : public juce::UnitTest
         beginTest("Channel counts");
         {
             QuadPanner panner;
-            expectEquals(panner.getNumInputChannels(), 1, "Should have 1 input channel");
-            expectEquals(panner.getNumOutputChannels(), 4, "Should have 4 output channels");
+            expectEquals(panner.get_num_input_channels(), 1, "Should have 1 input channel");
+            expectEquals(panner.get_num_output_channels(), 4, "Should have 4 output channels");
         }
 
         beginTest("Pan position get/set");
         {
             QuadPanner panner;
-            panner.setPan(0.25f, 0.75f);
-            expectWithinAbsoluteError(panner.getPanX(), 0.25f, 0.001f, "PanX should be 0.25");
-            expectWithinAbsoluteError(panner.getPanY(), 0.75f, 0.001f, "PanY should be 0.75");
+            panner.set_pan(0.25f, 0.75f);
+            expectWithinAbsoluteError(panner.get_pan_x(), 0.25f, 0.001f, "PanX should be 0.25");
+            expectWithinAbsoluteError(panner.get_pan_y(), 0.75f, 0.001f, "PanY should be 0.75");
             
             // Test clamping
-            panner.setPan(-0.5f, 1.5f);
-            expectWithinAbsoluteError(panner.getPanX(), 0.0f, 0.001f, "PanX should clamp to 0.0");
-            expectWithinAbsoluteError(panner.getPanY(), 1.0f, 0.001f, "PanY should clamp to 1.0");
+            panner.set_pan(-0.5f, 1.5f);
+            expectWithinAbsoluteError(panner.get_pan_x(), 0.0f, 0.001f, "PanX should clamp to 0.0");
+            expectWithinAbsoluteError(panner.get_pan_y(), 1.0f, 0.001f, "PanY should clamp to 1.0");
         }
 
         beginTest("ProcessBlock mono to quad");
         {
             QuadPanner panner;
-            panner.setPan(0.0f, 0.0f); // Bottom-left
+            panner.set_pan(0.0f, 0.0f); // Bottom-left
             
             constexpr int numSamples = 64;
             float inputBuffer[numSamples];
@@ -275,7 +275,7 @@ struct QuadPannerTests final : public juce::UnitTest
             for (int i = 0; i < numSamples; ++i)
                 inputBuffer[i] = 1.0f;
             
-            panner.processBlock(inputChannels, 1, outputChannels, 4, numSamples);
+            panner.process_block(inputChannels, 1, outputChannels, 4, numSamples);
             
             // At (0,0), BL should have highest gain
             expect(blBuffer[0] > flBuffer[0] && blBuffer[0] > frBuffer[0] && blBuffer[0] > brBuffer[0],
@@ -294,27 +294,27 @@ struct CLEATPannerTests final : public juce::UnitTest
         beginTest("Channel counts");
         {
             CLEATPanner panner;
-            expectEquals(panner.getNumInputChannels(), 1, "Should have 1 input channel");
-            expectEquals(panner.getNumOutputChannels(), 16, "Should have 16 output channels");
+            expectEquals(panner.get_num_input_channels(), 1, "Should have 1 input channel");
+            expectEquals(panner.get_num_output_channels(), 16, "Should have 16 output channels");
         }
 
         beginTest("Pan position get/set");
         {
             CLEATPanner panner;
-            panner.setPan(0.3f, 0.7f);
-            expectWithinAbsoluteError(panner.getPanX(), 0.3f, 0.001f, "PanX should be 0.3");
-            expectWithinAbsoluteError(panner.getPanY(), 0.7f, 0.001f, "PanY should be 0.7");
+            panner.set_pan(0.3f, 0.7f);
+            expectWithinAbsoluteError(panner.get_pan_x(), 0.3f, 0.001f, "PanX should be 0.3");
+            expectWithinAbsoluteError(panner.get_pan_y(), 0.7f, 0.001f, "PanY should be 0.7");
             
             // Test clamping
-            panner.setPan(-0.5f, 1.5f);
-            expectWithinAbsoluteError(panner.getPanX(), 0.0f, 0.001f, "PanX should clamp to 0.0");
-            expectWithinAbsoluteError(panner.getPanY(), 1.0f, 0.001f, "PanY should clamp to 1.0");
+            panner.set_pan(-0.5f, 1.5f);
+            expectWithinAbsoluteError(panner.get_pan_x(), 0.0f, 0.001f, "PanX should clamp to 0.0");
+            expectWithinAbsoluteError(panner.get_pan_y(), 1.0f, 0.001f, "PanY should clamp to 1.0");
         }
 
         beginTest("ProcessBlock mono to CLEAT");
         {
             CLEATPanner panner;
-            panner.setPan(0.0f, 0.0f); // Bottom-left
+            panner.set_pan(0.0f, 0.0f); // Bottom-left
             
             constexpr int numSamples = 64;
             float inputBuffer[numSamples];
@@ -329,7 +329,7 @@ struct CLEATPannerTests final : public juce::UnitTest
             for (int i = 0; i < numSamples; ++i)
                 inputBuffer[i] = 1.0f;
             
-            panner.processBlock(inputChannels, 1, outputChannels, 16, numSamples);
+            panner.process_block(inputChannels, 1, outputChannels, 16, numSamples);
             
             // At (0,0), channel 0 should have highest gain
             expect(outputBuffers[0][0] > outputBuffers[15][0],

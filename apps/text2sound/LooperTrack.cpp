@@ -149,16 +149,16 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     customText2SoundParams = getDefaultText2SoundParams();
     
     // Initialize variations (allocate TapeLoops for each variation)
-    auto& track = looperEngine.getTrack(trackIndex);
-    double sampleRate = track.writeHead.get_sample_rate();
-    if (sampleRate <= 0.0)
-        sampleRate = 44100.0; // Default sample rate
+    auto& track = looperEngine.get_track(trackIndex);
+    double sample_rate = track.m_write_head.get_sample_rate();
+    if (sample_rate <= 0.0)
+        sample_rate = 44100.0; // Default sample rate
     
     variations.clear();
     for (int i = 0; i < numVariations; ++i)
     {
         auto variation = std::make_unique<TapeLoop>();
-        variation->allocate_buffer(sampleRate, 10.0); // 10 second max duration
+        variation->allocate_buffer(sample_rate, 10.0); // 10 second max duration
         variations.push_back(std::move(variation));
     }
     
@@ -190,14 +190,14 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
         bool isOn = trajectoryToggle.getToggleState();
         if (panner2DComponent != nullptr)
         {
-            panner2DComponent->setTrajectoryRecordingEnabled(isOn);
-            trajectoryPlaying.store(panner2DComponent->isPlaying()); // Update cached state
+            panner2DComponent->set_trajectory_recording_enabled(isOn);
+            trajectoryPlaying.store(panner2DComponent->is_playing()); // Update cached state
             
             // If [tr] is turned on, cancel any pregen path
             if (isOn && pathGeneratorButtons != nullptr)
             {
                 pathGeneratorButtons->resetAllButtons();
-                panner2DComponent->stopPlayback();
+                panner2DComponent->stop_playback();
             }
         }
     };
@@ -212,8 +212,8 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
         onsetToggleEnabled.store(enabled); // Update atomic flag for audio thread
         if (panner2DComponent != nullptr)
         {
-            panner2DComponent->setOnsetTriggeringEnabled(enabled);
-            trajectoryPlaying.store(panner2DComponent->isPlaying()); // Update cached state
+            panner2DComponent->set_onset_triggering_enabled(enabled);
+            trajectoryPlaying.store(panner2DComponent->is_playing()); // Update cached state
         }
     };
     addAndMakeVisible(onsetToggle);
@@ -230,7 +230,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     onsetToggleEnabled.store(true);
     
     // Setup audio sample callback for onset detection
-    looperEngine.getTrackEngine(trackIndex).setAudioSampleCallback([this](float sample) {
+    looperEngine.get_track_engine(trackIndex).set_audio_sample_callback([this](float sample) {
         feedAudioSample(sample);
     });
     
@@ -293,7 +293,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
         0.25, 4.0, 1.0, 0.01,
         "x",
         [this](double value) {
-            looperEngine.getTrack(trackIndex).readHead.set_speed(static_cast<float>(value));
+            looperEngine.get_track(trackIndex).m_read_head.set_speed(static_cast<float>(value));
         },
         ""  // parameterId - will be auto-generated
     });
@@ -303,13 +303,13 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
         0.0, 8.0, 5.0, 0.01,
         "s",
         [this](double value) {
-            auto& track = looperEngine.getTrack(trackIndex);
-            double sampleRate = track.writeHead.get_sample_rate();
-            if (sampleRate > 0.0)
+            auto& track = looperEngine.get_track(trackIndex);
+            double sample_rate = track.m_write_head.get_sample_rate();
+            if (sample_rate > 0.0)
             {
                 // Convert duration (seconds) to samples and set WrapPos
-                size_t wrapPos = static_cast<size_t>(value * sampleRate);
-                track.writeHead.set_wrap_pos(wrapPos);
+                size_t wrap_pos = static_cast<size_t>(value * sample_rate);
+                track.m_write_head.set_wrap_pos(wrap_pos);
                 
                 // Repaint waveform display to show updated bounds
                 waveformDisplay.repaint();
@@ -327,15 +327,15 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     
     // Initialize duration to 5.0 seconds (default value)
     {
-        auto& trackInit = looperEngine.getTrack(trackIndex);
-        double sampleRateInit = trackInit.writeHead.get_sample_rate();
-        if (sampleRateInit <= 0.0)
-            sampleRateInit = 44100.0; // Default sample rate
+        auto& track_init = looperEngine.get_track(trackIndex);
+        double sample_rate_init = track_init.m_write_head.get_sample_rate();
+        if (sample_rate_init <= 0.0)
+            sample_rate_init = 44100.0; // Default sample rate
         
-        if (sampleRateInit > 0.0)
+        if (sample_rate_init > 0.0)
         {
-            size_t wrapPos = static_cast<size_t>(5.0 * sampleRateInit);
-            trackInit.writeHead.set_wrap_pos(wrapPos);
+            size_t wrap_pos = static_cast<size_t>(5.0 * sample_rate_init);
+            track_init.m_write_head.set_wrap_pos(wrap_pos);
         }
         
         // Update duration parameter for gradio endpoint
@@ -350,7 +350,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     
     // Setup level control
     levelControl.onLevelChange = [this](double value) {
-        looperEngine.getTrack(trackIndex).readHead.set_level_db(static_cast<float>(value));
+        looperEngine.get_track(trackIndex).m_read_head.set_level_db(static_cast<float>(value));
     };
     addAndMakeVisible(levelControl);
     
@@ -361,13 +361,13 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     
     // Setup input selector
     inputSelector.onChannelChange = [this](int channel) {
-        looperEngine.getTrack(trackIndex).writeHead.set_input_channel(channel);
+        looperEngine.get_track(trackIndex).m_write_head.set_input_channel(channel);
     };
     addAndMakeVisible(inputSelector);
     
     // Initialize channel selector (will show "all" if device not ready yet)
     // It will be updated again after device is initialized via updateChannelSelectors()
-    inputSelector.updateChannels(looperEngine.getAudioDeviceManager());
+    inputSelector.updateChannels(looperEngine.get_audio_device_manager());
     
     // Setup panner based on type
     auto pannerTypeLower = pannerType.toLowerCase();
@@ -380,7 +380,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
             if (auto* stereoPanner = dynamic_cast<StereoPanner*>(panner.get()))
             {
                 float panValue = static_cast<float>(stereoPanSlider.getValue());
-                stereoPanner->setPan(panValue);
+                stereoPanner->set_pan(panValue);
                 panCoordLabel.setText(juce::String(panValue, 2), juce::dontSendNotification);
             }
         };
@@ -390,51 +390,51 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     {
         panner = std::make_unique<QuadPanner>();
         panner2DComponent = std::make_unique<Panner2DComponent>();
-        panner2DComponent->setPanPosition(0.5f, 0.5f); // Center
-        panner2DComponent->onPanChange = [this](float x, float y) {
+        panner2DComponent->set_pan_position(0.5f, 0.5f); // Center
+        panner2DComponent->m_on_pan_change = [this](float x, float y) {
             if (auto* quadPanner = dynamic_cast<QuadPanner*>(panner.get()))
             {
-                quadPanner->setPan(x, y);
+                quadPanner->set_pan(x, y);
                 panCoordLabel.setText(juce::String(x, 2) + ", " + juce::String(y, 2), juce::dontSendNotification);
             }
             // Update cached trajectory playing state
             if (panner2DComponent != nullptr)
             {
-                trajectoryPlaying.store(panner2DComponent->isPlaying());
+                trajectoryPlaying.store(panner2DComponent->is_playing());
             }
         };
         addAndMakeVisible(panner2DComponent.get());
         
         // Initialize onset triggering now that panner2DComponent is created
-        panner2DComponent->setOnsetTriggeringEnabled(true);
+        panner2DComponent->set_onset_triggering_enabled(true);
     }
     else if (pannerTypeLower == "cleat")
     {
         panner = std::make_unique<CLEATPanner>();
         panner2DComponent = std::make_unique<Panner2DComponent>();
-        panner2DComponent->setPanPosition(0.5f, 0.5f); // Center
-        panner2DComponent->onPanChange = [this](float x, float y) {
+        panner2DComponent->set_pan_position(0.5f, 0.5f); // Center
+        panner2DComponent->m_on_pan_change = [this](float x, float y) {
             if (auto* cleatPanner = dynamic_cast<CLEATPanner*>(panner.get()))
             {
-                cleatPanner->setPan(x, y);
+                cleatPanner->set_pan(x, y);
                 panCoordLabel.setText(juce::String(x, 2) + ", " + juce::String(y, 2), juce::dontSendNotification);
             }
             // Update cached trajectory playing state
             if (panner2DComponent != nullptr)
             {
-                trajectoryPlaying.store(panner2DComponent->isPlaying());
+                trajectoryPlaying.store(panner2DComponent->is_playing());
             }
         };
         addAndMakeVisible(panner2DComponent.get());
         
         // Initialize onset triggering now that panner2DComponent is created (for cleat)
-        panner2DComponent->setOnsetTriggeringEnabled(true);
+        panner2DComponent->set_onset_triggering_enabled(true);
     }
     
     // Connect panner to engine for audio processing
     if (panner != nullptr)
     {
-        looperEngine.getTrackEngine(trackIndex).setPanner(panner.get());
+        looperEngine.get_track_engine(trackIndex).set_panner(panner.get());
     }
     
     // Setup path generation buttons and knobs for any 2D panner (quad or cleat)
@@ -451,7 +451,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
                     trajectoryToggle.setToggleState(false, juce::dontSendNotification);
                     if (panner2DComponent != nullptr)
                     {
-                        panner2DComponent->setTrajectoryRecordingEnabled(false);
+                        panner2DComponent->set_trajectory_recording_enabled(false);
                     }
                 }
                 
@@ -463,7 +463,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
                 // Stop playback when toggled off
                 if (panner2DComponent != nullptr)
                 {
-                    panner2DComponent->stopPlayback();
+                    panner2DComponent->stop_playback();
                 }
             }
         };
@@ -478,7 +478,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
         pathSpeedKnob.onValueChange = [this] {
             if (panner2DComponent != nullptr)
             {
-                panner2DComponent->setPlaybackSpeed(static_cast<float>(pathSpeedKnob.getValue()));
+                panner2DComponent->set_playback_speed(static_cast<float>(pathSpeedKnob.getValue()));
             }
         };
         addAndMakeVisible(pathSpeedKnob);
@@ -496,7 +496,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
         pathScaleKnob.onValueChange = [this] {
             if (panner2DComponent != nullptr)
             {
-                panner2DComponent->setTrajectoryScale(static_cast<float>(pathScaleKnob.getValue()));
+                panner2DComponent->set_trajectory_scale(static_cast<float>(pathScaleKnob.getValue()));
             }
         };
         addAndMakeVisible(pathScaleKnob);
@@ -530,7 +530,7 @@ void LooperTrack::applyLookAndFeel()
 
 void LooperTrack::paint(juce::Graphics& g)
 {
-    auto& track = looperEngine.getTrack(trackIndex);
+    auto& track = looperEngine.get_track(trackIndex);
     
     // Background - pitch black
     g.fillAll(juce::Colours::black);
@@ -540,12 +540,12 @@ void LooperTrack::paint(juce::Graphics& g)
     g.drawRect(getLocalBounds(), 1);
 
     // Visual indicator for recording/playing
-    if (track.writeHead.get_record_enable())
+    if (track.m_write_head.get_record_enable())
     {
         g.setColour(juce::Colour(0xfff04e36).withAlpha(0.2f)); // Red-orange
         g.fillRect(getLocalBounds());
     }
-    else if (track.isPlaying.load() && track.tapeLoop.m_has_recorded.load())
+    else if (track.m_is_playing.load() && track.m_tape_loop.m_has_recorded.load())
     {
         g.setColour(juce::Colour(0xff1eb19d).withAlpha(0.15f)); // Teal
         g.fillRect(getLocalBounds());
@@ -798,25 +798,25 @@ void LooperTrack::resized()
 
 void LooperTrack::playButtonClicked(bool shouldPlay)
 {
-    auto& track = looperEngine.getTrack(trackIndex);
+    auto& track = looperEngine.get_track(trackIndex);
     
     if (shouldPlay)
     {
-        track.isPlaying.store(true);
-        track.readHead.set_playing(true);
+        track.m_is_playing.store(true);
+        track.m_read_head.set_playing(true);
         
-        if (track.writeHead.get_record_enable() && !track.tapeLoop.m_has_recorded.load())
+        if (track.m_write_head.get_record_enable() && !track.m_tape_loop.m_has_recorded.load())
         {
-            const juce::ScopedLock sl(track.tapeLoop.m_lock);
-            track.tapeLoop.clear_buffer();
-            track.writeHead.reset();
-            track.readHead.reset();
+            const juce::ScopedLock sl(track.m_tape_loop.m_lock);
+            track.m_tape_loop.clear_buffer();
+            track.m_write_head.reset();
+            track.m_read_head.reset();
         }
     }
     else
     {
-        track.isPlaying.store(false);
-        track.readHead.set_playing(false);
+        track.m_is_playing.store(false);
+        track.m_read_head.set_playing(false);
         
         // If playback stopped and we have pending variations, apply them now
         if (hasPendingVariations)
@@ -827,9 +827,9 @@ void LooperTrack::playButtonClicked(bool shouldPlay)
             hasPendingVariations = false;
         }
         
-        if (track.writeHead.get_record_enable())
+        if (track.m_write_head.get_record_enable())
         {
-            track.writeHead.finalize_recording(track.writeHead.get_pos());
+            track.m_write_head.finalize_recording(track.m_write_head.get_pos());
             juce::Logger::writeToLog("~~~ Playback just stopped, finalized recording");
         }
     }
@@ -839,13 +839,13 @@ void LooperTrack::playButtonClicked(bool shouldPlay)
 
 void LooperTrack::muteButtonToggled(bool muted)
 {
-    auto& track = looperEngine.getTrack(trackIndex);
-    track.readHead.set_muted(muted);
+    auto& track = looperEngine.get_track(trackIndex);
+    track.m_read_head.set_muted(muted);
 }
 
 void LooperTrack::generateButtonClicked()
 {
-    auto& track = looperEngine.getTrack(trackIndex);
+    auto& track = looperEngine.get_track(trackIndex);
     
     // Get text prompt from the track
     juce::String textPrompt = getTextPrompt();
@@ -907,7 +907,7 @@ void LooperTrack::setPannerSmoothingTime(double smoothingTime)
 {
     if (panner2DComponent != nullptr)
     {
-        panner2DComponent->setSmoothingTime(smoothingTime);
+        panner2DComponent->set_smoothing_time(smoothingTime);
         DBG("LooperTrack: Panner smoothing time set to " + juce::String(smoothingTime) + " seconds for track " + juce::String(trackIndex));
     }
 }
@@ -968,11 +968,11 @@ void LooperTrack::onGradioComplete(juce::Result result, juce::Array<juce::File> 
         return;
     }
 
-    auto& track = looperEngine.getTrack(trackIndex);
-    bool isPlaying = track.isPlaying.load();
+    auto& track = looperEngine.get_track(trackIndex);
+    bool is_playing = track.m_is_playing.load();
     
     // Check if we should wait for current variation's loop end before updating
-    if (waitForLoopEndBeforeUpdate && isPlaying)
+    if (waitForLoopEndBeforeUpdate && is_playing)
     {
         // Store pending variations and wait for current variation's loop to wrap
         pendingVariationFiles = outputFiles;
@@ -985,10 +985,10 @@ void LooperTrack::onGradioComplete(juce::Result result, juce::Array<juce::File> 
     applyVariationsFromFiles(outputFiles);
     
     // Start playback if not already playing
-    if (!isPlaying)
+    if (!is_playing)
     {
-        track.isPlaying.store(true);
-        track.readHead.set_playing(true);
+        track.m_is_playing.store(true);
+        track.m_read_head.set_playing(true);
         transportControls.setPlayState(true);
     }
     
@@ -1012,7 +1012,7 @@ void LooperTrack::saveTrajectory()
         return;
     }
     
-    auto trajectory = panner2DComponent->getTrajectory();
+    auto trajectory = panner2DComponent->get_trajectory();
     if (trajectory.empty())
     {
         DBG("LooperTrack: Cannot save trajectory - trajectory is empty");
@@ -1044,7 +1044,7 @@ void LooperTrack::saveTrajectory()
     // Get other trajectory parameters
     double playbackSpeed = pathSpeedKnob.getValue();
     double trajectoryScale = pathScaleKnob.getValue();
-    double smoothingTime = panner2DComponent->getSmoothingTime();
+    double smoothing_time = panner2DComponent->get_smoothing_time();
     
     // Create JSON object
     juce::var jsonObj;
@@ -1053,7 +1053,7 @@ void LooperTrack::saveTrajectory()
     jsonObj.getDynamicObject()->setProperty("duration", duration);
     jsonObj.getDynamicObject()->setProperty("playbackSpeed", playbackSpeed);
     jsonObj.getDynamicObject()->setProperty("trajectoryScale", trajectoryScale);
-    jsonObj.getDynamicObject()->setProperty("smoothingTime", smoothingTime);
+    jsonObj.getDynamicObject()->setProperty("smoothingTime", smoothing_time);
     
     // Create coords array
     juce::var coordsArray = juce::var(juce::Array<juce::var>());
@@ -1090,7 +1090,7 @@ void LooperTrack::saveTrajectory()
 
 void LooperTrack::resetButtonClicked()
 {
-    auto& track = looperEngine.getTrack(trackIndex);
+    auto& track = looperEngine.get_track(trackIndex);
     
     // Stop any ongoing generation
     if (gradioWorkerThread != nullptr)
@@ -1102,19 +1102,19 @@ void LooperTrack::resetButtonClicked()
     generateButton.setButtonText("generate");
     
     // Stop playback
-    track.isPlaying.store(false);
-    track.readHead.set_playing(false);
+    track.m_is_playing.store(false);
+    track.m_read_head.set_playing(false);
     transportControls.setPlayState(false);
     
     // Clear buffer
-    const juce::ScopedLock sl(track.tapeLoop.m_lock);
-    track.tapeLoop.clear_buffer();
-    track.writeHead.reset();
-    track.readHead.reset();
+    const juce::ScopedLock sl(track.m_tape_loop.m_lock);
+    track.m_tape_loop.clear_buffer();
+    track.m_write_head.reset();
+    track.m_read_head.reset();
     
     // Reset controls to defaults
     parameterKnobs.setKnobValue(0, 1.0, juce::dontSendNotification); // speed
-    track.readHead.set_speed(1.0f);
+    track.m_read_head.set_speed(1.0f);
     
     parameterKnobs.setKnobValue(1, 5.0, juce::dontSendNotification); // duration (default 5.0)
     // Reset duration parameter and WrapPos
@@ -1123,17 +1123,17 @@ void LooperTrack::resetButtonClicked()
     {
         obj->setProperty("duration", juce::var(5.0));
     }
-    double sampleRate = track.writeHead.get_sample_rate();
-    if (sampleRate > 0.0)
+    double sample_rate = track.m_write_head.get_sample_rate();
+    if (sample_rate > 0.0)
     {
-        track.writeHead.set_wrap_pos(static_cast<size_t>(5.0 * sampleRate));
+        track.m_write_head.set_wrap_pos(static_cast<size_t>(5.0 * sample_rate));
     }
     
     levelControl.setLevelValue(0.0, juce::dontSendNotification);
-    track.readHead.set_level_db(0.0f);
+    track.m_read_head.set_level_db(0.0f);
     
     // Unmute
-    track.readHead.set_muted(false);
+    track.m_read_head.set_muted(false);
     transportControls.setMuteState(false);
     
     
@@ -1143,8 +1143,8 @@ void LooperTrack::resetButtonClicked()
     // Reset panner position to center and stop any path playback
     if (panner2DComponent != nullptr)
     {
-        panner2DComponent->stopPlayback();
-        panner2DComponent->setPanPosition(0.5f, 0.5f, juce::sendNotification);
+        panner2DComponent->stop_playback();
+        panner2DComponent->set_pan_position(0.5f, 0.5f, juce::sendNotification);
     }
     else if (pannerType.toLowerCase() == "stereo" && stereoPanSlider.isVisible())
     {
@@ -1182,13 +1182,13 @@ LooperTrack::~LooperTrack()
     }
 }
 
-void LooperTrack::setPlaybackSpeed(float speed)
+void LooperTrack::set_playback_speed(float speed)
 {
     parameterKnobs.setKnobValue(0, speed, juce::dontSendNotification);
-    looperEngine.getTrack(trackIndex).readHead.set_speed(speed);
+    looperEngine.get_track(trackIndex).m_read_head.set_speed(speed);
 }
 
-float LooperTrack::getPlaybackSpeed() const
+float LooperTrack::get_playback_speed() const
 {
     return static_cast<float>(parameterKnobs.getKnobValue(0));
 }
@@ -1242,27 +1242,27 @@ void LooperTrack::generatePath(const juce::String& pathType)
     
     if (pathTypeLower == "circle")
     {
-        coords = PanningUtils::generateCirclePath();
+        coords = PanningUtils::generate_circle_path();
     }
     else if (pathTypeLower == "random")
     {
-        coords = PanningUtils::generateRandomPath();
+        coords = PanningUtils::generate_random_path();
     }
     else if (pathTypeLower == "wander")
     {
-        coords = PanningUtils::generateWanderPath();
+        coords = PanningUtils::generate_wander_path();
     }
     else if (pathTypeLower == "swirls")
     {
-        coords = PanningUtils::generateSwirlsPath();
+        coords = PanningUtils::generate_swirls_path();
     }
     else if (pathTypeLower == "bounce")
     {
-        coords = PanningUtils::generateBouncePath();
+        coords = PanningUtils::generate_bounce_path();
     }
     else if (pathTypeLower == "spiral")
     {
-        coords = PanningUtils::generateSpiralPath();
+        coords = PanningUtils::generate_spiral_path();
     }
     else
     {
@@ -1281,7 +1281,7 @@ void LooperTrack::generatePath(const juce::String& pathType)
     }
     
     // Set trajectory and start playback
-    panner2DComponent->setTrajectory(trajectoryPoints, true);
+    panner2DComponent->set_trajectory(trajectoryPoints, true);
     
     DBG("LooperTrack: Generated " + juce::String(trajectoryPoints.size()) + " points for path type: " + pathType);
 }
@@ -1307,14 +1307,14 @@ void LooperTrack::feedAudioSample(float sample)
         if (newFill >= onsetBlockSize)
         {
             // Get sample rate (cached to avoid repeated atomic reads)
-            auto& track = looperEngine.getTrack(trackIndex);
-            double sampleRate = track.writeHead.get_sample_rate();
-            if (sampleRate <= 0.0)
-                sampleRate = 44100.0;
-            lastOnsetSampleRate = sampleRate;
+            auto& track = looperEngine.get_track(trackIndex);
+            double sample_rate = track.m_write_head.get_sample_rate();
+            if (sample_rate <= 0.0)
+                sample_rate = 44100.0;
+            lastOnsetSampleRate = sample_rate;
             
             // Process block for onset detection
-            bool detected = onsetDetector.processBlock(onsetProcessingBuffer.data(), onsetBlockSize, sampleRate);
+            bool detected = onsetDetector.processBlock(onsetProcessingBuffer.data(), onsetBlockSize, sample_rate);
             
             if (detected)
             {
@@ -1342,32 +1342,32 @@ void LooperTrack::feedAudioSample(float sample)
 void LooperTrack::timerCallback()
 {
     // Sync button states with model state
-    auto& track = looperEngine.getTrack(trackIndex);
+    auto& track = looperEngine.get_track(trackIndex);
     
-    bool modelIsPlaying = track.isPlaying.load();
+    bool modelIsPlaying = track.m_is_playing.load();
     transportControls.setPlayState(modelIsPlaying);
     
     // Update cached trajectory playing state (for audio thread access)
     if (panner2DComponent != nullptr)
     {
-        trajectoryPlaying.store(panner2DComponent->isPlaying());
+        trajectoryPlaying.store(panner2DComponent->is_playing());
     }
     
     // Note: Onset detection is now processed directly in feedAudioSample() from audio thread
     // for low latency. Timer callback only handles LED fade-out.
     
-    float currentPos = track.readHead.get_pos();
-    float wrapPos = static_cast<float>(track.writeHead.get_wrap_pos());
+    float current_pos = track.m_read_head.get_pos();
+    float wrap_pos = static_cast<float>(track.m_write_head.get_wrap_pos());
     bool wrapped = false;
     
     // Detect wrap: if we were near the end and now we're near the start
-    if (wrapPos > 0.0f)
+    if (wrap_pos > 0.0f)
     {
-        float wrapThreshold = wrapPos * 0.1f; // 10% threshold
-        bool wasNearEnd = lastReadHeadPosition > (wrapPos - wrapThreshold);
-        bool isNearStart = currentPos < wrapThreshold;
+        float wrap_threshold = wrap_pos * 0.1f; // 10% threshold
+        bool was_near_end = m_last_read_head_position > (wrap_pos - wrap_threshold);
+        bool is_near_start = current_pos < wrap_threshold;
         
-        if (wasNearEnd && isNearStart && lastReadHeadPosition != currentPos)
+        if (was_near_end && is_near_start && m_last_read_head_position != current_pos)
         {
             wrapped = true;
         }
@@ -1382,7 +1382,7 @@ void LooperTrack::timerCallback()
         pendingVariationFiles.clear();
         hasPendingVariations = false;
         // Don't auto-cycle after applying - the new variations are already loaded
-        lastReadHeadPosition = currentPos;
+        m_last_read_head_position = current_pos;
         return;
     }
     
@@ -1393,7 +1393,7 @@ void LooperTrack::timerCallback()
         cycleToNextVariation();
     }
     
-    lastReadHeadPosition = currentPos;
+    m_last_read_head_position = current_pos;
     
     // Update onset LED brightness (fade out over time)
     double currentLEDBrightness = onsetLEDBrightness.load();
@@ -1429,7 +1429,7 @@ void LooperTrack::handleAsyncUpdate()
         pendingTrajectoryAdvance.store(false);
         if (panner2DComponent != nullptr)
         {
-            panner2DComponent->advanceTrajectoryOnset();
+            panner2DComponent->advance_trajectory_onset();
         }
     }
     
@@ -1440,7 +1440,7 @@ void LooperTrack::handleAsyncUpdate()
 void LooperTrack::updateChannelSelectors()
 {
     // Update channel selector based on current audio device
-    inputSelector.updateChannels(looperEngine.getAudioDeviceManager());
+    inputSelector.updateChannels(looperEngine.get_audio_device_manager());
 }
 
 void LooperTrack::loadVariationFromFile(int variationIndex, const juce::File& audioFile)
@@ -1455,8 +1455,8 @@ void LooperTrack::loadVariationFromFile(int variationIndex, const juce::File& au
     }
     
     auto& variation = variations[variationIndex];
-    auto& track = looperEngine.getTrack(trackIndex);
-    auto& trackEngine = looperEngine.getTrackEngine(trackIndex);
+    auto& track = looperEngine.get_track(trackIndex);
+    auto& trackEngine = looperEngine.get_track_engine(trackIndex);
     
     // Use the track engine's format manager to read the file
     juce::AudioFormatManager formatManager;
@@ -1539,16 +1539,16 @@ void LooperTrack::applyVariationsFromFiles(const juce::Array<juce::File>& output
         variationSelector.setNumVariations(numVariations);
         
         // Reallocate variations if needed
-        auto& track = looperEngine.getTrack(trackIndex);
-        double sampleRate = track.writeHead.get_sample_rate();
-        if (sampleRate <= 0.0)
-            sampleRate = 44100.0;
+        auto& track = looperEngine.get_track(trackIndex);
+        double sample_rate = track.m_write_head.get_sample_rate();
+        if (sample_rate <= 0.0)
+            sample_rate = 44100.0;
         
         variations.clear();
         for (int i = 0; i < numVariations; ++i)
         {
             auto variation = std::make_unique<TapeLoop>();
-            variation->allocate_buffer(sampleRate, 10.0);
+            variation->allocate_buffer(sample_rate, 10.0);
             variations.push_back(std::move(variation));
         }
     }
@@ -1587,43 +1587,43 @@ void LooperTrack::switchToVariation(int variationIndex)
         return;
     
     auto& variation = variations[variationIndex];
-    auto& track = looperEngine.getTrack(trackIndex);
-    auto& trackEngine = looperEngine.getTrackEngine(trackIndex);
+    auto& track = looperEngine.get_track(trackIndex);
+    auto& trackEngine = looperEngine.get_track_engine(trackIndex);
     
     // Copy variation buffer to active track buffer
     {
         const juce::ScopedLock slVar(variation->m_lock);
-        const juce::ScopedLock slTrack(track.tapeLoop.m_lock);
+        const juce::ScopedLock sl_track(track.m_tape_loop.m_lock);
         
-        auto& varBuffer = variation->get_buffer();
-        auto& trackBuffer = track.tapeLoop.get_buffer();
+        auto& var_buffer = variation->get_buffer();
+        auto& track_buffer = track.m_tape_loop.get_buffer();
         
-        if (varBuffer.empty() || trackBuffer.empty())
+        if (var_buffer.empty() || track_buffer.empty())
             return;
         
-        size_t copyLength = juce::jmin(varBuffer.size(), trackBuffer.size(), variation->m_recorded_length.load());
+        size_t copy_length = juce::jmin(var_buffer.size(), track_buffer.size(), variation->m_recorded_length.load());
         
         // Clear track buffer first
-        std::fill(trackBuffer.begin(), trackBuffer.end(), 0.0f);
+        std::fill(track_buffer.begin(), track_buffer.end(), 0.0f);
         
         // Copy variation data
-        for (size_t i = 0; i < copyLength; ++i)
+        for (size_t i = 0; i < copy_length; ++i)
         {
-            trackBuffer[i] = varBuffer[i];
+            track_buffer[i] = var_buffer[i];
         }
         
         // Update track metadata
-        track.tapeLoop.m_recorded_length.store(copyLength);
-        track.tapeLoop.m_has_recorded.store(true);
+        track.m_tape_loop.m_recorded_length.store(copy_length);
+        track.m_tape_loop.m_has_recorded.store(true);
         
         // Update wrapPos
-        track.writeHead.set_wrap_pos(copyLength);
-        track.writeHead.set_pos(copyLength);
+        track.m_write_head.set_wrap_pos(copy_length);
+        track.m_write_head.set_pos(copy_length);
     }
     
     // Reset read head to start
-    track.readHead.reset();
-    track.readHead.set_pos(0.0f);
+    track.m_read_head.reset();
+    track.m_read_head.set_pos(0.0f);
     
     currentVariationIndex = variationIndex;
     variationSelector.setSelectedVariation(variationIndex);

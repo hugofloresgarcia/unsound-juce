@@ -224,10 +224,10 @@ void SamplerWindow::ContentComponent::loadSampleButtonClicked()
     {
         juce::File selectedFile = chooser.getResult();
         
-        if (trackIdx >= 0 && trackIdx < looperEngine.getNumTracks())
+        if (trackIdx >= 0 && trackIdx < looperEngine.get_num_tracks())
         {
             // Load into selected track
-            if (looperEngine.getTrackEngine(trackIdx).getSampler().loadSample(selectedFile))
+            if (looperEngine.get_track_engine(trackIdx).get_sampler().loadSample(selectedFile))
             {
                 sampleNameLabel.setText(selectedFile.getFileName(), juce::dontSendNotification);
             }
@@ -236,9 +236,9 @@ void SamplerWindow::ContentComponent::loadSampleButtonClicked()
         {
             // Load into all tracks
             bool success = false;
-            for (int i = 0; i < looperEngine.getNumTracks(); ++i)
+            for (int i = 0; i < looperEngine.get_num_tracks(); ++i)
             {
-                if (looperEngine.getTrackEngine(i).getSampler().loadSample(selectedFile))
+                if (looperEngine.get_track_engine(i).get_sampler().loadSample(selectedFile))
                 {
                     success = true;
                 }
@@ -259,22 +259,22 @@ void SamplerWindow::ContentComponent::triggerButtonClicked()
     int trackIdx = selectedTrack.load();
     
     // Trigger sample on selected track(s)
-    if (trackIdx >= 0 && trackIdx < looperEngine.getNumTracks())
+    if (trackIdx >= 0 && trackIdx < looperEngine.get_num_tracks())
     {
         // Single track selected
-        if (looperEngine.getTrackEngine(trackIdx).getSampler().hasSample())
+        if (looperEngine.get_track_engine(trackIdx).get_sampler().hasSample())
         {
-            looperEngine.getTrackEngine(trackIdx).getSampler().trigger();
+            looperEngine.get_track_engine(trackIdx).get_sampler().trigger();
         }
     }
     else if (trackIdx == -1)
     {
         // All tracks - trigger sample on all tracks that have samples loaded
-        for (int i = 0; i < looperEngine.getNumTracks(); ++i)
+        for (int i = 0; i < looperEngine.get_num_tracks(); ++i)
         {
-            if (looperEngine.getTrackEngine(i).getSampler().hasSample())
+            if (looperEngine.get_track_engine(i).get_sampler().hasSample())
             {
-                looperEngine.getTrackEngine(i).getSampler().trigger();
+                looperEngine.get_track_engine(i).get_sampler().trigger();
             }
         }
     }

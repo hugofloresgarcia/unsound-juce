@@ -192,14 +192,14 @@ void LevelControl::drawVUMeter(juce::Graphics& g, juce::Rectangle<int> area)
     float level;
     if (engineType == Basic)
     {
-        auto& track = looperEngine.basicEngine->getTrack(trackIndex);
-        level = track.readHead.m_level_meter.load();
+        auto& track = looperEngine.basicEngine->get_track(trackIndex);
+        level = track.m_read_head.m_level_meter.load();
     }
     else // VampNet
     {
-        auto& track = looperEngine.vampNetEngine->getTrack(trackIndex);
+        auto& track = looperEngine.vampNetEngine->get_track(trackIndex);
         // Use recordReadHead level meter for VU display
-        level = track.recordReadHead.m_level_meter.load();
+        level = track.m_record_read_head.m_level_meter.load();
     }
     
     // Clamp level to 0.0-1.0

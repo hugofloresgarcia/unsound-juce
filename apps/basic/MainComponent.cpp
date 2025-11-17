@@ -31,8 +31,8 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
 
     // Create looper tracks (limit to available engines, max 4 for now)
     DBG_SEGFAULT("Creating tracks, numTracks=" + juce::String(numTracks));
-    int actualNumTracks = juce::jmin(numTracks, looperEngine.getNumTracks());
-    DBG_SEGFAULT("actualNumTracks=" + juce::String(actualNumTracks) + " (limited by engine max=" + juce::String(looperEngine.getNumTracks()) + ")");
+    int actualNumTracks = juce::jmin(numTracks, looperEngine.get_num_tracks());
+    DBG_SEGFAULT("actualNumTracks=" + juce::String(actualNumTracks) + " (limited by engine max=" + juce::String(looperEngine.get_num_tracks()) + ")");
     for (int i = 0; i < actualNumTracks; ++i)
     {
         DBG_SEGFAULT("Creating LooperTrack " + juce::String(i));
@@ -181,12 +181,12 @@ void MainComponent::timerCallback()
 
 void MainComponent::syncButtonClicked()
 {
-    looperEngine.syncAllTracks();
+        looperEngine.sync_all_tracks();
 }
 
 void MainComponent::updateAudioDeviceDebugInfo()
 {
-    auto* device = looperEngine.getAudioDeviceManager().getCurrentAudioDevice();
+    auto* device = looperEngine.get_audio_device_manager().getCurrentAudioDevice();
     if (device != nullptr)
     {
         juce::String deviceName = device->getName();

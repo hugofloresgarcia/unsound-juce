@@ -233,16 +233,16 @@ void ClickSynthWindow::ContentComponent::frequencySliderChanged()
 {
     // Update frequency on selected track click synth(s)
     int trackIdx = selectedTrack.load();
-    if (trackIdx >= 0 && trackIdx < looperEngine.getNumTracks())
+    if (trackIdx >= 0 && trackIdx < looperEngine.get_num_tracks())
     {
-        looperEngine.getTrackEngine(trackIdx).getClickSynth().setFrequency(static_cast<float>(frequencySlider.getValue()));
+        looperEngine.get_track_engine(trackIdx).get_click_synth().setFrequency(static_cast<float>(frequencySlider.getValue()));
     }
     else if (trackIdx == -1)
     {
         // Update all tracks
-        for (int i = 0; i < looperEngine.getNumTracks(); ++i)
+        for (int i = 0; i < looperEngine.get_num_tracks(); ++i)
         {
-            looperEngine.getTrackEngine(i).getClickSynth().setFrequency(static_cast<float>(frequencySlider.getValue()));
+            looperEngine.get_track_engine(i).get_click_synth().setFrequency(static_cast<float>(frequencySlider.getValue()));
         }
     }
 }
@@ -251,16 +251,16 @@ void ClickSynthWindow::ContentComponent::durationSliderChanged()
 {
     // Update duration on selected track click synth(s)
     int trackIdx = selectedTrack.load();
-    if (trackIdx >= 0 && trackIdx < looperEngine.getNumTracks())
+    if (trackIdx >= 0 && trackIdx < looperEngine.get_num_tracks())
     {
-        looperEngine.getTrackEngine(trackIdx).getClickSynth().setDuration(static_cast<float>(durationSlider.getValue()) / 1000.0f);
+        looperEngine.get_track_engine(trackIdx).get_click_synth().setDuration(static_cast<float>(durationSlider.getValue()) / 1000.0f);
     }
     else if (trackIdx == -1)
     {
         // Update all tracks
-        for (int i = 0; i < looperEngine.getNumTracks(); ++i)
+        for (int i = 0; i < looperEngine.get_num_tracks(); ++i)
         {
-            looperEngine.getTrackEngine(i).getClickSynth().setDuration(static_cast<float>(durationSlider.getValue()) / 1000.0f);
+            looperEngine.get_track_engine(i).get_click_synth().setDuration(static_cast<float>(durationSlider.getValue()) / 1000.0f);
         }
     }
 }
@@ -269,16 +269,16 @@ void ClickSynthWindow::ContentComponent::amplitudeSliderChanged()
 {
     // Update amplitude on selected track click synth(s)
     int trackIdx = selectedTrack.load();
-    if (trackIdx >= 0 && trackIdx < looperEngine.getNumTracks())
+    if (trackIdx >= 0 && trackIdx < looperEngine.get_num_tracks())
     {
-        looperEngine.getTrackEngine(trackIdx).getClickSynth().setAmplitude(static_cast<float>(amplitudeSlider.getValue()));
+        looperEngine.get_track_engine(trackIdx).get_click_synth().setAmplitude(static_cast<float>(amplitudeSlider.getValue()));
     }
     else if (trackIdx == -1)
     {
         // Update all tracks
-        for (int i = 0; i < looperEngine.getNumTracks(); ++i)
+        for (int i = 0; i < looperEngine.get_num_tracks(); ++i)
         {
-            looperEngine.getTrackEngine(i).getClickSynth().setAmplitude(static_cast<float>(amplitudeSlider.getValue()));
+            looperEngine.get_track_engine(i).get_click_synth().setAmplitude(static_cast<float>(amplitudeSlider.getValue()));
         }
     }
 }
@@ -291,17 +291,17 @@ void ClickSynthWindow::ContentComponent::triggerButtonClicked()
     int trackIdx = selectedTrack.load();
     
     // Trigger click on selected track(s)
-    if (trackIdx >= 0 && trackIdx < looperEngine.getNumTracks())
+    if (trackIdx >= 0 && trackIdx < looperEngine.get_num_tracks())
     {
         // Single track selected
-        looperEngine.getTrackEngine(trackIdx).getClickSynth().triggerClick();
+        looperEngine.get_track_engine(trackIdx).get_click_synth().triggerClick();
     }
     else if (trackIdx == -1)
     {
         // All tracks - trigger click on all tracks
-        for (int i = 0; i < looperEngine.getNumTracks(); ++i)
+        for (int i = 0; i < looperEngine.get_num_tracks(); ++i)
         {
-            looperEngine.getTrackEngine(i).getClickSynth().triggerClick();
+            looperEngine.get_track_engine(i).get_click_synth().triggerClick();
         }
     }
 }

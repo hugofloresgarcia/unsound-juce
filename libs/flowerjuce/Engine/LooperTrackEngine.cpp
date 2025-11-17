@@ -11,52 +11,53 @@
 
 LooperTrackEngine::LooperTrackEngine()
 {
-    formatManager.registerBasicFormats();
+    m_format_manager.registerBasicFormats();
 }
 
-void LooperTrackEngine::initialize(double sampleRate, double maxBufferDurationSeconds)
+void LooperTrackEngine::initialize(double sample_rate, double max_buffer_duration_seconds)
 {
-    trackState.tapeLoop.allocate_buffer(sampleRate, maxBufferDurationSeconds);
+    m_track_state.m_tape_loop.allocate_buffer(sample_rate, max_buffer_duration_seconds);
+    m_max_buffer_duration_seconds = max_buffer_duration_seconds;
 }
 
-void LooperTrackEngine::audioDeviceAboutToStart(double sampleRate)
+void LooperTrackEngine::audio_device_about_to_start(double sample_rate)
 {
-    trackState.tapeLoop.allocate_buffer(sampleRate, maxBufferDurationSeconds);
-    trackState.writeHead.set_sample_rate(sampleRate);
-    trackState.readHead.set_sample_rate(sampleRate);
-    trackState.writeHead.reset();
-    trackState.readHead.reset();
+    m_track_state.m_tape_loop.allocate_buffer(sample_rate, m_max_buffer_duration_seconds);
+    m_track_state.m_write_head.set_sample_rate(sample_rate);
+    m_track_state.m_read_head.set_sample_rate(sample_rate);
+    m_track_state.m_write_head.reset();
+    m_track_state.m_read_head.reset();
 }
 
-void LooperTrackEngine::audioDeviceStopped()
+void LooperTrackEngine::audio_device_stopped()
 {
-    trackState.isPlaying.store(false);
-    trackState.readHead.set_playing(false);
+    m_track_state.m_is_playing.store(false);
+    m_track_state.m_read_head.set_playing(false);
 }
 
 void LooperTrackEngine::reset()
 {
-    trackState.readHead.reset();
+    m_track_state.m_read_head.reset();
 }
 
-bool LooperTrackEngine::loadFromFile(const juce::File& audioFile)
+bool LooperTrackEngine::load_from_file(const juce::File& audio_file)
 {
-    if (!audioFile.existsAsFile())
+    if (!audio_file.existsAsFile())
     {
-        DBG("Audio file does not exist: " << audioFile.getFullPathName());
+        DBG("Audio file does not exist: " << audio_file.getFullPathName());
         return false;
     }
 
     // Create reader for the audio file
-    std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(audioFile));
+    std::unique_ptr<juce::AudioFormatReader> reader(m_format_manager.createReaderFor(audio_file));
     if (reader == nullptr)
     {
-        DBG("Could not create reader for file: " << audioFile.getFullPathName());
+        DBG("Could not create reader for file: " << audio_file.getFullPathName());
         return false;
     }
 
-    const juce::ScopedLock sl(trackState.tapeLoop.m_lock);
-    auto& buffer = trackState.tapeLoop.get_buffer();
+    const juce::ScopedLock sl(m_track_state.m_tape_loop.m_lock);
+    auto& buffer = m_track_state.m_tape_loop.get_buffer();
     
     if (buffer.empty())
     {
@@ -65,12 +66,12 @@ bool LooperTrackEngine::loadFromFile(const juce::File& audioFile)
     }
 
     // Clear the buffer first
-    trackState.tapeLoop.clear_buffer();
+    m_track_state.m_tape_loop.clear_buffer();
 
     // Determine how many samples to read (limited by buffer size)
-    juce::int64 numSamplesToRead = juce::jmin(reader->lengthInSamples, static_cast<juce::int64>(buffer.size()));
+    juce::int64 num_samples_to_read = juce::jmin(reader->lengthInSamples, static_cast<juce::int64>(buffer.size()));
     
-    if (numSamplesToRead <= 0)
+    if (num_samples_to_read <= 0)
     {
         DBG("Audio file has no samples or buffer is empty");
         return false;
@@ -78,9 +79,9 @@ bool LooperTrackEngine::loadFromFile(const juce::File& audioFile)
 
     // Read audio data
     // If multi-channel, we'll mix down to mono by averaging channels
-    juce::AudioBuffer<float> tempBuffer(static_cast<int>(reader->numChannels), static_cast<int>(numSamplesToRead));
+    juce::AudioBuffer<float> temp_buffer(static_cast<int>(reader->numChannels), static_cast<int>(num_samples_to_read));
     
-    if (!reader->read(&tempBuffer, 0, static_cast<int>(numSamplesToRead), 0, true, true))
+    if (!reader->read(&temp_buffer, 0, static_cast<int>(num_samples_to_read), 0, true, true))
     {
         DBG("Failed to read audio data from file");
         return false;
@@ -88,11 +89,11 @@ bool LooperTrackEngine::loadFromFile(const juce::File& audioFile)
 
     // Convert to mono and write to TapeLoop buffer
     // If single channel, just copy. If multi-channel, average them.
-    if (tempBuffer.getNumChannels() == 1)
+    if (temp_buffer.getNumChannels() == 1)
     {
         // Direct copy
-        const float* source = tempBuffer.getReadPointer(0);
-        for (int i = 0; i < static_cast<int>(numSamplesToRead); ++i)
+        const float* source = temp_buffer.getReadPointer(0);
+        for (int i = 0; i < static_cast<int>(num_samples_to_read); ++i)
         {
             buffer[i] = source[i];
         }
@@ -100,301 +101,301 @@ bool LooperTrackEngine::loadFromFile(const juce::File& audioFile)
     else
     {
         // Mix down to mono by averaging all channels
-        for (int i = 0; i < static_cast<int>(numSamplesToRead); ++i)
+        for (int i = 0; i < static_cast<int>(num_samples_to_read); ++i)
         {
             float sum = 0.0f;
-            for (int channel = 0; channel < tempBuffer.getNumChannels(); ++channel)
+            for (int channel = 0; channel < temp_buffer.getNumChannels(); ++channel)
             {
-                sum += tempBuffer.getSample(channel, i);
+                sum += temp_buffer.getSample(channel, i);
             }
-            buffer[i] = sum / static_cast<float>(tempBuffer.getNumChannels());
+            buffer[i] = sum / static_cast<float>(temp_buffer.getNumChannels());
         }
     }
 
     // Update wrapPos to reflect the loaded audio length
-    size_t loadedLength = static_cast<size_t>(numSamplesToRead);
-    trackState.writeHead.set_wrap_pos(loadedLength);
-    trackState.writeHead.set_pos(loadedLength);
+    size_t loaded_length = static_cast<size_t>(num_samples_to_read);
+    m_track_state.m_write_head.set_wrap_pos(loaded_length);
+    m_track_state.m_write_head.set_pos(loaded_length);
     
     // Update TapeLoop metadata
-    trackState.tapeLoop.m_recorded_length.store(loadedLength);
-    trackState.tapeLoop.m_has_recorded.store(true);
+    m_track_state.m_tape_loop.m_recorded_length.store(loaded_length);
+    m_track_state.m_tape_loop.m_has_recorded.store(true);
     
     // Reset read head to start
-    trackState.readHead.reset();
-    trackState.readHead.set_pos(0.0f);
+    m_track_state.m_read_head.reset();
+    m_track_state.m_read_head.set_pos(0.0f);
 
-    DBG("Loaded audio file: " << audioFile.getFileName() 
-        << " (" << numSamplesToRead << " samples, "
-        << (numSamplesToRead / reader->sampleRate) << " seconds)");
+    DBG("Loaded audio file: " << audio_file.getFileName() 
+        << " (" << num_samples_to_read << " samples, "
+        << (num_samples_to_read / reader->sampleRate) << " seconds)");
 
     return true;
 }
 
-bool LooperTrackEngine::processBlock(const float* const* inputChannelData,
-                                     int numInputChannels,
-                                     float* const* outputChannelData,
-                                     int numOutputChannels,
-                                     int numSamples,
-                                     bool shouldDebug)
+bool LooperTrackEngine::process_block(const float* const* input_channel_data,
+                                     int num_input_channels,
+                                     float* const* output_channel_data,
+                                     int num_output_channels,
+                                     int num_samples,
+                                     bool should_debug)
 {
-    static int callCount = 0;
-    callCount++;
-    bool isFirstCall = (callCount == 1);
+    static int call_count = 0;
+    call_count++;
+    bool is_first_call = (call_count == 1);
     
-    if (isFirstCall)
-        DBG_SEGFAULT("ENTRY: LooperTrackEngine::processBlock, numSamples=" + juce::String(numSamples));
+    if (is_first_call)
+        DBG_SEGFAULT("ENTRY: LooperTrackEngine::process_block, num_samples=" + juce::String(num_samples));
     
-    auto& track = trackState;
-    if (isFirstCall)
+    auto& track = m_track_state;
+    if (is_first_call)
         DBG_SEGFAULT("Got track reference");
 
     // Safety check: if buffer is not allocated, return early
     {
-        const juce::ScopedLock sl(track.tapeLoop.m_lock);
-        if (isFirstCall)
+        const juce::ScopedLock sl(track.m_tape_loop.m_lock);
+        if (is_first_call)
             DBG_SEGFAULT("Checking if buffer is empty");
-        if (track.tapeLoop.get_buffer().empty()) {
-            juce::Logger::writeToLog("WARNING: TapeLoop buffer is empty in processBlock");
-            if (isFirstCall)
+        if (track.m_tape_loop.get_buffer().empty()) {
+            juce::Logger::writeToLog("WARNING: TapeLoop buffer is empty in process_block");
+            if (is_first_call)
                 DBG_SEGFAULT("Buffer is empty, returning false");
             return false;
         }
-        if (isFirstCall)
-            DBG_SEGFAULT("Buffer is not empty, size=" + juce::String(track.tapeLoop.get_buffer().size()));
+        if (is_first_call)
+            DBG_SEGFAULT("Buffer is not empty, size=" + juce::String(track.m_tape_loop.get_buffer().size()));
     }
 
-    bool isPlaying = track.isPlaying.load();
-    bool hasExistingAudio = track.tapeLoop.m_has_recorded.load();
+    bool is_playing = track.m_is_playing.load();
+    bool has_existing_audio = track.m_tape_loop.m_has_recorded.load();
     
-    if (isFirstCall && shouldDebug)
+    if (is_first_call && should_debug)
     {
         DBG("[LooperTrackEngine] Track state check:");
-        DBG("  isPlaying: " << (isPlaying ? "YES" : "NO"));
-        DBG("  hasExistingAudio: " << (hasExistingAudio ? "YES" : "NO"));
-        DBG("  recordedLength: " << track.tapeLoop.m_recorded_length.load());
-        DBG("  recordEnable: " << (track.writeHead.get_record_enable() ? "YES" : "NO"));
+        DBG("  is_playing: " << (is_playing ? "YES" : "NO"));
+        DBG("  has_existing_audio: " << (has_existing_audio ? "YES" : "NO"));
+        DBG("  recorded_length: " << track.m_tape_loop.m_recorded_length.load());
+        DBG("  record_enable: " << (track.m_write_head.get_record_enable() ? "YES" : "NO"));
     }
-    size_t recordedLength = track.tapeLoop.m_recorded_length.load();
-    float playheadPos = track.readHead.get_pos();
+    size_t recorded_length = track.m_tape_loop.m_recorded_length.load();
+    float playhead_pos = track.m_read_head.get_pos();
 
     // Debug output
-    if (shouldDebug)
+    if (should_debug)
     {
-        float inputLevel = 0.0f;
-        float maxInput = 0.0f;
-        if (inputChannelData[0] != nullptr && numInputChannels > 0 && numSamples > 0)
+        float input_level = 0.0f;
+        float max_input = 0.0f;
+        if (input_channel_data[0] != nullptr && num_input_channels > 0 && num_samples > 0)
         {
-            inputLevel = std::abs(inputChannelData[0][0]);
-            for (int s = 0; s < numSamples && s < 100; ++s)
+            input_level = std::abs(input_channel_data[0][0]);
+            for (int s = 0; s < num_samples && s < 100; ++s)
             {
-                maxInput = juce::jmax(maxInput, std::abs(inputChannelData[0][s]));
+                max_input = juce::jmax(max_input, std::abs(input_channel_data[0][s]));
             }
         }
 
         juce::Logger::writeToLog(juce::String("Track")
-            + "\t - Play: " + (isPlaying ? "YES" : "NO")
-            + "\t RecEnable: " + (track.writeHead.get_record_enable() ? "YES" : "NO")
-            + "\t ActuallyRec: " + (track.writeHead.get_record_enable() ? "YES" : "NO")
-            + "\t Playhead: " + juce::String(playheadPos)
-            + "\t RecordedLen: " + juce::String(recordedLength)
-            + "\t HasAudio: " + (hasExistingAudio ? "YES" : "NO")
-            + "\t InputLevel: " + juce::String(inputLevel)
-            + "\t MaxInput: " + juce::String(maxInput)
-            + "\t InputChannels: " + juce::String(numInputChannels)
-            + "\t NumSamples: " + juce::String(numSamples)
-            + "\t WrapPos: " + juce::String(track.writeHead.get_wrap_pos())
-            + "\t LoopEnd: " + juce::String(track.tapeLoop.get_buffer_size())
+            + "\t - Play: " + (is_playing ? "YES" : "NO")
+            + "\t RecEnable: " + (track.m_write_head.get_record_enable() ? "YES" : "NO")
+            + "\t ActuallyRec: " + (track.m_write_head.get_record_enable() ? "YES" : "NO")
+            + "\t Playhead: " + juce::String(playhead_pos)
+            + "\t RecordedLen: " + juce::String(recorded_length)
+            + "\t HasAudio: " + (has_existing_audio ? "YES" : "NO")
+            + "\t InputLevel: " + juce::String(input_level)
+            + "\t MaxInput: " + juce::String(max_input)
+            + "\t InputChannels: " + juce::String(num_input_channels)
+            + "\t NumSamples: " + juce::String(num_samples)
+            + "\t WrapPos: " + juce::String(track.m_write_head.get_wrap_pos())
+            + "\t LoopEnd: " + juce::String(track.m_tape_loop.get_buffer_size())
         );
     }
 
     // Check if we just started recording (wasn't recording before, but are now)
-    bool thisBlockIsFirstTimeRecording = !wasRecording && track.writeHead.get_record_enable() && !hasExistingAudio;
+    bool this_block_is_first_time_recording = !m_was_recording && track.m_write_head.get_record_enable() && !has_existing_audio;
 
     // Check for recording finalization
-    bool recordingFinalized = false;
-    bool shouldFinalize = finalizeRecordingIfNeeded(track, wasRecording, isPlaying, hasExistingAudio, recordingFinalized);
+    bool recording_finalized = false;
+    bool should_finalize = finalize_recording_if_needed(track, m_was_recording, is_playing, has_existing_audio, recording_finalized);
     
     // Update wasRecording for next callback
-    wasRecording = track.writeHead.get_record_enable();
-    bool playbackJustStopped = wasPlaying && !isPlaying;
-    wasPlaying = isPlaying;
+    m_was_recording = track.m_write_head.get_record_enable();
+    bool playback_just_stopped = m_was_playing && !is_playing;
+    m_was_playing = is_playing;
 
-    if (isPlaying)
+    if (is_playing)
     {
         // If we just started recording, reset everything to 0 BEFORE processing
-        if (thisBlockIsFirstTimeRecording) // REC_INIT state
+        if (this_block_is_first_time_recording) // REC_INIT state
         {
-            const juce::ScopedLock sl(track.tapeLoop.m_lock);
-            track.tapeLoop.clear_buffer(); // TODO: should NOT be in callback.
-            track.writeHead.reset();
-            track.readHead.reset();
+            const juce::ScopedLock sl(track.m_tape_loop.m_lock);
+            track.m_tape_loop.clear_buffer(); // TODO: should NOT be in callback.
+            track.m_write_head.reset();
+            track.m_read_head.reset();
             juce::Logger::writeToLog("~~~ Reset playhead for new recording");
         }
 
         // Update read head state
-        track.readHead.set_playing(true);
+        track.m_read_head.set_playing(true);
 
         // Allocate temporary mono buffer for playback samples
-        juce::HeapBlock<float> monoBuffer(numSamples);
-        const float* monoInputChannelData[1] = { monoBuffer.getData() };
+        juce::HeapBlock<float> mono_buffer(num_samples);
+        const float* mono_input_channel_data[1] = { mono_buffer.getData() };
 
-        if (isFirstCall)
-            DBG_SEGFAULT("Entering sample loop, numSamples=" + juce::String(numSamples));
+        if (is_first_call)
+            DBG_SEGFAULT("Entering sample loop, num_samples=" + juce::String(num_samples));
         
         // First pass: collect playback samples and handle recording
-        for (int sample = 0; sample < numSamples; ++sample)
+        for (int sample = 0; sample < num_samples; ++sample)
         {
-            if (isFirstCall && sample == 0)
+            if (is_first_call && sample == 0)
                 DBG_SEGFAULT("First sample iteration");
             
-            float currentPosition = track.readHead.get_pos();
+            float current_position = track.m_read_head.get_pos();
 
             // Handle recording (overdub or new)
-            processRecording(track, inputChannelData, numInputChannels, currentPosition, sample, isFirstCall && sample == 0);
+            process_recording(track, input_channel_data, num_input_channels, current_position, sample, is_first_call && sample == 0);
 
             // Playback (read head processes the sample)
-            float sampleValue = processPlayback(track, isFirstCall && sample == 0);
+            float sample_value = process_playback(track, is_first_call && sample == 0);
             
             // Store sample in mono buffer for panner processing
-            monoBuffer[sample] = sampleValue;
+            mono_buffer[sample] = sample_value;
             
             // Feed audio sample to callback if set (for onset detection, etc.)
-            if (audioSampleCallback)
+            if (m_audio_sample_callback)
             {
-                audioSampleCallback(sampleValue);
+                m_audio_sample_callback(sample_value);
             }
 
             // Advance read head by one sample
-            if (isFirstCall && sample == 0)
-                DBG_SEGFAULT("Calling readHead.advance, wrapPos=" + juce::String(track.writeHead.get_wrap_pos()));
-            bool wrapped = track.readHead.advance(static_cast<float>(track.writeHead.get_wrap_pos()));
-            if (isFirstCall && sample == 0)
+            if (is_first_call && sample == 0)
+                DBG_SEGFAULT("Calling readHead.advance, wrapPos=" + juce::String(track.m_write_head.get_wrap_pos()));
+            bool wrapped = track.m_read_head.advance(static_cast<float>(track.m_write_head.get_wrap_pos()));
+            if (is_first_call && sample == 0)
                 DBG_SEGFAULT("readHead.advance completed, wrapped=" + juce::String(wrapped ? "YES" : "NO"));
-            if (wrapped && !hasExistingAudio)
+            if (wrapped && !has_existing_audio)
             {
-                track.writeHead.set_record_enable(false); // Stop recording
+                track.m_write_head.set_record_enable(false); // Stop recording
                 juce::Logger::writeToLog("~~~ WRAPPED! Finalized recording");
             }
         }
         
         // Second pass: apply panner to distribute audio to all output channels
-        if (track.panner != nullptr)
+        if (track.m_panner != nullptr)
         {
             // Use panner to distribute mono audio to all output channels with proper gains
-            track.panner->processBlock(monoInputChannelData, 1, outputChannelData, numOutputChannels, numSamples);
+            track.m_panner->process_block(mono_input_channel_data, 1, output_channel_data, num_output_channels, num_samples);
             
-            if (isFirstCall && shouldDebug)
+            if (is_first_call && should_debug)
             {
-                DBG("[LooperTrackEngine] Panner applied - routing to all " << numOutputChannels << " channels");
+                DBG("[LooperTrackEngine] Panner applied - routing to all " << num_output_channels << " channels");
             }
         }
         else
         {
             // Fallback: route to all channels at unity gain (when panner not set)
-            for (int sample = 0; sample < numSamples; ++sample)
+            for (int sample = 0; sample < num_samples; ++sample)
             {
-                float sampleValue = monoBuffer[sample];
-                for (int channel = 0; channel < numOutputChannels; ++channel)
+                float sample_value = mono_buffer[sample];
+                for (int channel = 0; channel < num_output_channels; ++channel)
                 {
-                    if (outputChannelData[channel] != nullptr)
+                    if (output_channel_data[channel] != nullptr)
                     {
-                        outputChannelData[channel][sample] += sampleValue;
+                        output_channel_data[channel][sample] += sample_value;
                     }
                 }
             }
             
-            if (isFirstCall && shouldDebug)
+            if (is_first_call && should_debug)
             {
                 DBG("[LooperTrackEngine] No panner set - routing to all channels at unity gain");
             }
         }
         
-        if (isFirstCall)
+        if (is_first_call)
             DBG_SEGFAULT("Sample loop completed");
     }
     else
     {
         // Not playing - stop read head
-        track.readHead.set_playing(false);
+        track.m_read_head.set_playing(false);
 
-        if (track.writeHead.get_record_enable() && playbackJustStopped)
+        if (track.m_write_head.get_record_enable() && playback_just_stopped)
         {
             // finalize recording if we were recording and playback just stopped
-            track.writeHead.set_record_enable(false); // Stop recording and update UI
-            track.writeHead.set_wrap_pos(track.writeHead.get_pos());
-            recordingFinalized = true;
+            track.m_write_head.set_record_enable(false); // Stop recording and update UI
+            track.m_write_head.set_wrap_pos(track.m_write_head.get_pos());
+            recording_finalized = true;
             // Record enable is on but playback just stopped - prepare for new recording
             juce::Logger::writeToLog("WARNING: ActuallyRecording but not playing.");
         }
     }
 
-    return recordingFinalized;
+    return recording_finalized;
 }
 
 // Helper method: Process recording for a single sample
-void LooperTrackEngine::processRecording(TrackState& track, const float* const* inputChannelData, 
-                                         int numInputChannels, float currentPosition, int sample, bool isFirstCall)
+void LooperTrackEngine::process_recording(TrackState& track, const float* const* input_channel_data, 
+                                         int num_input_channels, float current_position, int sample, bool is_first_call)
 {
     // Note: writeHead.processSample() locks the buffer internally, so we don't hold the lock here
-    if (track.writeHead.get_record_enable() && numInputChannels > 0)
+    if (track.m_write_head.get_record_enable() && num_input_channels > 0)
     {
-        int inputChannel = track.writeHead.get_input_channel();
-        float inputSample = 0.0f;
+        int input_channel = track.m_write_head.get_input_channel();
+        float input_sample = 0.0f;
         
         // Get input sample from selected channel
-        if (inputChannel == -1)
+        if (input_channel == -1)
         {
             // All channels: use channel 0 (mono sum could be added later)
-            if (inputChannelData[0] != nullptr)
-                inputSample = inputChannelData[0][sample];
+            if (input_channel_data[0] != nullptr)
+                input_sample = input_channel_data[0][sample];
         }
-        else if (inputChannel >= 0 && inputChannel < numInputChannels && inputChannelData[inputChannel] != nullptr)
+        else if (input_channel >= 0 && input_channel < num_input_channels && input_channel_data[input_channel] != nullptr)
         {
-            inputSample = inputChannelData[inputChannel][sample];
+            input_sample = input_channel_data[input_channel][sample];
         }
         
-        if (isFirstCall)
-            DBG_SEGFAULT("Calling writeHead.processSample");
-        track.writeHead.process_sample(inputSample, currentPosition);
-        if (isFirstCall)
-            DBG_SEGFAULT("writeHead.processSample completed");
+        if (is_first_call)
+            DBG_SEGFAULT("Calling writeHead.process_sample");
+        track.m_write_head.process_sample(input_sample, current_position);
+        if (is_first_call)
+            DBG_SEGFAULT("writeHead.process_sample completed");
     }
 }
 
 // Helper method: Process playback for a single sample
-float LooperTrackEngine::processPlayback(TrackState& track, bool isFirstCall)
+float LooperTrackEngine::process_playback(TrackState& track, bool is_first_call)
 {
-    const juce::ScopedLock sl(track.tapeLoop.m_lock);
+    const juce::ScopedLock sl(track.m_tape_loop.m_lock);
     
-    if (isFirstCall)
+    if (is_first_call)
     {
-        DBG_SEGFAULT("Calling readHead.processSample");
+        DBG_SEGFAULT("Calling readHead.process_sample");
         DBG("[LooperTrackEngine] Track playback state:");
-        DBG("  isPlaying: " << (track.isPlaying.load() ? "YES" : "NO"));
-        DBG("  hasRecordedAudio: " << (track.tapeLoop.m_recorded_length.load() > 0 ? "YES" : "NO"));
-        DBG("  recordedLength: " << track.tapeLoop.m_recorded_length.load());
-        DBG("  readHead position: " << track.readHead.get_pos());
+        DBG("  is_playing: " << (track.m_is_playing.load() ? "YES" : "NO"));
+        DBG("  has_recorded_audio: " << (track.m_tape_loop.m_recorded_length.load() > 0 ? "YES" : "NO"));
+        DBG("  recorded_length: " << track.m_tape_loop.m_recorded_length.load());
+        DBG("  readHead position: " << track.m_read_head.get_pos());
     }
-    float sampleValue = track.readHead.process_sample();
-    if (isFirstCall)
+    float sample_value = track.m_read_head.process_sample();
+    if (is_first_call)
     {
-        DBG_SEGFAULT("readHead.processSample completed, value=" + juce::String(sampleValue));
-        DBG("[LooperTrackEngine] Track sampleValue: " << sampleValue);
+        DBG_SEGFAULT("readHead.process_sample completed, value=" + juce::String(sample_value));
+        DBG("[LooperTrackEngine] Track sample_value: " << sample_value);
     }
     
-    return sampleValue;
+    return sample_value;
 }
 
 // Helper method: Check if recording should be finalized
-bool LooperTrackEngine::finalizeRecordingIfNeeded(TrackState& track, bool wasRecording, bool isPlaying, 
-                                                   bool hasExistingAudio, bool& recordingFinalized)
+bool LooperTrackEngine::finalize_recording_if_needed(TrackState& track, bool was_recording, bool is_playing, 
+                                                   bool has_existing_audio, bool& recording_finalized)
 {
     // If we just stopped recording (record enable turned off), finalize the loop
-    if (wasRecording && !track.writeHead.get_record_enable() && isPlaying && !hasExistingAudio)
+    if (was_recording && !track.m_write_head.get_record_enable() && is_playing && !has_existing_audio)
     {
-        track.writeHead.finalize_recording(track.writeHead.get_pos());
-        recordingFinalized = true;
+        track.m_write_head.finalize_recording(track.m_write_head.get_pos());
+        recording_finalized = true;
         juce::Logger::writeToLog("~~~ Finalized initial recording (it was needed)");
         return true;
     }
