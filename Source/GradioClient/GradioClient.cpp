@@ -158,6 +158,146 @@ juce::Result GradioClient::processRequest(const juce::File& inputAudioFile,
     return juce::Result::ok();
 }
 
+juce::Result GradioClient::processRequestMultiple(const juce::File& inputAudioFile,
+                                                  const juce::String& textPrompt,
+                                                  juce::Array<juce::File>& outputFiles,
+                                                  const juce::var& customParams)
+{
+    // Step 1: Upload the input audio file (if provided)
+    juce::String uploadedFilePath;
+    bool hasAudio = inputAudioFile != juce::File() && inputAudioFile.existsAsFile();
+    
+    if (hasAudio)
+    {
+        auto uploadResult = uploadFileRequest(inputAudioFile, uploadedFilePath);
+        if (uploadResult.failed())
+        {
+            return juce::Result::fail("Failed to upload audio file: " + uploadResult.getErrorMessage());
+        }
+    }
+
+    // Step 2: Prepare the JSON payload (same as processRequest)
+    juce::Array<juce::var> dataItems;
+    
+    dataItems.add(juce::var(textPrompt));
+    
+    if (hasAudio)
+    {
+        juce::DynamicObject::Ptr fileObj = new juce::DynamicObject();
+        fileObj->setProperty("path", juce::var(uploadedFilePath));
+        
+        juce::DynamicObject::Ptr metaObj = new juce::DynamicObject();
+        metaObj->setProperty("_type", juce::var("gradio.FileData"));
+        fileObj->setProperty("meta", juce::var(metaObj));
+        
+        dataItems.add(juce::var(fileObj));
+    }
+    else
+    {
+        dataItems.add(juce::var());
+    }
+    
+    auto* obj = customParams.getDynamicObject();
+    if (obj != nullptr)
+    {
+        dataItems.add(obj->getProperty("seed"));
+        dataItems.add(obj->getProperty("median_filter_length"));
+        dataItems.add(obj->getProperty("normalize_db"));
+        dataItems.add(obj->getProperty("duration"));
+        dataItems.add(obj->getProperty("inference_params"));
+    }
+    
+    juce::DynamicObject::Ptr payloadObj = new juce::DynamicObject();
+    payloadObj->setProperty("data", juce::var(dataItems));
+    
+    juce::String jsonBody = juce::JSON::toString(juce::var(payloadObj), false);
+    
+    DBG("GradioClient: POST payload: " + jsonBody);
+
+    // Step 3: Make POST request to get event ID
+    juce::String eventId;
+    auto postResult = makePostRequestForEventID("generate_with_params", eventId, jsonBody);
+    if (postResult.failed())
+    {
+        return juce::Result::fail("Failed to make POST request: " + postResult.getErrorMessage());
+    }
+
+    DBG("GradioClient: Got event ID: " + eventId);
+
+    // Step 4: Poll for response
+    juce::String response;
+    auto getResult = getResponseFromEventID("generate_with_params", eventId, response);
+    if (getResult.failed())
+    {
+        return juce::Result::fail("Failed to get response: " + getResult.getErrorMessage());
+    }
+
+    DBG("GradioClient: Got response: " + response);
+
+    // Step 5: Extract data from response
+    juce::String responseData;
+    auto extractResult = extractKeyFromResponse(response, responseData, "data: ");
+    if (extractResult.failed())
+    {
+        return juce::Result::fail("Failed to extract data from response: " + extractResult.getErrorMessage());
+    }
+
+    // Step 6: Parse JSON and extract all file URLs
+    juce::var parsedData;
+    auto parseResult = juce::JSON::parse(responseData, parsedData);
+    if (parseResult.failed())
+    {
+        return juce::Result::fail("Failed to parse JSON response: " + parseResult.getErrorMessage());
+    }
+
+    if (!parsedData.isArray())
+    {
+        return juce::Result::fail("Parsed data field should be an array.");
+    }
+
+    juce::Array<juce::var>* dataArray = parsedData.getArray();
+    if (dataArray == nullptr)
+    {
+        return juce::Result::fail("The data array is empty.");
+    }
+
+    // Extract all file objects from the array
+    outputFiles.clear();
+    for (int i = 0; i < dataArray->size(); ++i)
+    {
+        juce::var element = (*dataArray)[i];
+        if (element.isObject())
+        {
+            juce::DynamicObject* fileObj = element.getDynamicObject();
+            if (fileObj != nullptr && fileObj->hasProperty("url"))
+            {
+                juce::String fileURL = fileObj->getProperty("url").toString();
+                DBG("GradioClient: Found output file URL [" + juce::String(i) + "]: " + fileURL);
+                
+                juce::File outputFile;
+                juce::URL outputURL(fileURL);
+                auto downloadResult = downloadFileFromURL(outputURL, outputFile);
+                if (!downloadResult.failed())
+                {
+                    outputFiles.add(outputFile);
+                }
+                else
+                {
+                    DBG("GradioClient: Failed to download file [" + juce::String(i) + "]: " + downloadResult.getErrorMessage());
+                }
+            }
+        }
+    }
+
+    if (outputFiles.isEmpty())
+    {
+        return juce::Result::fail("No valid output files found in response");
+    }
+
+    DBG("GradioClient: Successfully downloaded " + juce::String(outputFiles.size()) + " variation(s)");
+    return juce::Result::ok();
+}
+
 juce::Result GradioClient::makePostRequestForEventID(const juce::String& endpoint,
                                                      juce::String& eventID,
                                                      const juce::String& jsonBody,

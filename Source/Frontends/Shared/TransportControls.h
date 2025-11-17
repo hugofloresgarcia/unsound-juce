@@ -40,6 +40,9 @@ public:
     void setPlayState(bool playing);
     void setMuteState(bool muted);
 
+    // Show/hide record button
+    void setRecordButtonVisible(bool visible);
+
 private:
     juce::ToggleButton recordEnableButton;
     juce::ToggleButton playButton;
@@ -51,6 +54,9 @@ private:
     // MIDI learn support
     MidiLearnManager* midiLearnManager = nullptr;
     juce::String trackIdPrefix;
+    
+    // Record button visibility
+    bool recordButtonVisible = true;
     std::unique_ptr<MidiLearnable> recordLearnable;
     std::unique_ptr<MidiLearnable> playLearnable;
     std::unique_ptr<MidiLearnable> muteLearnable;

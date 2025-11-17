@@ -30,6 +30,13 @@ public:
                                 const juce::String& textPrompt,
                                 juce::File& outputFile,
                                 const juce::var& customParams = juce::var());
+    
+    // Process request and return all output files (for variations)
+    // Returns all files found in the response array
+    juce::Result processRequestMultiple(const juce::File& inputAudioFile,
+                                       const juce::String& textPrompt,
+                                       juce::Array<juce::File>& outputFiles,
+                                       const juce::var& customParams = juce::var());
 
 private:
     SpaceInfo spaceInfo;

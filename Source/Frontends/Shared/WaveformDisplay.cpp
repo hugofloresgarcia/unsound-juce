@@ -56,8 +56,9 @@ void WaveformDisplay::drawWaveform(juce::Graphics& g, juce::Rectangle<int> area)
     
     const juce::ScopedLock sl(tapeLoop->lock);
     
-    // Show recording progress even if not fully recorded yet
-    size_t displayLength = tapeLoop->recordedLength.load();
+    // Determine display length - use WrapPos if set (for duration control), otherwise use recordedLength
+    size_t wrapPos = writeHead->getWrapPos();
+    size_t displayLength = (wrapPos > 0) ? wrapPos : tapeLoop->recordedLength.load();
     
     if (writeHead->getRecordEnable())
     {
@@ -82,6 +83,9 @@ void WaveformDisplay::drawWaveform(juce::Graphics& g, juce::Rectangle<int> area)
     // Use buffer size if no recorded length yet
     if (displayLength == 0)
         displayLength = buffer.size();
+    
+    // Clamp displayLength to buffer size
+    displayLength = juce::jmin(displayLength, buffer.size());
     
     // Draw waveform - use red-orange when recording, teal when playing
     g.setColour(writeHead->getRecordEnable() ? juce::Colour(0xfff04e36) : juce::Colour(0xff1eb19d));
@@ -173,9 +177,12 @@ void WaveformDisplay::drawPlayhead(juce::Graphics& g, juce::Rectangle<int> wavef
     if (!isPlaying->load())
         return;
     
-    size_t recordedLength = tapeLoop->recordedLength.load();
+    // Use WrapPos if set (for duration control), otherwise use recordedLength
+    size_t wrapPos = writeHead->getWrapPos();
+    size_t playbackLength = (wrapPos > 0) ? wrapPos : tapeLoop->recordedLength.load();
+    
     // During new recording, use recordHead or playhead to show position
-    if (recordedLength == 0)
+    if (playbackLength == 0)
     {
         if (writeHead->getRecordEnable())
         {
@@ -203,11 +210,11 @@ void WaveformDisplay::drawPlayhead(juce::Graphics& g, juce::Rectangle<int> wavef
         return;
     }
     
-    if (tapeLoop->getBufferSize() == 0 || recordedLength == 0)
+    if (tapeLoop->getBufferSize() == 0 || playbackLength == 0)
         return;
     
     float playheadPosition = readHead->getPos();
-    float normalizedPosition = playheadPosition / static_cast<float>(recordedLength);
+    float normalizedPosition = playheadPosition / static_cast<float>(playbackLength);
     
     int playheadX = waveformArea.getX() + static_cast<int>(normalizedPosition * waveformArea.getWidth());
     

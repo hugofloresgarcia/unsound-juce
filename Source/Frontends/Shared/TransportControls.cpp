@@ -132,10 +132,13 @@ TransportControls::~TransportControls()
 void TransportControls::paint(juce::Graphics& g)
 {
     // Draw custom toggle buttons with specific colors
-    // Record button: Red
-    bool recordHasMidi = recordLearnable && recordLearnable->hasMidiMapping();
-    drawCustomToggleButton(g, recordEnableButton, "r", recordEnableButton.getBounds(),
-                          juce::Colour(0xfff04e36), juce::Colour(0xfff04e36), recordHasMidi);
+    // Record button: Red (only if visible)
+    if (recordButtonVisible)
+    {
+        bool recordHasMidi = recordLearnable && recordLearnable->hasMidiMapping();
+        drawCustomToggleButton(g, recordEnableButton, "r", recordEnableButton.getBounds(),
+                              juce::Colour(0xfff04e36), juce::Colour(0xfff04e36), recordHasMidi);
+    }
     
     // Play button: Gray when on (playing), Green when off (idle)
     bool isPlaying = playButton.getToggleState();
@@ -159,11 +162,25 @@ void TransportControls::resized()
     const int buttonWidth = 30;
     const int buttonSpacing = 5;
     
-    recordEnableButton.setBounds(bounds.removeFromLeft(buttonWidth));
-    bounds.removeFromLeft(buttonSpacing);
+    if (recordButtonVisible)
+    {
+        recordEnableButton.setBounds(bounds.removeFromLeft(buttonWidth));
+        bounds.removeFromLeft(buttonSpacing);
+    }
+    else
+    {
+        recordEnableButton.setBounds(0, 0, 0, 0); // Hide by setting to zero size
+    }
     playButton.setBounds(bounds.removeFromLeft(buttonWidth));
     bounds.removeFromLeft(buttonSpacing);
     muteButton.setBounds(bounds.removeFromLeft(buttonWidth));
+}
+
+void TransportControls::setRecordButtonVisible(bool visible)
+{
+    recordButtonVisible = visible;
+    recordEnableButton.setVisible(visible);
+    resized(); // Re-layout
 }
 
 void TransportControls::setRecordState(bool enabled)

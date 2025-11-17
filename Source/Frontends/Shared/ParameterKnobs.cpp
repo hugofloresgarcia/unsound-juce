@@ -45,31 +45,62 @@ void ParameterKnobs::addKnob(const KnobConfig& config)
     else if (midiLearnManager && trackIdPrefix.isNotEmpty())
         control.parameterId = trackIdPrefix + "_" + config.label.toLowerCase().replaceCharacter(' ', '_');
     
-    // Create slider
+    // Create slider with text box inside the knob
     control.slider = std::make_unique<juce::Slider>(
         juce::Slider::RotaryHorizontalVerticalDrag, 
-        juce::Slider::TextBoxBelow
+        juce::Slider::NoTextBox
     );
     control.slider->setRange(config.minValue, config.maxValue, config.interval);
     control.slider->setValue(config.defaultValue);
     if (config.suffix.isNotEmpty())
         control.slider->setTextValueSuffix(config.suffix);
     
-    // Make text box smaller and more compact
-    control.slider->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 14);
+    // Create a label to display the value below the title (no border)
+    control.valueLabel = std::make_unique<juce::Label>("", "");
+    control.valueLabel->setJustificationType(juce::Justification::centred);
+    control.valueLabel->setFont(juce::FontOptions(4.0f));  // Very small font
+    control.valueLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+    control.valueLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    control.valueLabel->setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
     
-    if (config.onChange)
-    {
-        control.slider->onValueChange = [slider = control.slider.get(), onChange = config.onChange]()
-        {
-            onChange(slider->getValue());
-        };
-    }
+    // Update value label when slider changes
+    auto slider = control.slider.get();
+    auto valueLabel = control.valueLabel.get();
+    auto suffix = config.suffix;
+    auto updateValueLabel = [slider, valueLabel, suffix]() {
+        double value = slider->getValue();
+        juce::String text;
+        // Format based on the interval - if it's an integer step, show as integer
+        if (slider->getInterval() >= 1.0)
+            text = juce::String(static_cast<int>(value));
+        else
+            text = juce::String(value, 2);
+        if (suffix.isNotEmpty())
+            text += suffix;
+        // Format as ({value})
+        valueLabel->setText("(" + text + ")", juce::dontSendNotification);
+    };
+    
+    control.slider->onValueChange = [slider, updateValueLabel, onChange = config.onChange]() {
+        updateValueLabel();
+        if (onChange) onChange(slider->getValue());
+    };
+    
+    // Set initial value
+    updateValueLabel();
+    
+    addAndMakeVisible(control.valueLabel.get());
     
     // Create label with smaller font
     control.label = std::make_unique<juce::Label>("", config.label);
     control.label->setJustificationType(juce::Justification::centred);
     control.label->setFont(juce::FontOptions(11.0f));
+    
+    // Store default value for double-click reset
+    control.defaultValue = config.defaultValue;
+    
+    // Enable double-click to reset to default value
+    control.slider->setDoubleClickReturnValue(true, config.defaultValue);
     
     addAndMakeVisible(control.slider.get());
     addAndMakeVisible(control.label.get());
@@ -122,7 +153,10 @@ double ParameterKnobs::getKnobValue(int index) const
 void ParameterKnobs::setKnobValue(int index, double value, juce::NotificationType notification)
 {
     if (index >= 0 && index < static_cast<int>(knobs.size()))
+    {
         knobs[index].slider->setValue(value, notification);
+        // The value label will update automatically via the slider's onValueChange callback
+    }
 }
 
 void ParameterKnobs::paint(juce::Graphics& g)
@@ -147,24 +181,25 @@ void ParameterKnobs::resized()
     auto bounds = getLocalBounds();
     
     // Compact dimensions for labels and spacing
-    const int knobLabelHeight = 12;    // Reduced from 15
+    const int knobLabelHeight = 12;    // Title label height
+    const int valueLabelHeight = 8;    // Value label height (below title)
     const int knobLabelSpacing = 1;    // Reduced from 5 to minimize spacing
     
-    // Preferred dimensions
-    const int preferredKnobSize = 110;
-    const int preferredKnobSpacing = 15;
+    // Preferred dimensions (slightly bigger to fit text with smaller font)
+    const int preferredKnobSize = 90;  // Increased from 83 to fit smaller text better
+    const int preferredKnobSpacing = 11;  // 15 * 0.75 = 11.25, rounded to 11
     
-    // Calculate how much space we actually have
-    const int availableWidth = bounds.getWidth();
+    // Calculate how much space we actually have (vertical layout)
+    const int availableHeight = bounds.getHeight();
     const int numKnobs = static_cast<int>(knobs.size());
     
-    // Calculate what fits
-    int preferredTotalWidth = (preferredKnobSize * numKnobs) + (preferredKnobSpacing * (numKnobs - 1));
+    // Calculate what fits vertically
+    int preferredTotalHeight = (preferredKnobSize * numKnobs) + (preferredKnobSpacing * (numKnobs - 1));
     
     int knobSize;
     int knobSpacing;
     
-    if (preferredTotalWidth <= availableWidth)
+    if (preferredTotalHeight <= availableHeight)
     {
         // We have enough space, use preferred sizes
         knobSize = preferredKnobSize;
@@ -172,13 +207,13 @@ void ParameterKnobs::resized()
     }
     else
     {
-        // Scale down to fit available width
+        // Scale down to fit available height
         // Start with smaller spacing
         knobSpacing = juce::jmax(5, preferredKnobSpacing / 2);
         
         // Calculate knob size that fits
         int totalSpacing = knobSpacing * (numKnobs - 1);
-        knobSize = (availableWidth - totalSpacing) / numKnobs;
+        knobSize = (availableHeight - totalSpacing) / numKnobs;
         
         // Clamp to reasonable minimum
         knobSize = juce::jmax(70, knobSize);  // Increased minimum from 60 to 70
@@ -186,31 +221,40 @@ void ParameterKnobs::resized()
         // Recalculate spacing if knobs are now too small
         if (knobSize == 70)
         {
-            totalSpacing = availableWidth - (knobSize * numKnobs);
+            totalSpacing = availableHeight - (knobSize * numKnobs);
             knobSpacing = (numKnobs > 1) ? totalSpacing / (numKnobs - 1) : 0;
         }
     }
     
-    // Calculate total width and center knobs
-    const int totalKnobWidth = (knobSize * numKnobs) + (knobSpacing * (numKnobs - 1));
-    const int knobStartX = (bounds.getWidth() - totalKnobWidth) / 2;
+    // Calculate total height and center knobs vertically
+    const int totalKnobHeight = (knobSize * numKnobs) + (knobSpacing * (numKnobs - 1));
+    const int knobStartY = (bounds.getHeight() - totalKnobHeight) / 2;
+    
+    // Use full width for each knob, stack vertically
+    const int knobWidth = bounds.getWidth();
     
     for (size_t i = 0; i < knobs.size(); ++i)
     {
-        int xPos = knobStartX + static_cast<int>(i) * (knobSize + knobSpacing);
+        int yPos = knobStartY + static_cast<int>(i) * (knobSize + knobSpacing);
         
-        // Total area for this knob column
-        auto knobArea = juce::Rectangle<int>(xPos, bounds.getY(), knobSize, bounds.getHeight());
+        // Total area for this knob row
+        auto knobArea = juce::Rectangle<int>(bounds.getX(), yPos, knobWidth, knobSize);
         
-        // Label at top (smaller)
+        // Title label at top
         auto labelArea = knobArea.removeFromTop(knobLabelHeight);
         knobs[i].label->setBounds(labelArea);
         
         // Small spacing
         knobArea.removeFromTop(knobLabelSpacing);
         
-        // Give the slider the remaining area - JUCE will handle text box positioning
-        // The slider's TextBoxBelow style will place the text box at the bottom
+        // Value label below title (in parentheses)
+        auto valueLabelArea = knobArea.removeFromTop(valueLabelHeight);
+        knobs[i].valueLabel->setBounds(valueLabelArea);
+        
+        // Small spacing
+        knobArea.removeFromTop(knobLabelSpacing);
+        
+        // Slider area (rotary knob) - remaining space
         knobs[i].slider->setBounds(knobArea);
     }
 }

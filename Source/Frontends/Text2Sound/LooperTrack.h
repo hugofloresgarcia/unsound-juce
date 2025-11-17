@@ -13,6 +13,8 @@
 #include "../Shared/InputSelector.h"
 #include "../Shared/MidiLearnManager.h"
 #include "../Shared/MidiLearnComponent.h"
+#include "../Shared/VariationSelector.h"
+#include "../../Engine/TapeLoop.h"
 #include "../../Panners/Panner.h"
 #include "../../Panners/StereoPanner.h"
 #include "../../Panners/QuadPanner.h"
@@ -30,7 +32,7 @@ namespace Shared
 namespace Text2Sound
 {
 
-// Background thread for Gradio API calls
+    // Background thread for Gradio API calls
 class GradioWorkerThread : public juce::Thread
 {
 public:
@@ -52,7 +54,7 @@ public:
 
     void run() override;
 
-    std::function<void(juce::Result, juce::File, int)> onComplete;
+    std::function<void(juce::Result, juce::Array<juce::File>, int)> onComplete;
 
 private:
     MultiTrackLooperEngine& looperEngine;
@@ -97,6 +99,7 @@ private:
     Shared::LevelControl levelControl;
     Shared::InputSelector inputSelector;
     Shared::OutputSelector outputSelector;
+    Shared::VariationSelector variationSelector;
     
     // Text2Sound-specific UI
     juce::Label trackLabel;
@@ -126,16 +129,27 @@ private:
     
     void applyLookAndFeel();
 
-    void recordEnableButtonToggled(bool enabled);
     void playButtonClicked(bool shouldPlay);
     void muteButtonToggled(bool muted);
     void resetButtonClicked();
     void generateButtonClicked();
     void configureParamsButtonClicked();
     
-    void onGradioComplete(juce::Result result, juce::File outputFile);
+    void onGradioComplete(juce::Result result, juce::Array<juce::File> outputFiles);
     
     void timerCallback() override;
+    
+    // Variation management
+    void switchToVariation(int variationIndex);
+    void cycleToNextVariation();
+    void loadVariationFromFile(int variationIndex, const juce::File& audioFile);
+    
+    // Storage for variations (each variation has its own TapeLoop)
+    std::vector<std::unique_ptr<TapeLoop>> variations;
+    int currentVariationIndex = 0;
+    int numVariations = 2; // Default to 2 variations
+    bool autoCycleVariations = true;
+    float lastReadHeadPosition = 0.0f; // Track position for wrap detection
     
     // MIDI learn support
     Shared::MidiLearnManager* midiLearnManager = nullptr;

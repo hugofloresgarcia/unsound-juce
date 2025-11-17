@@ -46,9 +46,11 @@ private:
     {
         std::unique_ptr<juce::Slider> slider;
         std::unique_ptr<juce::Label> label;
+        std::unique_ptr<juce::Label> valueLabel;  // Value display inside knob
         juce::String parameterId;
         double minValue;
         double maxValue;
+        double defaultValue;  // Store default for double-click reset
         std::unique_ptr<MidiLearnable> learnable;
         std::unique_ptr<MidiLearnMouseListener> mouseListener;
     };

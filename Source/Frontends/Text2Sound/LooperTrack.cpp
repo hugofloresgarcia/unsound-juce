@@ -56,18 +56,18 @@ void GradioWorkerThread::run()
     spaceInfo.gradio = configuredUrl;
     gradioClient.setSpaceInfo(spaceInfo);
 
-    // Step 3: Process request on background thread
+    // Step 3: Process request on background thread (get all variations)
     // Ensure we have valid params (use defaults if customParams is invalid)
     juce::var paramsToUse = customParams.isObject() ? customParams : Text2Sound::LooperTrack::getDefaultText2SoundParams();
     
-    juce::File outputFile;
-    auto result = gradioClient.processRequest(tempAudioFile, textPrompt, outputFile, paramsToUse);
+    juce::Array<juce::File> outputFiles;
+    auto result = gradioClient.processRequestMultiple(tempAudioFile, textPrompt, outputFiles, paramsToUse);
 
     // Notify completion on message thread
-    juce::MessageManager::callAsync([this, result, outputFile]()
+    juce::MessageManager::callAsync([this, result, outputFiles]()
     {
         if (onComplete)
-            onComplete(result, outputFile, trackIndex);
+            onComplete(result, outputFiles, trackIndex);
     });
 }
 
@@ -89,7 +89,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
       trackLabel("Track", "track " + juce::String(index + 1)),
       resetButton("x"),
       generateButton("generate"),
-      textPromptLabel("TextPrompt", "text prompt"),
+      textPromptLabel("TextPrompt", "query"),
       autogenToggle("autogen"),
       gradioUrlProvider(std::move(gradioUrlGetter)),
       midiLearnManager(midiManager),
@@ -101,6 +101,28 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
 {
     // Initialize custom params with defaults
     customText2SoundParams = getDefaultText2SoundParams();
+    
+    // Initialize variations (allocate TapeLoops for each variation)
+    auto& track = looperEngine.getTrack(trackIndex);
+    double sampleRate = track.writeHead.getSampleRate();
+    if (sampleRate <= 0.0)
+        sampleRate = 44100.0; // Default sample rate
+    
+    variations.clear();
+    for (int i = 0; i < numVariations; ++i)
+    {
+        auto variation = std::make_unique<TapeLoop>();
+        variation->allocateBuffer(sampleRate, 10.0); // 10 second max duration
+        variations.push_back(std::move(variation));
+    }
+    
+    // Setup variation selector
+    variationSelector.setNumVariations(numVariations);
+    variationSelector.setSelectedVariation(0);
+    variationSelector.onVariationSelected = [this](int variationIndex) {
+        switchToVariation(variationIndex);
+    };
+    addAndMakeVisible(variationSelector);
     
     // Create parameter dialog (non-modal)
     parameterDialog = std::make_unique<Shared::ModelParameterDialog>(
@@ -162,20 +184,26 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     textPromptEditor.setMultiLine(false);
     textPromptEditor.setReturnKeyStartsNewLine(false);
     textPromptEditor.setTextToShowWhenEmpty("enter text prompt...", juce::Colours::grey);
+    textPromptEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colours::black);
+    textPromptEditor.onReturnKey = [this]() {
+        // Pressing Enter triggers generate
+        if (generateButton.isEnabled())
+            generateButtonClicked();
+    };
     addAndMakeVisible(textPromptEditor);
     addAndMakeVisible(textPromptLabel);
     
     // Setup waveform display
     addAndMakeVisible(waveformDisplay);
     
-    // Setup transport controls
-    transportControls.onRecordToggle = [this](bool enabled) { recordEnableButtonToggled(enabled); };
+    // Setup transport controls (no record button for Text2Sound)
+    transportControls.setRecordButtonVisible(false);
     transportControls.onPlayToggle = [this](bool shouldPlay) { playButtonClicked(shouldPlay); };
     transportControls.onMuteToggle = [this](bool muted) { muteButtonToggled(muted); };
     transportControls.onReset = [this]() { resetButtonClicked(); };
     addAndMakeVisible(transportControls);
     
-    // Setup parameter knobs (speed and overdub)
+    // Setup parameter knobs (speed and duration)
     parameterKnobs.addKnob({
         "speed",
         0.25, 4.0, 1.0, 0.01,
@@ -187,14 +215,53 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     });
     
     parameterKnobs.addKnob({
-        "overdub",
-        0.0, 1.0, 0.5, 0.01,
-        "",
+        "duration",
+        0.0, 8.0, 5.0, 0.01,
+        "s",
         [this](double value) {
-            looperEngine.getTrack(trackIndex).writeHead.setOverdubMix(static_cast<float>(value));
+            auto& track = looperEngine.getTrack(trackIndex);
+            double sampleRate = track.writeHead.getSampleRate();
+            if (sampleRate > 0.0)
+            {
+                // Convert duration (seconds) to samples and set WrapPos
+                size_t wrapPos = static_cast<size_t>(value * sampleRate);
+                track.writeHead.setWrapPos(wrapPos);
+                
+                // Repaint waveform display to show updated bounds
+                waveformDisplay.repaint();
+            }
+            
+            // Update duration parameter for gradio endpoint
+            auto* obj = customText2SoundParams.getDynamicObject();
+            if (obj != nullptr)
+            {
+                obj->setProperty("duration", juce::var(value));
+            }
         },
         ""  // parameterId - will be auto-generated
     });
+    
+    // Initialize duration to 5.0 seconds (default value)
+    {
+        auto& trackInit = looperEngine.getTrack(trackIndex);
+        double sampleRateInit = trackInit.writeHead.getSampleRate();
+        if (sampleRateInit <= 0.0)
+            sampleRateInit = 44100.0; // Default sample rate
+        
+        if (sampleRateInit > 0.0)
+        {
+            size_t wrapPos = static_cast<size_t>(5.0 * sampleRateInit);
+            trackInit.writeHead.setWrapPos(wrapPos);
+        }
+        
+        // Update duration parameter for gradio endpoint
+        auto* obj = customText2SoundParams.getDynamicObject();
+        if (obj != nullptr)
+        {
+            obj->setProperty("duration", juce::var(5.0));
+        }
+    }
+    
     addAndMakeVisible(parameterKnobs);
     
     // Setup level control
@@ -339,7 +406,7 @@ void LooperTrack::paint(juce::Graphics& g)
     auto arrowArea = channelSelectorArea.removeFromLeft(40);
     
     g.setColour(juce::Colours::grey);
-    g.setFont(juce::Font(14.0f));
+    g.setFont(juce::Font(juce::FontOptions().withHeight(14.0f)));
     g.drawText("-->", arrowArea, juce::Justification::centred);
 }
 
@@ -359,8 +426,11 @@ void LooperTrack::resized()
     const int controlsHeight = 160;
     
     const int labelHeight = 15;
+    const int textPromptLabelHeight = 15;
+    const int variationSelectorHeight = 25; // Smaller height for smaller font
     const int pannerHeight = 150; // 2D panner height
-    const int totalBottomHeight = textPromptHeight + spacingSmall +
+    const int totalBottomHeight = textPromptLabelHeight + spacingSmall +
+                                   textPromptHeight + spacingSmall +
                                    channelSelectorHeight + spacingSmall +
                                    knobAreaHeight + spacingSmall + 
                                    controlsHeight + spacingSmall +
@@ -369,6 +439,9 @@ void LooperTrack::resized()
                                    buttonHeight + spacingSmall +
                                    labelHeight + spacingSmall +
                                    pannerHeight;
+    
+    // Increase waveform display height by reducing bottom area
+    const int waveformExtraHeight = 50;  // Make waveform taller
     
     auto bounds = getLocalBounds().reduced(componentMargin);
     
@@ -393,30 +466,33 @@ void LooperTrack::resized()
     outputSelector.setBounds(channelSelectorArea.removeFromLeft(selectorWidth));
     bounds.removeFromTop(spacingSmall);
     
-    // Reserve space for controls at bottom
-    auto bottomArea = bounds.removeFromBottom(totalBottomHeight);
+    // Reserve space for controls at bottom (reduced to make waveform taller)
+    auto bottomArea = bounds.removeFromBottom(totalBottomHeight - waveformExtraHeight);
     
-    // Waveform area is now the remaining space
+    // Waveform area - remove space for variation selector below it
+    auto waveformArea = bounds.removeFromBottom(variationSelectorHeight + spacingSmall);
+    variationSelector.setBounds(waveformArea.removeFromBottom(variationSelectorHeight));
     waveformDisplay.setBounds(bounds);
     
-    // Text prompt at top of bottom area
-    auto textPromptArea = bottomArea.removeFromTop(textPromptHeight);
-    const int textPromptLabelWidth = 100;
-    textPromptLabel.setBounds(textPromptArea.removeFromLeft(textPromptLabelWidth));
-    textPromptArea.removeFromLeft(spacingSmall);
-    textPromptEditor.setBounds(textPromptArea);
+    // Text prompt at top of bottom area (label above editor)
+    textPromptLabel.setBounds(bottomArea.removeFromTop(textPromptLabelHeight));
+    bottomArea.removeFromTop(spacingSmall);
+    textPromptEditor.setBounds(bottomArea.removeFromTop(textPromptHeight));
     bottomArea.removeFromTop(spacingSmall);
     
-    // Knobs area
-    auto knobArea = bottomArea.removeFromTop(knobAreaHeight);
-    parameterKnobs.setBounds(knobArea);
-    bottomArea.removeFromTop(spacingSmall);
-    
-    // Level control and VU meter with autogen toggle
+    // Level control and VU meter with knobs and autogen toggle
     auto controlsArea = bottomArea.removeFromTop(controlsHeight);
+    
+    // Left side: VU meter (levelControl)
     levelControl.setBounds(controlsArea.removeFromLeft(115)); // 80 + 5 + 30
     controlsArea.removeFromLeft(spacingSmall);
-    autogenToggle.setBounds(controlsArea.removeFromLeft(100)); // Toggle button width
+    
+    // Right side: knobs above autogen toggle
+    auto rightSide = controlsArea;
+    auto knobArea = rightSide.removeFromTop(knobAreaHeight);
+    parameterKnobs.setBounds(knobArea);
+    rightSide.removeFromTop(spacingSmall);
+    autogenToggle.setBounds(rightSide.removeFromTop(30)); // Toggle button height
     bottomArea.removeFromTop(spacingSmall);
     
     // Generate button
@@ -450,13 +526,6 @@ void LooperTrack::resized()
             panner2DComponent->setBounds(pannerArea);
         }
     }
-}
-
-void LooperTrack::recordEnableButtonToggled(bool enabled)
-{
-    auto& track = looperEngine.getTrack(trackIndex);
-    track.writeHead.setRecordEnable(enabled);
-    repaint();
 }
 
 void LooperTrack::playButtonClicked(bool shouldPlay)
@@ -540,9 +609,9 @@ void LooperTrack::generateButtonClicked()
                                                               textPrompt,
                                                               customText2SoundParams,
                                                               gradioUrlProvider);
-    gradioWorkerThread->onComplete = [this](juce::Result result, juce::File outputFile, int trackIdx)
+    gradioWorkerThread->onComplete = [this](juce::Result result, juce::Array<juce::File> outputFiles, int trackIdx)
     {
-        onGradioComplete(result, outputFile);
+        onGradioComplete(result, outputFiles);
     };
     
     gradioWorkerThread->startThread();
@@ -567,10 +636,10 @@ juce::var LooperTrack::getDefaultText2SoundParams()
     juce::DynamicObject::Ptr params = new juce::DynamicObject();
     
     // New API parameters (indices 2-6):
-    params->setProperty("seed", juce::var(3));                          // [2] seed (number, 0 or empty for random)
+    params->setProperty("seed", juce::var());                          // [2] seed (null for random)
     params->setProperty("median_filter_length", juce::var(0));          // [3] median filter length (0 for none)
     params->setProperty("normalize_db", juce::var(-24));                // [4] normalize dB (0 for none)
-    params->setProperty("duration", juce::var(0));                      // [5] duration in seconds (0 for auto)
+    params->setProperty("duration", juce::var(5.0));                     // [5] duration in seconds (default 5.0)
     
     // Create inference parameters as Python dict literal string
     // The API expects Python dict syntax (single quotes), not JSON (double quotes)
@@ -589,7 +658,7 @@ juce::var LooperTrack::getDefaultText2SoundParams()
     return juce::var(params);
 }
 
-void LooperTrack::onGradioComplete(juce::Result result, juce::File outputFile)
+void LooperTrack::onGradioComplete(juce::Result result, juce::Array<juce::File> outputFiles)
 {
     // Re-enable button
     generateButton.setEnabled(true);
@@ -613,30 +682,69 @@ void LooperTrack::onGradioComplete(juce::Result result, juce::File outputFile)
         return;
     }
 
-    // Load the generated audio back into the track
-    auto& trackEngine = looperEngine.getTrackEngine(trackIndex);
-    
-    if (trackEngine.loadFromFile(outputFile))
+    // Update number of variations if we got a different number
+    int numReceived = outputFiles.size();
+    if (numReceived != numVariations)
     {
-        repaint(); // Refresh waveform display
+        numVariations = numReceived;
+        variationSelector.setNumVariations(numVariations);
         
-        // Check if autogen is enabled - if so, automatically trigger next generation
-        if (autogenToggle.getToggleState())
+        // Reallocate variations if needed
+        auto& track = looperEngine.getTrack(trackIndex);
+        double sampleRate = track.writeHead.getSampleRate();
+        if (sampleRate <= 0.0)
+            sampleRate = 44100.0;
+        
+        variations.clear();
+        for (int i = 0; i < numVariations; ++i)
         {
-            DBG("LooperTrack: Autogen enabled - automatically triggering next generation");
-            // Use MessageManager::callAsync to ensure the UI updates and the file is fully loaded
-            juce::MessageManager::callAsync([this]()
-            {
-                generateButtonClicked();
-            });
+            auto variation = std::make_unique<TapeLoop>();
+            variation->allocateBuffer(sampleRate, 10.0);
+            variations.push_back(std::move(variation));
         }
     }
-    else
+
+    // Load each variation from its file
+    bool allLoaded = true;
+    for (int i = 0; i < juce::jmin(numVariations, outputFiles.size()); ++i)
+    {
+        loadVariationFromFile(i, outputFiles[i]);
+        if (!variations[i]->hasRecorded.load())
+            allLoaded = false;
+    }
+
+    if (!allLoaded)
     {
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                               "load failed",
-                                              "generated audio saved to: " + outputFile.getFullPathName() + "\n"
-                                              "but failed to load it into the track.");
+                                              "some variations failed to load.");
+        return;
+    }
+
+    // Switch to first variation and load it into the active track
+    currentVariationIndex = 0;
+    variationSelector.setSelectedVariation(0);
+    switchToVariation(0);
+    
+    repaint(); // Refresh waveform display
+    
+    // Start playback if not already playing
+    auto& track = looperEngine.getTrack(trackIndex);
+    if (!track.isPlaying.load())
+    {
+        track.isPlaying.store(true);
+        track.readHead.setPlaying(true);
+        transportControls.setPlayState(true);
+    }
+    
+    // Check if autogen is enabled - if so, automatically trigger next generation
+    if (autogenToggle.getToggleState())
+    {
+        DBG("LooperTrack: Autogen enabled - automatically triggering next generation");
+        juce::MessageManager::callAsync([this]()
+        {
+            generateButtonClicked();
+        });
     }
 }
 
@@ -658,10 +766,6 @@ void LooperTrack::resetButtonClicked()
     track.readHead.setPlaying(false);
     transportControls.setPlayState(false);
     
-    // Disable recording
-    track.writeHead.setRecordEnable(false);
-    transportControls.setRecordState(false);
-    
     // Clear buffer
     const juce::ScopedLock sl(track.tapeLoop.lock);
     track.tapeLoop.clearBuffer();
@@ -672,8 +776,18 @@ void LooperTrack::resetButtonClicked()
     parameterKnobs.setKnobValue(0, 1.0, juce::dontSendNotification); // speed
     track.readHead.setSpeed(1.0f);
     
-    parameterKnobs.setKnobValue(1, 0.5, juce::dontSendNotification); // overdub
-    track.writeHead.setOverdubMix(0.5f);
+    parameterKnobs.setKnobValue(1, 5.0, juce::dontSendNotification); // duration (default 5.0)
+    // Reset duration parameter and WrapPos
+    auto* obj = customText2SoundParams.getDynamicObject();
+    if (obj != nullptr)
+    {
+        obj->setProperty("duration", juce::var(5.0));
+    }
+    double sampleRate = track.writeHead.getSampleRate();
+    if (sampleRate > 0.0)
+    {
+        track.writeHead.setWrapPos(static_cast<size_t>(5.0 * sampleRate));
+    }
     
     levelControl.setLevelValue(0.0, juce::dontSendNotification);
     track.readHead.setLevelDb(0.0f);
@@ -730,11 +844,31 @@ void LooperTrack::timerCallback()
     // Sync button states with model state
     auto& track = looperEngine.getTrack(trackIndex);
     
-    bool modelRecordEnable = track.writeHead.getRecordEnable();
-    transportControls.setRecordState(modelRecordEnable);
-    
     bool modelIsPlaying = track.isPlaying.load();
     transportControls.setPlayState(modelIsPlaying);
+    
+    // Check for auto-cycling variations
+    if (autoCycleVariations && modelIsPlaying && !variations.empty())
+    {
+        float currentPos = track.readHead.getPos();
+        float wrapPos = static_cast<float>(track.writeHead.getWrapPos());
+        
+        // Detect wrap: if we were near the end and now we're near the start
+        if (wrapPos > 0.0f)
+        {
+            float wrapThreshold = wrapPos * 0.1f; // 10% threshold
+            bool wasNearEnd = lastReadHeadPosition > (wrapPos - wrapThreshold);
+            bool isNearStart = currentPos < wrapThreshold;
+            
+            if (wasNearEnd && isNearStart && lastReadHeadPosition != currentPos)
+            {
+                // Wrapped around - cycle to next variation
+                cycleToNextVariation();
+            }
+        }
+        
+        lastReadHeadPosition = currentPos;
+    }
     
     // Update displays
     waveformDisplay.repaint();
@@ -747,4 +881,154 @@ void LooperTrack::updateChannelSelectors()
     // Update channel selectors based on current audio device
     inputSelector.updateChannels(looperEngine.getAudioDeviceManager());
     outputSelector.updateChannels(looperEngine.getAudioDeviceManager());
+}
+
+void LooperTrack::loadVariationFromFile(int variationIndex, const juce::File& audioFile)
+{
+    if (variationIndex < 0 || variationIndex >= static_cast<int>(variations.size()))
+        return;
+    
+    if (!audioFile.existsAsFile())
+    {
+        DBG("Variation file does not exist: " + audioFile.getFullPathName());
+        return;
+    }
+    
+    auto& variation = variations[variationIndex];
+    auto& track = looperEngine.getTrack(trackIndex);
+    auto& trackEngine = looperEngine.getTrackEngine(trackIndex);
+    
+    // Use the track engine's format manager to read the file
+    juce::AudioFormatManager formatManager;
+    formatManager.registerBasicFormats();
+    
+    std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(audioFile));
+    if (reader == nullptr)
+    {
+        DBG("Could not create reader for variation file: " + audioFile.getFullPathName());
+        return;
+    }
+    
+    const juce::ScopedLock sl(variation->lock);
+    auto& buffer = variation->getBuffer();
+    
+    if (buffer.empty())
+    {
+        DBG("Variation buffer not allocated");
+        return;
+    }
+    
+    // Clear the buffer first
+    variation->clearBuffer();
+    
+    // Determine how many samples to read
+    juce::int64 numSamplesToRead = juce::jmin(reader->lengthInSamples, static_cast<juce::int64>(buffer.size()));
+    
+    if (numSamplesToRead <= 0)
+    {
+        DBG("Variation file has no samples");
+        return;
+    }
+    
+    // Read audio data
+    juce::AudioBuffer<float> tempBuffer(static_cast<int>(reader->numChannels), static_cast<int>(numSamplesToRead));
+    
+    if (!reader->read(&tempBuffer, 0, static_cast<int>(numSamplesToRead), 0, true, true))
+    {
+        DBG("Failed to read variation audio data");
+        return;
+    }
+    
+    // Convert to mono and write to variation buffer
+    if (tempBuffer.getNumChannels() == 1)
+    {
+        const float* source = tempBuffer.getReadPointer(0);
+        for (int i = 0; i < static_cast<int>(numSamplesToRead); ++i)
+        {
+            buffer[i] = source[i];
+        }
+    }
+    else
+    {
+        for (int i = 0; i < static_cast<int>(numSamplesToRead); ++i)
+        {
+            float sum = 0.0f;
+            for (int channel = 0; channel < tempBuffer.getNumChannels(); ++channel)
+            {
+                sum += tempBuffer.getSample(channel, i);
+            }
+            buffer[i] = sum / static_cast<float>(tempBuffer.getNumChannels());
+        }
+    }
+    
+    // Update variation metadata
+    size_t loadedLength = static_cast<size_t>(numSamplesToRead);
+    variation->recordedLength.store(loadedLength);
+    variation->hasRecorded.store(true);
+    
+    DBG("Loaded variation " + juce::String(variationIndex + 1) + " from file: " + audioFile.getFileName());
+}
+
+void LooperTrack::switchToVariation(int variationIndex)
+{
+    if (variationIndex < 0 || variationIndex >= static_cast<int>(variations.size()))
+        return;
+    
+    if (!variations[variationIndex]->hasRecorded.load())
+        return;
+    
+    auto& variation = variations[variationIndex];
+    auto& track = looperEngine.getTrack(trackIndex);
+    auto& trackEngine = looperEngine.getTrackEngine(trackIndex);
+    
+    // Copy variation buffer to active track buffer
+    {
+        const juce::ScopedLock slVar(variation->lock);
+        const juce::ScopedLock slTrack(track.tapeLoop.lock);
+        
+        auto& varBuffer = variation->getBuffer();
+        auto& trackBuffer = track.tapeLoop.getBuffer();
+        
+        if (varBuffer.empty() || trackBuffer.empty())
+            return;
+        
+        size_t copyLength = juce::jmin(varBuffer.size(), trackBuffer.size(), variation->recordedLength.load());
+        
+        // Clear track buffer first
+        std::fill(trackBuffer.begin(), trackBuffer.end(), 0.0f);
+        
+        // Copy variation data
+        for (size_t i = 0; i < copyLength; ++i)
+        {
+            trackBuffer[i] = varBuffer[i];
+        }
+        
+        // Update track metadata
+        track.tapeLoop.recordedLength.store(copyLength);
+        track.tapeLoop.hasRecorded.store(true);
+        
+        // Update wrapPos
+        track.writeHead.setWrapPos(copyLength);
+        track.writeHead.setPos(copyLength);
+    }
+    
+    // Reset read head to start
+    track.readHead.reset();
+    track.readHead.setPos(0.0f);
+    
+    currentVariationIndex = variationIndex;
+    variationSelector.setSelectedVariation(variationIndex);
+    
+    repaint();
+    
+    DBG("Switched to variation " + juce::String(variationIndex + 1));
+}
+
+void LooperTrack::cycleToNextVariation()
+{
+    if (!autoCycleVariations || variations.empty())
+        return;
+    
+    int nextIndex = (currentVariationIndex + 1) % static_cast<int>(variations.size());
+    switchToVariation(nextIndex);
 }
