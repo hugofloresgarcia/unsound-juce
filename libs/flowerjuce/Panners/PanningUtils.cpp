@@ -125,47 +125,51 @@ namespace PanningUtils
         // Channels 8-11: third row (left to right)
         // Channels 12-15: top row (left to right)
         
+        // Scale input from 0-1 to -0.5 to 1.25 (matching Max/MSP scale 0 1000 -0.5 1.25)
+        // Formula: scaled = (input - 0.0) / (1.0 - 0.0) * (1.25 - (-0.5)) + (-0.5)
+        //         = input * 1.75 - 0.5
+        float scaled_x = x * 1.75f - 0.5f;
+        float scaled_y = y * 1.75f - 0.5f;
+        
+        // Column offsets (left to right): -0.75, -0.5, -0.25, 0.0
+        constexpr float column_offsets[4] = {-0.75f, -0.5f, -0.25f, 0.0f};
+        
+        // Row offsets (bottom to top): -0.75, -0.5, -0.25, 0.0
+        constexpr float row_offsets[4] = {-0.75f, -0.5f, -0.25f, 0.0f};
+        
         std::array<float, 16> gains = {0.0f};
         
-        // Calculate speaker positions
+        // Compute gains using oscillator-based algorithm (matching Max/MSP patcher)
         for (int row = 0; row < 4; ++row)
         {
+            // Compute y phase: scaled_y + row_offset, clipped to [-0.5, 0.5]
+            float y_phase = juce::jlimit(-0.5f, 0.5f, scaled_y + row_offsets[row]);
+            
+            // Generate y oscillator: sin(2π * phase)
+            float y_osc = std::sin(2.0f * juce::MathConstants<float>::pi * y_phase);
+            
+            // Apply gain formula: oscillator * 0.5 + 1.0
+            float y_gain = y_osc * 0.5f + 1.0f;
+            
             for (int col = 0; col < 4; ++col)
             {
                 int channel = row * 4 + col;
                 
-                // Speaker position in normalized 0-1 space
-                float speaker_x = col / 3.0f;  // 0, 1/3, 2/3, 1
-                float speaker_y = row / 3.0f; // 0, 1/3, 2/3, 1
+                // Compute x phase: scaled_x + column_offset, clipped to [-0.5, 0.5]
+                float x_phase = juce::jlimit(-0.5f, 0.5f, scaled_x + column_offsets[col]);
                 
-                // Calculate distance from pan position to speaker
-                float dx = x - speaker_x;
-                float dy = y - speaker_y;
-                float dist = std::sqrt(dx * dx + dy * dy);
+                // Generate x oscillator: sin(2π * phase)
+                float x_osc = std::sin(2.0f * juce::MathConstants<float>::pi * x_phase);
                 
-                // Normalize distance (max distance is diagonal = √2)
-                float max_dist = std::sqrt(2.0f);
-                float normalized_dist = dist / max_dist;
+                // Apply gain formula: oscillator * 0.5 + 1.0
+                float x_gain = x_osc * 0.5f + 1.0f;
                 
-                // Convert distance to angle and apply cosine law
-                float angle = normalized_dist * juce::MathConstants<float>::halfPi;
-                const auto& law = get_cosine_panning_law();
-                gains[channel] = law.get_cosine(angle);
+                // Multiply x and y gains (matching Max/MSP patcher behavior)
+                gains[channel] = x_gain * y_gain;
             }
         }
         
-        // Normalize gains to preserve energy
-        float sum = 0.0f;
-        for (float gain : gains)
-            sum += gain;
-        
-        if (sum > 0.0f)
-        {
-            float norm = 1.0f / sum;
-            for (float& gain : gains)
-                gain *= norm;
-        }
-        
+        // Return raw gains without normalization (matching Max/MSP patcher)
         return gains;
     }
     

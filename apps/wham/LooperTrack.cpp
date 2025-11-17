@@ -494,6 +494,11 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     else if (pannerTypeLower == "cleat")
     {
         panner = std::make_unique<CLEATPanner>();
+        if (auto* cleatPanner = dynamic_cast<CLEATPanner*>(panner.get()))
+        {
+            // Prepare panner with default sample rate (will be updated when audio device starts)
+            cleatPanner->prepare(44100.0);
+        }
         panner2DComponent = std::make_unique<Panner2DComponent>();
         panner2DComponent->set_pan_position(0.5f, 0.5f); // Center
         panner2DComponent->m_on_pan_change = [this](float x, float y) {

@@ -2,6 +2,7 @@
 
 #include "Panner.h"
 #include "PanningUtils.h"
+#include <juce_dsp/juce_dsp.h>
 #include <atomic>
 
 // CLEAT panner: processes mono input to 16-channel output (4x4 grid)
@@ -14,6 +15,9 @@ class CLEATPanner : public Panner
 public:
     CLEATPanner();
     ~CLEATPanner() override = default;
+
+    // Prepare for audio processing (set sample rate for smoothing)
+    void prepare(double sample_rate);
 
     // Panner interface
     void process_block(const float* const* input_channel_data,
@@ -33,5 +37,8 @@ public:
 private:
     std::atomic<float> m_pan_x{0.5f}; // Default to center
     std::atomic<float> m_pan_y{0.5f}; // Default to center
+    
+    juce::SmoothedValue<float> m_smooth_x{0.5f}; // Smoothed x position
+    juce::SmoothedValue<float> m_smooth_y{0.5f}; // Smoothed y position
 };
 
