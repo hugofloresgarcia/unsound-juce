@@ -13,8 +13,12 @@ namespace Shared
 class MidiLearnable
 {
 public:
-    MidiLearnable(MidiLearnManager& manager, const juce::String& parameterId)
-        : midiLearnManager(manager), paramId(parameterId)
+    MidiLearnable(MidiLearnManager& manager,
+                  const juce::String& parameterId,
+                  bool allowToggleMode = false)
+        : midiLearnManager(manager),
+          paramId(parameterId),
+          supportsToggleMode(allowToggleMode)
     {
     }
     
@@ -29,24 +33,44 @@ public:
             
             MidiMapping currentMapping = midiLearnManager.getMappingForParameter(paramId);
             
+            auto addLearnItems = [&](bool includeCurrentLabel)
+            {
+                juce::String mappingLabel;
+                if (includeCurrentLabel && currentMapping.number >= 0)
+                {
+                    mappingLabel = " (Currently " + MidiMapping::getTypeName(currentMapping.type) +
+                                   " " + juce::String(currentMapping.number) + ")";
+                }
+                
+                if (supportsToggleMode)
+                {
+                    menu.addItem(1, "MIDI Learn (momentary)..." + mappingLabel);
+                    menu.addItem(3, "MIDI Learn (toggle)..." + mappingLabel);
+                }
+                else
+                {
+                    menu.addItem(1, "MIDI Learn..." + mappingLabel);
+                }
+            };
+            
+            addLearnItems(currentMapping.number >= 0);
+            
             if (currentMapping.number >= 0)
-            {
-                juce::String mappingLabel = MidiMapping::getTypeName(currentMapping.type) +
-                                            " " + juce::String(currentMapping.number);
-                menu.addItem(1, "MIDI Learn... (Currently " + mappingLabel + ")");
                 menu.addItem(2, "Clear MIDI Mapping");
-            }
-            else
-            {
-                menu.addItem(1, "MIDI Learn...");
-            }
             
             menu.showMenuAsync(juce::PopupMenu::Options(),
                 [this, component](int result)
                 {
                     if (result == 1)
                     {
-                        midiLearnManager.startLearning(paramId);
+                        midiLearnManager.startLearning(paramId, MidiMapping::Mode::Momentary);
+                        // Repaint top level component to show overlay
+                        if (auto* topLevel = component->getTopLevelComponent())
+                            topLevel->repaint();
+                    }
+                    else if (result == 3 && supportsToggleMode)
+                    {
+                        midiLearnManager.startLearning(paramId, MidiMapping::Mode::Toggle);
                         // Repaint top level component to show overlay
                         if (auto* topLevel = component->getTopLevelComponent())
                             topLevel->repaint();
@@ -76,6 +100,7 @@ public:
 protected:
     MidiLearnManager& midiLearnManager;
     juce::String paramId;
+    bool supportsToggleMode;
 };
 
 /**

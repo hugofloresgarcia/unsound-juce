@@ -11,6 +11,8 @@
 #include "../../CustomLookAndFeel.h"
 #include "../Shared/MidiLearnManager.h"
 #include "../Shared/MidiLearnComponent.h"
+#include "../Shared/GitInfo.h"
+#include "SessionConfig.h"
 
 namespace VampNet
 {
@@ -37,12 +39,17 @@ private:
     Shared::MidiLearnManager midiLearnManager;
     
     std::vector<std::unique_ptr<VampNet::LooperTrack>> tracks;
+    juce::Viewport trackViewport;
+    juce::Component tracksContainer;
     
     juce::TextButton syncButton;
     juce::TextButton gradioSettingsButton;
     juce::TextButton midiSettingsButton;
     juce::TextButton clickSynthButton;
     juce::TextButton samplerButton;
+    juce::TextButton saveConfigButton;
+    juce::TextButton loadConfigButton;
+    juce::TextButton gitInfoButton;
     juce::Label titleLabel;
     juce::Label audioDeviceDebugLabel;
     CustomLookAndFeel customLookAndFeel;
@@ -56,6 +63,7 @@ private:
     
     // Sampler window
     std::unique_ptr<SamplerWindow> samplerWindow;
+    Shared::GitInfo gitInfo;
 
     void syncButtonClicked();
     void showClickSynthWindow();
@@ -67,6 +75,14 @@ private:
     juce::String getGradioUrl() const;
     void midiSettingsButtonClicked();
     void showMidiSettings();
+    void saveConfigButtonClicked();
+    void loadConfigButtonClicked();
+    void loadDefaultSessionConfig();
+    SessionConfig buildSessionConfig() const;
+    void applySessionConfig(const SessionConfig& config, bool showErrorsOnFailure);
+    juce::File getConfigDirectory() const;
+    juce::File getDefaultConfigFile() const;
+    void layoutTracks();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

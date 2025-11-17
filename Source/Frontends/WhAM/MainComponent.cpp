@@ -8,7 +8,14 @@
 using namespace WhAM;
 
 // TODO: Remove this debug macro after fixing segmentation fault
+#ifndef DEBUG_SEGFAULT
 #define DEBUG_SEGFAULT 1
+#endif
+
+#ifdef DBG_SEGFAULT
+#undef DBG_SEGFAULT
+#endif
+
 #if DEBUG_SEGFAULT
 #define DBG_SEGFAULT(msg) juce::Logger::writeToLog("[SEGFAULT] " + juce::String(__FILE__) + ":" + juce::String(__LINE__) + " - " + juce::String(msg))
 #else
@@ -40,15 +47,28 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     DBG_SEGFAULT("Creating tracks, numTracks=" + juce::String(numTracks));
     int actualNumTracks = juce::jmin(numTracks, looperEngine.getNumTracks());
     DBG_SEGFAULT("actualNumTracks=" + juce::String(actualNumTracks) + " (limited by engine max=" + juce::String(looperEngine.getNumTracks()) + ")");
+    sharedModelParams = LooperTrack::createDefaultVampNetParams();
     std::function<juce::String()> gradioUrlProvider = [this]() { return getGradioUrl(); };
     for (int i = 0; i < actualNumTracks; ++i)
     {
         DBG_SEGFAULT("Creating LooperTrack " + juce::String(i));
-        tracks.push_back(std::make_unique<LooperTrack>(looperEngine, i, gradioUrlProvider, &midiLearnManager, pannerType));
-        DBG_SEGFAULT("Adding LooperTrack " + juce::String(i) + " to view");
-        addAndMakeVisible(tracks[i].get());
+        bool showModelParameterControls = (i == 0);
+        tracks.push_back(std::make_unique<LooperTrack>(looperEngine,
+                                                       i,
+                                                       gradioUrlProvider,
+                                                       &midiLearnManager,
+                                                       pannerType,
+                                                       &sharedModelParams,
+                                                       showModelParameterControls));
+        DBG_SEGFAULT("Adding LooperTrack " + juce::String(i) + " to container");
+        tracksContainer.addAndMakeVisible(tracks[i].get());
     }
     DBG_SEGFAULT("All tracks created");
+
+    tracksContainer.setInterceptsMouseClicks(false, true);
+    trackViewport.setViewedComponent(&tracksContainer, false);
+    trackViewport.setScrollBarsShown(false, true);
+    addAndMakeVisible(trackViewport);
     
     // Load MIDI mappings AFTER tracks are created (so parameters are registered)
     auto appDataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
@@ -56,6 +76,8 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     auto midiMappingsFile = appDataDir.getChildFile("midi_mappings_wham.xml");
     if (midiMappingsFile.existsAsFile())
         midiLearnManager.loadMappings(midiMappingsFile);
+    
+    loadDefaultSessionConfig();
     
     // Set size based on number of tracks
     // WhAM has 3 knobs instead of 2, so slightly wider tracks
@@ -78,6 +100,30 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
                                   .withName(juce::Font::getDefaultMonospacedFontName())
                                   .withHeight(20.0f)));
     addAndMakeVisible(titleLabel);
+    
+    gitInfo = Shared::GitInfoProvider::query();
+    gitInfoButton.setButtonText("(i)");
+    gitInfoButton.setTooltip("show git info");
+    gitInfoButton.onClick = [this]()
+    {
+        juce::String message;
+        if (gitInfo.isValid())
+        {
+            message << "branch: " << gitInfo.branch << "\n"
+                    << "commit: " << gitInfo.commit << "\n"
+                    << "time: " << gitInfo.timestamp;
+        }
+        else
+        {
+            message = gitInfo.error.isNotEmpty() ? gitInfo.error : "git info unavailable";
+        }
+
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
+                                               "git info",
+                                               message);
+    };
+    gitInfoButton.setEnabled(gitInfo.isValid());
+    addAndMakeVisible(gitInfoButton);
     
     // Setup audio device debug label (top right corner)
     audioDeviceDebugLabel.setJustificationType(juce::Justification::topRight);
@@ -111,6 +157,14 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     vizButton.onClick = [this] { showVizWindow(); };
     addAndMakeVisible(vizButton);
     
+    saveConfigButton.setButtonText("save config");
+    saveConfigButton.onClick = [this]() { saveConfigButtonClicked(); };
+    addAndMakeVisible(saveConfigButton);
+
+    loadConfigButton.setButtonText("load config");
+    loadConfigButton.onClick = [this]() { loadConfigButtonClicked(); };
+    addAndMakeVisible(loadConfigButton);
+    
     // Setup overflow button
     overflowButton.onClick = [this] { showOverflowMenu(); };
     addAndMakeVisible(overflowButton);
@@ -124,6 +178,7 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
 
     // Start timer to update UI
     startTimer(50); // Update every 50ms
+    layoutTracks();
 }
 
 MainComponent::~MainComponent()
@@ -150,50 +205,47 @@ void MainComponent::paint(juce::Graphics& g)
 
 void MainComponent::resized()
 {
-    static int resizeCallCount = 0;
-    resizeCallCount++;
-    DBG("[resized] CALL #" + juce::String(resizeCallCount));
-    
     auto bounds = getLocalBounds().reduced(10);
 
-    // Title at top
-    titleLabel.setBounds(bounds.removeFromTop(40));
+    // Title + git info
+    auto titleArea = bounds.removeFromTop(40);
+    auto infoArea = titleArea.removeFromLeft(40);
+    gitInfoButton.setBounds(infoArea.reduced(5));
+    titleLabel.setBounds(titleArea);
     bounds.removeFromTop(10);
 
     // Control buttons with overflow logic
     auto controlArea = bounds.removeFromTop(40);
     const int buttonSpacing = 10;
     const int overflowButtonWidth = 60;
-    
-    // Define buttons in order with their widths
-    struct ButtonInfo {
+
+    struct ButtonInfo
+    {
         juce::TextButton* button;
         int width;
     };
-    
+
     std::vector<ButtonInfo> buttons = {
         {&syncButton, 120},
         {&gradioSettingsButton, 180},
         {&midiSettingsButton, 120},
         {&clickSynthButton, 120},
         {&samplerButton, 120},
-        {&vizButton, 120}
+        {&vizButton, 120},
+        {&saveConfigButton, 130},
+        {&loadConfigButton, 130}
     };
-    
-    // Calculate which buttons fit
+
     int availableWidth = controlArea.getWidth();
     int usedWidth = 0;
     int visibleButtonCount = 0;
-    
-    // First pass: determine how many buttons fit WITHOUT overflow button
-    // (we'll add overflow button space only if needed)
+
     for (size_t i = 0; i < buttons.size(); ++i)
     {
         int buttonWidth = buttons[i].width;
         int spacing = (visibleButtonCount > 0) ? buttonSpacing : 0;
         int widthNeeded = usedWidth + spacing + buttonWidth;
-        
-        // Check if this button fits
+
         if (widthNeeded <= availableWidth)
         {
             usedWidth = widthNeeded;
@@ -204,24 +256,20 @@ void MainComponent::resized()
             break;
         }
     }
-    
-    // If not all buttons fit, we need to reserve space for overflow button
-    // and potentially show fewer visible buttons
+
     bool hasOverflow = visibleButtonCount < static_cast<int>(buttons.size());
     if (hasOverflow)
     {
-        // Recalculate: reserve space for overflow button and see how many buttons fit
         int overflowSpace = buttonSpacing + overflowButtonWidth;
         visibleButtonCount = 0;
         usedWidth = 0;
-        
+
         for (size_t i = 0; i < buttons.size(); ++i)
         {
             int buttonWidth = buttons[i].width;
             int spacing = (visibleButtonCount > 0) ? buttonSpacing : 0;
             int widthNeeded = usedWidth + spacing + buttonWidth;
-            
-            // Check if button fits with overflow space reserved
+
             if (widthNeeded + overflowSpace <= availableWidth)
             {
                 usedWidth = widthNeeded;
@@ -232,42 +280,27 @@ void MainComponent::resized()
                 break;
             }
         }
-        // Recalculate hasOverflow after reserving space for overflow button
         hasOverflow = visibleButtonCount < static_cast<int>(buttons.size());
     }
-    
-    DBG("[resized] availableWidth=" + juce::String(availableWidth) + 
-        ", visibleButtonCount=" + juce::String(visibleButtonCount) + 
-        ", hasOverflow=" + juce::String(hasOverflow ? 1 : 0));
-    
-    // IMPORTANT: First hide ALL buttons, then show only the ones that should be visible
-    // This ensures proper state even if resized() is called multiple times
+
     for (size_t i = 0; i < buttons.size(); ++i)
-    {
         buttons[i].button->setVisible(false);
-    }
-    
-    // Layout visible buttons (positioned within controlArea)
+
     int xPos = controlArea.getX();
     int yPos = controlArea.getY();
     for (int i = 0; i < visibleButtonCount; ++i)
     {
         if (i > 0)
             xPos += buttonSpacing;
-        
+
         buttons[i].button->setBounds(xPos, yPos, buttons[i].width, controlArea.getHeight());
         buttons[i].button->setVisible(true);
-        DBG("[resized] Showing button " + juce::String(i) + " at x=" + juce::String(xPos));
         xPos += buttons[i].width;
     }
-    
-    // Hide overflow buttons (already hidden above, but be explicit)
+
     for (size_t i = visibleButtonCount; i < buttons.size(); ++i)
-    {
         buttons[i].button->setVisible(false);
-        DBG("[resized] Hiding button " + juce::String(i));
-    }
-    
+
     if (hasOverflow)
     {
         xPos += buttonSpacing;
@@ -278,44 +311,16 @@ void MainComponent::resized()
     {
         overflowButton.setVisible(false);
     }
-    
-    // Force a repaint to ensure visibility changes take effect
-    repaint();
-    
-    // Double-check visibility at the end (debug)
-    DBG("[resized] END - Final visibility check:");
-    for (size_t i = 0; i < buttons.size(); ++i)
-    {
-        bool isVisible = buttons[i].button->isVisible();
-        DBG("[resized] Button " + juce::String(i) + " final isVisible=" + juce::String(isVisible ? 1 : 0));
-    }
-    
-    bounds.removeFromTop(10);
 
-    // Tracks arranged horizontally with fixed width
-    if (!tracks.empty())
-    {
-        const int fixedTrackWidth = 260;  // Matches constructor
-        const int trackSpacing = 5;
-        
-        for (size_t i = 0; i < tracks.size(); ++i)
-        {
-            tracks[i]->setBounds(bounds.removeFromLeft(fixedTrackWidth));
-            if (i < tracks.size() - 1)
-            {
-                bounds.removeFromLeft(trackSpacing);
-            }
-        }
-    }
-    
-    // MIDI learn overlay covers entire window
+    bounds.removeFromTop(10);
+    trackViewport.setBounds(bounds);
+    layoutTracks();
+
     midiLearnOverlay.setBounds(getLocalBounds());
-    
-    // Audio device debug label in top right corner
+
     auto debugBounds = getLocalBounds().removeFromTop(60).removeFromRight(300);
     audioDeviceDebugLabel.setBounds(debugBounds.reduced(10, 5));
 }
-
 void MainComponent::timerCallback()
 {
     // Repaint tracks to show recording/playing state
@@ -664,7 +669,9 @@ void MainComponent::showOverflowMenu()
         {&midiSettingsButton, "midi settings", 3},
         {&clickSynthButton, "click synth", 4},
         {&samplerButton, "sampler", 5},
-        {&vizButton, "viz", 6}
+        {&vizButton, "viz", 6},
+        {&saveConfigButton, "save config", 7},
+        {&loadConfigButton, "load config", 8}
     };
     
     // Add buttons to menu if they're outside the visible control area
@@ -681,7 +688,7 @@ void MainComponent::showOverflowMenu()
     // Calculate visible button count (same logic as resized())
     int visibleButtonCount = 0;
     int usedWidth = 0;
-    std::vector<int> buttonWidths = {120, 180, 120, 120, 120, 120};
+    std::vector<int> buttonWidths = {120, 180, 120, 120, 120, 120, 130, 130};
     
     // First pass: how many fit without overflow
     for (size_t i = 0; i < buttonWidths.size(); ++i)
@@ -761,7 +768,177 @@ void MainComponent::showOverflowMenu()
                                case 4: showClickSynthWindow(); break;
                                case 5: showSamplerWindow(); break;
                                case 6: showVizWindow(); break;
+                               case 7: saveConfigButtonClicked(); break;
+                               case 8: loadConfigButtonClicked(); break;
                            }
                        });
+}
+
+void MainComponent::saveConfigButtonClicked()
+{
+    SessionConfig config = buildSessionConfig();
+    juce::FileChooser chooser("Save WhAM config", getConfigDirectory(), "*.json");
+    if (!chooser.browseForFileToSave(true))
+        return;
+
+    auto file = chooser.getResult();
+    auto result = config.saveToFile(file);
+    if (result.failed())
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "save failed",
+                                               result.getErrorMessage());
+        return;
+    }
+
+    juce::AlertWindow prompt("config saved",
+                             "Config saved to:\n" + file.getFullPathName(),
+                             juce::AlertWindow::NoIcon);
+    auto* toggle = new juce::ToggleButton("Set as default");
+    prompt.addCustomComponent(toggle);
+    prompt.addButton("done", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    if (prompt.runModalLoop() == 1 && toggle->getToggleState())
+    {
+        config.saveToFile(getDefaultConfigFile());
+    }
+}
+
+void MainComponent::loadConfigButtonClicked()
+{
+    juce::FileChooser chooser("Load WhAM config", getConfigDirectory(), "*.json");
+    if (!chooser.browseForFileToOpen())
+        return;
+
+    auto file = chooser.getResult();
+    SessionConfig config;
+    auto result = SessionConfig::loadFromFile(file, config);
+    if (result.failed())
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "load failed",
+                                               result.getErrorMessage());
+        return;
+    }
+
+    juce::AlertWindow prompt("load config",
+                             "Load this config?\n" + file.getFullPathName(),
+                             juce::AlertWindow::NoIcon);
+    auto* toggle = new juce::ToggleButton("Set as default");
+    prompt.addCustomComponent(toggle);
+    prompt.addButton("load", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    prompt.addButton("cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    if (prompt.runModalLoop() == 1)
+    {
+        applySessionConfig(config, true);
+        if (toggle->getToggleState())
+        {
+            config.saveToFile(getDefaultConfigFile());
+        }
+    }
+}
+
+void MainComponent::loadDefaultSessionConfig()
+{
+    auto defaultFile = getDefaultConfigFile();
+    if (!defaultFile.existsAsFile())
+        return;
+
+    SessionConfig config;
+    auto result = SessionConfig::loadFromFile(defaultFile, config);
+    if (result.wasOk())
+        applySessionConfig(config, false);
+    else
+        juce::Logger::writeToLog("Failed to load default WhAM config: " + result.getErrorMessage());
+}
+
+SessionConfig MainComponent::buildSessionConfig() const
+{
+    SessionConfig config;
+    config.gradioUrl = getGradioUrl();
+
+    for (const auto& trackPtr : tracks)
+    {
+        if (!trackPtr)
+            continue;
+
+        SessionConfig::TrackState state;
+        state.trackIndex = trackPtr->getTrackIndex();
+        state.knobState = trackPtr->getKnobState();
+        state.vampNetParams = trackPtr->getCustomParams();
+        state.autogenEnabled = trackPtr->isAutogenEnabled();
+        state.useOutputAsInput = trackPtr->isUseOutputAsInputEnabled();
+        state.levelDb = trackPtr->getLevelDb();
+        state.pannerState = trackPtr->getPannerState();
+        config.tracks.push_back(state);
+    }
+
+    config.midiMappings = midiLearnManager.getAllMappings();
+    return config;
+}
+
+void MainComponent::applySessionConfig(const SessionConfig& config, bool showErrorsOnFailure)
+{
+    if (config.gradioUrl.isNotEmpty())
+        setGradioUrl(config.gradioUrl);
+
+    for (const auto& trackState : config.tracks)
+    {
+        if (trackState.trackIndex < 0 || trackState.trackIndex >= static_cast<int>(tracks.size()))
+        {
+            if (showErrorsOnFailure)
+                juce::Logger::writeToLog("Config refers to missing track index " + juce::String(trackState.trackIndex));
+            continue;
+        }
+
+        auto* track = tracks[trackState.trackIndex].get();
+        if (trackState.knobState.isObject())
+            track->applyKnobState(trackState.knobState);
+
+        if (trackState.vampNetParams.isObject())
+            track->setCustomParams(trackState.vampNetParams);
+
+        track->setAutogenEnabled(trackState.autogenEnabled);
+        track->setUseOutputAsInputEnabled(trackState.useOutputAsInput);
+        track->setLevelDb(trackState.levelDb, juce::sendNotificationSync);
+        track->applyPannerState(trackState.pannerState);
+    }
+
+    if (!config.midiMappings.empty())
+        midiLearnManager.applyMappings(config.midiMappings);
+}
+
+juce::File MainComponent::getConfigDirectory() const
+{
+    auto dir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                   .getChildFile("TapeLooper");
+    dir.createDirectory();
+    return dir;
+}
+
+juce::File MainComponent::getDefaultConfigFile() const
+{
+    return getConfigDirectory().getChildFile("wham_default_config.json");
+}
+
+void MainComponent::layoutTracks()
+{
+    const int fixedTrackWidth = 260;
+    const int trackSpacing = 5;
+    const int fixedTrackHeight = 720;
+
+    int numTracks = static_cast<int>(tracks.size());
+    int contentWidth = numTracks > 0
+        ? (fixedTrackWidth * numTracks) + (trackSpacing * (numTracks - 1))
+        : trackViewport.getWidth();
+    contentWidth = juce::jmax(trackViewport.getWidth(), contentWidth);
+
+    tracksContainer.setSize(contentWidth, fixedTrackHeight);
+
+    int x = 0;
+    for (auto& track : tracks)
+    {
+        track->setBounds(x, 0, fixedTrackWidth, fixedTrackHeight);
+        x += fixedTrackWidth + trackSpacing;
+    }
 }
 

@@ -89,6 +89,7 @@ target_sources(TapeLooper PRIVATE
     Source/Frontends/Shared/OutputSelector.cpp
     Source/Frontends/Shared/GradioUtilities.cpp
     Source/Frontends/Shared/MidiLearnManager.cpp
+    Source/Frontends/Shared/GitInfo.cpp
 )
 
 # Shared frontend components headers
@@ -103,6 +104,7 @@ target_sources(TapeLooper PRIVATE
     Source/Frontends/Shared/GradioUtilities.h
     Source/Frontends/Shared/MidiLearnManager.h
     Source/Frontends/Shared/MidiLearnComponent.h
+    Source/Frontends/Shared/GitInfo.h
 )
 
 # Basic frontend source files
@@ -135,6 +137,7 @@ target_sources(TapeLooper PRIVATE
     Source/Frontends/VampNet/LooperTrack.cpp
     Source/Frontends/VampNet/ClickSynth.cpp
     Source/Frontends/VampNet/Sampler.cpp
+    Source/Frontends/VampNet/SessionConfig.cpp
 )
 
 # VampNet frontend headers
@@ -143,6 +146,7 @@ target_sources(TapeLooper PRIVATE
     Source/Frontends/VampNet/LooperTrack.h
     Source/Frontends/VampNet/ClickSynth.h
     Source/Frontends/VampNet/Sampler.h
+    Source/Frontends/VampNet/SessionConfig.h
 )
 
 # WhAM frontend source files
@@ -151,6 +155,7 @@ target_sources(TapeLooper PRIVATE
     Source/Frontends/WhAM/LooperTrack.cpp
     Source/Frontends/WhAM/ClickSynth.cpp
     Source/Frontends/WhAM/Sampler.cpp
+    Source/Frontends/WhAM/SessionConfig.cpp
     Source/Frontends/WhAM/TokenVisualizer.cpp
 )
 
@@ -160,6 +165,7 @@ target_sources(TapeLooper PRIVATE
     Source/Frontends/WhAM/LooperTrack.h
     Source/Frontends/WhAM/ClickSynth.h
     Source/Frontends/WhAM/Sampler.h
+    Source/Frontends/WhAM/SessionConfig.h
     Source/Frontends/WhAM/TokenVisualizer.h
 )
 

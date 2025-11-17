@@ -20,6 +20,8 @@
 #include <memory>
 #include <functional>
 #include <utility>
+#include <map>
+#include <vector>
 
 namespace Shared
 {
@@ -28,6 +30,33 @@ namespace Shared
 
 namespace VampNet
 {
+
+class RightClickSafeTextButton : public juce::TextButton
+{
+public:
+    RightClickSafeTextButton(const juce::String& text = {})
+        : juce::TextButton(text)
+    {
+    }
+
+    std::function<void()> onLeftClick;
+
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        suppressNextClick = event.mods.isPopupMenu();
+        juce::TextButton::mouseDown(event);
+    }
+
+    void clicked() override
+    {
+        if (!suppressNextClick && onLeftClick)
+            onLeftClick();
+        suppressNextClick = false;
+    }
+
+private:
+    bool suppressNextClick{false};
+};
 
 // Background thread for VampNet Gradio API calls
 class VampNetWorkerThread : public juce::Thread
@@ -82,6 +111,27 @@ public:
     
     float getPeriodicPrompt() const;
     
+    juce::var getKnobState() const;
+    void applyKnobState(const juce::var& state);
+
+    juce::var getCustomParams() const { return customVampNetParams; }
+    void setCustomParams(const juce::var& params, juce::NotificationType notification = juce::dontSendNotification);
+
+    bool isAutogenEnabled() const { return autogenToggle.getToggleState(); }
+    void setAutogenEnabled(bool enabled);
+
+    bool isUseOutputAsInputEnabled() const { return useOutputAsInputToggle.getToggleState(); }
+    void setUseOutputAsInputEnabled(bool enabled);
+
+    double getLevelDb() const { return levelControl.getLevelValue(); }
+    void setLevelDb(double value, juce::NotificationType notification);
+
+    juce::var getPannerState() const;
+    void applyPannerState(const juce::var& state);
+
+    const juce::String& getTrackIdPrefix() const { return trackIdPrefix; }
+    int getTrackIndex() const { return trackIndex; }
+
     // Update channel selectors based on current audio device
     void updateChannelSelectors();
     
@@ -89,6 +139,13 @@ public:
     static juce::var getDefaultVampNetParams();
 
 private:
+    enum class ModelParamType
+    {
+        Float,
+        Integer,
+        Boolean
+    };
+
     VampNetMultiTrackLooperEngine& looperEngine;
     int trackIndex;
 
@@ -102,7 +159,7 @@ private:
     
     // VampNet-specific UI
     juce::Label trackLabel;
-    juce::TextButton resetButton;
+    RightClickSafeTextButton resetButton;
     juce::TextButton generateButton;
     juce::TextButton configureParamsButton;
     juce::ToggleButton useOutputAsInputToggle;
@@ -121,6 +178,9 @@ private:
     
     // Custom VampNet parameters (excluding periodic prompt which is in UI)
     juce::var customVampNetParams;
+    std::map<juce::String, juce::String> vampParamToKnobId;
+    std::vector<juce::String> modelChoiceOptions;
+    juce::String modelChoiceKnobId;
     
     // Parameter configuration dialog
     std::unique_ptr<Shared::ModelParameterDialog> parameterDialog;
@@ -137,11 +197,28 @@ private:
     void onVampNetComplete(juce::Result result, juce::File outputFile);
     
     void timerCallback() override;
+    void initializeModelParameterKnobs();
+    void refreshModelChoiceOptions();
+    void configureModelChoiceSlider();
+    void syncCustomParamsToKnobs();
+    double getCustomParamAsDouble(const juce::String& key, double defaultValue) const;
+    int getModelChoiceIndex(const juce::String& choice) const;
+    juce::String getModelChoiceValueForIndex(int index) const;
+    void addModelParameterKnob(const juce::String& key,
+                               const juce::String& label,
+                               double min,
+                               double max,
+                               double interval,
+                               double defaultValue,
+                               ModelParamType type,
+                               const juce::String& suffix = juce::String());
     
     // MIDI learn support
     Shared::MidiLearnManager* midiLearnManager = nullptr;
     std::unique_ptr<Shared::MidiLearnable> generateButtonLearnable;
     std::unique_ptr<Shared::MidiLearnMouseListener> generateButtonMouseListener;
+    std::unique_ptr<Shared::MidiLearnable> resetButtonLearnable;
+    std::unique_ptr<Shared::MidiLearnMouseListener> resetButtonMouseListener;
     juce::String trackIdPrefix;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LooperTrack)

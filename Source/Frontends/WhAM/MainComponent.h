@@ -14,6 +14,8 @@
 #include "../../CustomLookAndFeel.h"
 #include "../Shared/MidiLearnManager.h"
 #include "../Shared/MidiLearnComponent.h"
+#include "../Shared/GitInfo.h"
+#include "SessionConfig.h"
 
 namespace WhAM
 {
@@ -41,6 +43,9 @@ private:
     Shared::MidiLearnManager midiLearnManager;
     
     std::vector<std::unique_ptr<WhAM::LooperTrack>> tracks;
+    juce::Viewport trackViewport;
+    juce::Component tracksContainer;
+    juce::var sharedModelParams;
     
     // Track selection and recording state
     int activeTrackIndex = 0;  // Currently selected track (0-7)
@@ -52,7 +57,10 @@ private:
     juce::TextButton clickSynthButton;
     juce::TextButton samplerButton;
     juce::TextButton vizButton;
+    juce::TextButton saveConfigButton;
+    juce::TextButton loadConfigButton;
     juce::TextButton overflowButton;  // "..." button for overflow menu
+    juce::TextButton gitInfoButton;
     juce::Label titleLabel;
     juce::Label audioDeviceDebugLabel;
     CustomLookAndFeel customLookAndFeel;
@@ -69,6 +77,7 @@ private:
     
     // Token visualizer window
     std::unique_ptr<TokenVisualizerWindow> vizWindow;
+    Shared::GitInfo gitInfo;
 
     void syncButtonClicked();
     void showClickSynthWindow();
@@ -82,6 +91,14 @@ private:
     void midiSettingsButtonClicked();
     void showMidiSettings();
     void showOverflowMenu();
+    void saveConfigButtonClicked();
+    void loadConfigButtonClicked();
+    void loadDefaultSessionConfig();
+    SessionConfig buildSessionConfig() const;
+    void applySessionConfig(const SessionConfig& config, bool showErrorsOnFailure);
+    juce::File getConfigDirectory() const;
+    juce::File getDefaultConfigFile() const;
+    void layoutTracks();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

@@ -53,9 +53,9 @@ TransportControls::TransportControls(MidiLearnManager* midiManager, const juce::
     // Setup MIDI learn for buttons
     if (midiLearnManager)
     {
-        recordLearnable = std::make_unique<MidiLearnable>(*midiLearnManager, trackIdPrefix + "_record");
-        playLearnable = std::make_unique<MidiLearnable>(*midiLearnManager, trackIdPrefix + "_play");
-        muteLearnable = std::make_unique<MidiLearnable>(*midiLearnManager, trackIdPrefix + "_mute");
+        recordLearnable = std::make_unique<MidiLearnable>(*midiLearnManager, trackIdPrefix + "_record", true);
+        playLearnable = std::make_unique<MidiLearnable>(*midiLearnManager, trackIdPrefix + "_play", true);
+        muteLearnable = std::make_unique<MidiLearnable>(*midiLearnManager, trackIdPrefix + "_mute", true);
         
         // Create mouse listeners for right-click handling
         recordMouseListener = std::make_unique<MidiLearnMouseListener>(*recordLearnable, this);

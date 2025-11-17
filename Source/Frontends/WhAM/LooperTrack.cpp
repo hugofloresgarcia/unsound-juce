@@ -107,7 +107,7 @@ juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFil
     }
     
     // VampNet parameters - use custom params if provided, otherwise use defaults
-    juce::var paramsToUse = customParams.isObject() ? customParams : WhAM::LooperTrack::getDefaultVampNetParams();
+    juce::var paramsToUse = customParams.isObject() ? customParams : WhAM::LooperTrack::createDefaultVampNetParams();
     
     auto* obj = paramsToUse.getDynamicObject();
     if (obj != nullptr)
@@ -298,7 +298,13 @@ juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFil
 }
 
 // LooperTrack implementation
-LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::function<juce::String()> gradioUrlGetter, Shared::MidiLearnManager* midiManager, const juce::String& pannerType)
+LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine,
+                         int index,
+                         std::function<juce::String()> gradioUrlGetter,
+                         Shared::MidiLearnManager* midiManager,
+                         const juce::String& pannerType,
+                         juce::var* sharedModelParamsPtr,
+                         bool showModelParameterControlsInTrack)
     : looperEngine(engine), 
       trackIndex(index),
       waveformDisplay(engine, index),
@@ -318,20 +324,35 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
       pannerType(pannerType),
       stereoPanSlider(juce::Slider::LinearHorizontal, juce::Slider::NoTextBox),
       panLabel("pan", "pan"),
-      panCoordLabel("coord", "0.50, 0.50")
+      panCoordLabel("coord", "0.50, 0.50"),
+      showModelParameterControls(showModelParameterControlsInTrack)
 {
-    // Initialize custom params with defaults
-    customVampNetParams = getDefaultVampNetParams();
+    if (sharedModelParamsPtr != nullptr)
+        sharedModelParams = sharedModelParamsPtr;
+    else
+    {
+        ownedModelParams = createDefaultVampNetParams();
+        sharedModelParams = &ownedModelParams;
+    }
+
+    if (sharedModelParams == nullptr || !sharedModelParams->isObject())
+        *sharedModelParams = createDefaultVampNetParams();
     
     // Create parameter dialog (non-modal)
-    parameterDialog = std::make_unique<Shared::ModelParameterDialog>(
-        "VampNet",
-        customVampNetParams,
-        [this](const juce::var& newParams) {
-            customVampNetParams = newParams;
-            DBG("VampNet custom parameters updated");
-        }
-    );
+    if (showModelParameterControls)
+    {
+        parameterDialog = std::make_unique<Shared::ModelParameterDialog>(
+            "VampNet",
+            *sharedModelParams,
+            [this](const juce::var& newParams) {
+                *sharedModelParams = newParams;
+                DBG("VampNet custom parameters updated");
+                refreshModelChoiceOptions();
+                configureModelChoiceSlider();
+                syncCustomParamsToKnobs();
+            }
+        );
+    }
     
     // Setup track label
     trackLabel.setJustificationType(juce::Justification::centredLeft);
@@ -346,7 +367,7 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     addAndMakeVisible(panCoordLabel);
     
     // Setup reset button
-    resetButton.onClick = [this] { resetButtonClicked(); };
+    resetButton.onLeftClick = [this] { resetButtonClicked(); };
     addAndMakeVisible(resetButton);
     
     // Setup generate button
@@ -356,7 +377,7 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     // Setup MIDI learn for generate button
     if (midiLearnManager)
     {
-        generateButtonLearnable = std::make_unique<Shared::MidiLearnable>(*midiLearnManager, trackIdPrefix + "_generate");
+        generateButtonLearnable = std::make_unique<Shared::MidiLearnable>(*midiLearnManager, trackIdPrefix + "_generate", true);
         
         // Create mouse listener for right-click handling
         generateButtonMouseListener = std::make_unique<Shared::MidiLearnMouseListener>(*generateButtonLearnable, this);
@@ -372,12 +393,30 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
             trackIdPrefix + " Generate",
             true  // Toggle control
         });
+
+        resetButtonLearnable = std::make_unique<Shared::MidiLearnable>(*midiLearnManager, trackIdPrefix + "_clear", true);
+        resetButtonMouseListener = std::make_unique<Shared::MidiLearnMouseListener>(*resetButtonLearnable, this);
+        resetButton.addMouseListener(resetButtonMouseListener.get(), false);
+
+        midiLearnManager->registerParameter({
+            trackIdPrefix + "_clear",
+            [this](float value) {
+                if (value > 0.5f)
+                    resetButtonClicked();
+            },
+            []() { return 0.0f; },
+            trackIdPrefix + " Clear",
+            true
+        });
     }
     
     // Setup configure params button
-    configureParamsButton.setButtonText("configure other model parameters...");
-    configureParamsButton.onClick = [this] { configureParamsButtonClicked(); };
-    addAndMakeVisible(configureParamsButton);
+    if (showModelParameterControls)
+    {
+        configureParamsButton.setButtonText("configure other model parameters...");
+        configureParamsButton.onClick = [this] { configureParamsButtonClicked(); };
+        addAndMakeVisible(configureParamsButton);
+    }
     
     // Setup waveform display
     addAndMakeVisible(waveformDisplay);
@@ -432,6 +471,11 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
         ""  // parameterId - will be auto-generated
     });
     addAndMakeVisible(parameterKnobs);
+    if (showModelParameterControls)
+    {
+        initializeModelParameterKnobs();
+        syncCustomParamsToKnobs();
+    }
     
     // Setup level control (applies to both read heads)
     levelControl.onLevelChange = [this](double value) {
@@ -590,19 +634,11 @@ void LooperTrack::resized()
     const int generateButtonHeight = 30;
     const int configureButtonHeight = 30;
     const int channelSelectorHeight = 30;
-    const int knobAreaHeight = 140;
     const int controlsHeight = 160;
     
     const int labelHeight = 15;
-    const int pannerHeight = 150; // 2D panner height
-    const int totalBottomHeight = channelSelectorHeight + spacingSmall +
-                                   knobAreaHeight + spacingSmall + 
-                                   controlsHeight + spacingSmall +
-                                   generateButtonHeight + spacingSmall + 
-                                   configureButtonHeight + spacingSmall +
-                                   buttonHeight + spacingSmall +
-                                   labelHeight + spacingSmall +
-                                   pannerHeight;
+    const int stereoPannerHeight = 60;
+    const int panner2DHeight = 150;
     
     auto bounds = getLocalBounds().reduced(componentMargin);
     
@@ -627,19 +663,73 @@ void LooperTrack::resized()
     outputSelector.setBounds(channelSelectorArea.removeFromLeft(selectorWidth));
     bounds.removeFromTop(spacingSmall);
     
-    // Reserve space for controls at bottom
-    auto bottomArea = bounds.removeFromBottom(totalBottomHeight);
+    // Leave a spacer before the waveform/controls block
+    bounds.removeFromTop(spacingSmall);
     
-    // Waveform area is now the remaining space
-    waveformDisplay.setBounds(bounds);
+    // Remaining area now contains waveform + lower controls
+    auto remainingArea = bounds;
     
-    // Knobs area (now includes periodic prompt)
-    auto knobArea = bottomArea.removeFromTop(knobAreaHeight);
-    parameterKnobs.setBounds(knobArea);
-    bottomArea.removeFromTop(spacingSmall);
+    const int knobAreaHeight = parameterKnobs.getRequiredHeight(remainingArea.getWidth());
+    auto removeBottomSpacing = [&]() {
+        if (remainingArea.getHeight() > spacingSmall)
+            remainingArea.removeFromBottom(spacingSmall);
+    };
     
-    // Level control and VU meter with toggles
-    auto controlsArea = bottomArea.removeFromTop(controlsHeight);
+    // Layout panner (bottom-most)
+    auto typeLower = pannerType.toLowerCase();
+    bool hasStereoPanner = (typeLower == "stereo" && stereoPanSlider.isVisible());
+    bool has2DPanner = ((typeLower == "quad" || typeLower == "cleat") && panner2DComponent != nullptr && panner2DComponent->isVisible());
+    
+    if (panner != nullptr && (hasStereoPanner || has2DPanner))
+    {
+        int desiredHeight = hasStereoPanner ? stereoPannerHeight : panner2DHeight;
+        auto pannerArea = remainingArea.removeFromBottom(desiredHeight);
+        if (hasStereoPanner)
+            stereoPanSlider.setBounds(pannerArea);
+        else if (has2DPanner && panner2DComponent != nullptr)
+            panner2DComponent->setBounds(pannerArea);
+        else
+            pannerArea.setHeight(0);
+        
+        removeBottomSpacing();
+        auto panLabelArea = remainingArea.removeFromBottom(labelHeight);
+        panLabel.setBounds(panLabelArea.removeFromLeft(50));
+        panCoordLabel.setBounds(panLabelArea);
+        removeBottomSpacing();
+    }
+    else
+    {
+        panLabel.setBounds(0, 0, 0, 0);
+        panCoordLabel.setBounds(0, 0, 0, 0);
+        stereoPanSlider.setBounds(0, 0, 0, 0);
+        if (panner2DComponent != nullptr)
+            panner2DComponent->setBounds(0, 0, 0, 0);
+    }
+    
+    // Transport controls
+    auto buttonArea = remainingArea.removeFromBottom(buttonHeight);
+    transportControls.setBounds(buttonArea);
+    removeBottomSpacing();
+    
+    // Configure params button (only when model controls visible)
+    if (showModelParameterControls)
+    {
+        auto configureArea = remainingArea.removeFromBottom(configureButtonHeight);
+        configureParamsButton.setBounds(configureArea);
+        removeBottomSpacing();
+    }
+    else
+    {
+        configureParamsButton.setBounds({});
+    }
+    
+    // Generate button
+    auto generateArea = remainingArea.removeFromBottom(generateButtonHeight);
+    generateButton.setBounds(generateArea);
+    removeBottomSpacing();
+    
+    // Level control and toggles
+    auto controlsArea = remainingArea.removeFromBottom(controlsHeight);
     levelControl.setBounds(controlsArea.removeFromLeft(115)); // 80 + 5 + 30
     controlsArea.removeFromLeft(spacingSmall);
     // Stack toggles vertically: autogen on top, use o as i below
@@ -647,39 +737,22 @@ void LooperTrack::resized()
     autogenToggle.setBounds(toggleArea.removeFromTop(30)); // First toggle
     toggleArea.removeFromTop(spacingSmall);
     useOutputAsInputToggle.setBounds(toggleArea.removeFromTop(30)); // Second toggle
-    bottomArea.removeFromTop(spacingSmall);
+    removeBottomSpacing();
     
-    // Generate button
-    generateButton.setBounds(bottomArea.removeFromTop(generateButtonHeight));
-    bottomArea.removeFromTop(spacingSmall);
-    
-    // Configure params button
-    configureParamsButton.setBounds(bottomArea.removeFromTop(configureButtonHeight));
-    bottomArea.removeFromTop(spacingSmall);
-    
-    // Transport buttons
-    auto buttonArea = bottomArea.removeFromBottom(buttonHeight);
-    transportControls.setBounds(buttonArea);
-    bottomArea.removeFromTop(spacingSmall);
-    
-    // Panner UI (below transport controls)
-    if (panner != nullptr)
+    // Knob array (all VampNet controls)
+    if (knobAreaHeight > 0)
     {
-        auto panLabelArea = bottomArea.removeFromTop(labelHeight);
-        panLabel.setBounds(panLabelArea.removeFromLeft(50)); // "pan" label on left
-        panCoordLabel.setBounds(panLabelArea); // Coordinates on right
-        bottomArea.removeFromTop(spacingSmall);
-        
-        auto pannerArea = bottomArea.removeFromTop(pannerHeight);
-        if (pannerType.toLowerCase() == "stereo" && stereoPanSlider.isVisible())
-        {
-            stereoPanSlider.setBounds(pannerArea);
-        }
-        else if (panner2DComponent != nullptr && panner2DComponent->isVisible())
-        {
-            panner2DComponent->setBounds(pannerArea);
-        }
+        auto knobArea = remainingArea.removeFromBottom(knobAreaHeight);
+        parameterKnobs.setBounds(knobArea);
+        removeBottomSpacing();
     }
+    else
+    {
+        parameterKnobs.setBounds({});
+    }
+    
+    // Remaining area is waveform
+    waveformDisplay.setBounds(remainingArea);
 }
 
 void LooperTrack::recordEnableButtonToggled(bool enabled)
@@ -783,7 +856,7 @@ void LooperTrack::generateButtonClicked()
                                                                 trackIndex,
                                                                 audioFile,
                                                                 periodicPrompt,
-                                                                customVampNetParams,
+                                                                sharedModelParams != nullptr ? *sharedModelParams : juce::var(),
                                                                 gradioUrlProvider,
                                                                 useOutputAsInput);
     vampNetWorkerThread->onComplete = [this](juce::Result result, juce::File outputFile, int trackIdx)
@@ -799,7 +872,7 @@ void LooperTrack::configureParamsButtonClicked()
     if (parameterDialog != nullptr)
     {
         // Update the dialog with current params in case they changed
-        parameterDialog->updateParams(customVampNetParams);
+        parameterDialog->updateParams(sharedModelParams != nullptr ? *sharedModelParams : juce::var());
         
         // Show the dialog (non-modal)
         parameterDialog->setVisible(true);
@@ -807,7 +880,7 @@ void LooperTrack::configureParamsButtonClicked()
     }
 }
 
-juce::var LooperTrack::getDefaultVampNetParams()
+juce::var LooperTrack::createDefaultVampNetParams()
 {
     // Create default parameters object (excluding periodic_prompt which is in UI)
     juce::DynamicObject::Ptr params = new juce::DynamicObject();
@@ -828,6 +901,12 @@ juce::var LooperTrack::getDefaultVampNetParams()
     params->setProperty("sampling_steps", juce::var(12));
     params->setProperty("beat_mask_width", juce::var(0));
     params->setProperty("feedback_steps", juce::var(1));
+    
+    juce::Array<juce::var> modelChoices;
+    modelChoices.add(juce::var("default"));
+    modelChoices.add(juce::var("melody"));
+    modelChoices.add(juce::var("percussion"));
+    params->setProperty("model_choice_options", juce::var(modelChoices));
     
     return juce::var(params);
 }
@@ -927,6 +1006,8 @@ void LooperTrack::resetButtonClicked()
     
     parameterKnobs.setKnobValue(3, 0.5, juce::dontSendNotification); // dry/wet
     track.dryWetMix.store(0.5f);
+
+    setCustomParams(createDefaultVampNetParams());
     
     levelControl.setLevelValue(0.0, juce::dontSendNotification);
     track.recordReadHead.setLevelDb(0.0f);
@@ -952,11 +1033,14 @@ LooperTrack::~LooperTrack()
     // Remove mouse listener first
     if (generateButtonMouseListener)
         generateButton.removeMouseListener(generateButtonMouseListener.get());
-    
+    if (resetButtonMouseListener)
+        resetButton.removeMouseListener(resetButtonMouseListener.get());
+
     // Unregister MIDI parameters
     if (midiLearnManager)
     {
         midiLearnManager->unregisterParameter(trackIdPrefix + "_generate");
+        midiLearnManager->unregisterParameter(trackIdPrefix + "_clear");
     }
     
     // Stop and wait for background thread to finish
@@ -985,6 +1069,310 @@ float LooperTrack::getPeriodicPrompt() const
     return static_cast<float>(parameterKnobs.getKnobValue(2));
 }
 
+juce::var LooperTrack::getKnobState() const
+{
+    return parameterKnobs.getState();
+}
+
+void LooperTrack::applyKnobState(const juce::var& state, juce::NotificationType notification)
+{
+    parameterKnobs.applyState(state, notification);
+}
+
+void LooperTrack::setCustomParams(const juce::var& params, juce::NotificationType notification)
+{
+    juce::ignoreUnused(notification);
+    if (sharedModelParams == nullptr)
+        return;
+
+    if (params.isObject())
+        *sharedModelParams = params;
+    else
+        *sharedModelParams = createDefaultVampNetParams();
+
+    if (parameterDialog != nullptr)
+        parameterDialog->updateParams(*sharedModelParams);
+
+    refreshModelChoiceOptions();
+    if (showModelParameterControls)
+    {
+        configureModelChoiceSlider();
+        syncCustomParamsToKnobs();
+    }
+}
+
+void LooperTrack::setAutogenEnabled(bool enabled)
+{
+    autogenToggle.setToggleState(enabled, juce::dontSendNotification);
+}
+
+void LooperTrack::setUseOutputAsInputEnabled(bool enabled)
+{
+    useOutputAsInputToggle.setToggleState(enabled, juce::dontSendNotification);
+}
+
+double LooperTrack::getLevelDb() const
+{
+    return levelControl.getLevelValue();
+}
+
+void LooperTrack::setLevelDb(double value, juce::NotificationType notification)
+{
+    levelControl.setLevelValue(value, notification);
+}
+
+juce::var LooperTrack::getPannerState() const
+{
+    juce::DynamicObject::Ptr state = new juce::DynamicObject();
+    state->setProperty("type", pannerType);
+
+    auto typeLower = pannerType.toLowerCase();
+    if (typeLower == "stereo")
+    {
+        state->setProperty("pan", stereoPanSlider.getValue());
+    }
+    else if ((typeLower == "quad" || typeLower == "cleat") && panner2DComponent != nullptr)
+    {
+        state->setProperty("x", panner2DComponent->getPanX());
+        state->setProperty("y", panner2DComponent->getPanY());
+    }
+
+    return juce::var(state);
+}
+
+void LooperTrack::applyPannerState(const juce::var& state)
+{
+    if (!state.isObject())
+        return;
+
+    auto* stateObj = state.getDynamicObject();
+    if (stateObj == nullptr)
+        return;
+
+    auto typeLower = pannerType.toLowerCase();
+    if (typeLower == "stereo" && stateObj->hasProperty("pan"))
+    {
+        stereoPanSlider.setValue(stateObj->getProperty("pan"), juce::sendNotificationSync);
+    }
+    else if ((typeLower == "quad" || typeLower == "cleat") && panner2DComponent != nullptr)
+    {
+        float x = static_cast<float>(stateObj->getProperty("x"));
+        float y = static_cast<float>(stateObj->getProperty("y"));
+        panner2DComponent->setPanPosition(x, y);
+    }
+}
+
+double LooperTrack::getCustomParamAsDouble(const juce::String& key, double defaultValue) const
+{
+    if (sharedModelParams == nullptr || !sharedModelParams->isObject())
+        return defaultValue;
+
+    if (auto* obj = sharedModelParams->getDynamicObject())
+    {
+        if (obj->hasProperty(key))
+        {
+            const auto value = obj->getProperty(key);
+            if (value.isDouble() || value.isInt())
+                return static_cast<double>(value);
+            if (value.isBool())
+                return value ? 1.0 : 0.0;
+        }
+    }
+
+    return defaultValue;
+}
+
+int LooperTrack::getModelChoiceIndex(const juce::String& choice) const
+{
+    for (int i = 0; i < static_cast<int>(modelChoiceOptions.size()); ++i)
+    {
+        if (modelChoiceOptions[i].equalsIgnoreCase(choice))
+            return i;
+    }
+    return 0;
+}
+
+juce::String LooperTrack::getModelChoiceValueForIndex(int index) const
+{
+    if (modelChoiceOptions.empty())
+        return "default";
+
+    index = juce::jlimit(0, static_cast<int>(modelChoiceOptions.size()) - 1, index);
+    return modelChoiceOptions[(size_t) index];
+}
+
+void LooperTrack::configureModelChoiceSlider()
+{
+    if (!showModelParameterControls || modelChoiceKnobId.isEmpty())
+        return;
+
+    auto* slider = parameterKnobs.getSliderForParameter(modelChoiceKnobId);
+    if (slider == nullptr)
+        return;
+
+    int maxIndex = juce::jmax(0, static_cast<int>(modelChoiceOptions.size()) - 1);
+    slider->setRange(0.0, static_cast<double>(maxIndex), 1.0);
+    slider->setNumDecimalPlacesToDisplay(0);
+    slider->textFromValueFunction = [this](double value) {
+        return getModelChoiceValueForIndex(static_cast<int>(std::round(value)));
+    };
+    slider->valueFromTextFunction = [this](const juce::String& text) {
+        return static_cast<double>(getModelChoiceIndex(text));
+    };
+}
+
+void LooperTrack::initializeModelParameterKnobs()
+{
+    if (!showModelParameterControls)
+        return;
+
+    vampParamToKnobId.clear();
+    modelChoiceKnobId.clear();
+    refreshModelChoiceOptions();
+
+    addModelParameterKnob("sample_temperature", "temperature", 0.1, 2.0, 0.01, 1.0, false);
+    addModelParameterKnob("top_p", "top-p", 0.0, 1.0, 0.01, 0.0, false);
+    addModelParameterKnob("mask_dropout", "mask dropout", 0.0, 1.0, 0.01, 0.0, false);
+    addModelParameterKnob("time_stretch_factor", "stretch", 0.25, 4.0, 0.01, 1.0, false);
+    addModelParameterKnob("onset_mask_width", "onset width", 0.0, 1.0, 0.01, 0.0, false);
+    addModelParameterKnob("typical_filtering", "typical filter", 0.0, 1.0, 1.0, 1.0, true, true);
+    addModelParameterKnob("typical_mass", "typical mass", 0.0, 1.0, 0.01, 0.15, false);
+    addModelParameterKnob("typical_min_tokens", "min tokens", 1.0, 512.0, 1.0, 64.0, true);
+    addModelParameterKnob("seed", "seed", 0.0, 100000.0, 1.0, 0.0, true);
+    addModelParameterKnob("compression_prompt", "compression", 0.0, 10.0, 1.0, 3.0, true);
+    addModelParameterKnob("pitch_shift_amount", "pitch shift", -12.0, 12.0, 1.0, 0.0, true);
+    addModelParameterKnob("sample_cutoff", "sample cutoff", 0.0, 1.0, 0.01, 0.9, false);
+    addModelParameterKnob("sampling_steps", "steps", 1.0, 24.0, 1.0, 12.0, true);
+    addModelParameterKnob("beat_mask_width", "beat mask", 0.0, 1.0, 0.01, 0.0, false);
+    addModelParameterKnob("feedback_steps", "feedback", 1.0, 8.0, 1.0, 1.0, true);
+
+    modelChoiceKnobId = trackIdPrefix + "_model_choice";
+    juce::String currentChoice = "default";
+    if (sharedModelParams != nullptr && sharedModelParams->isObject())
+    {
+        if (auto* obj = sharedModelParams->getDynamicObject())
+            currentChoice = obj->getProperty("model_choice").toString();
+    }
+    double modelIndex = static_cast<double>(getModelChoiceIndex(currentChoice));
+
+    parameterKnobs.addKnob({
+        "model choice",
+        0.0,
+        static_cast<double>(juce::jmax(0, static_cast<int>(modelChoiceOptions.size()) - 1)),
+        modelIndex,
+        1.0,
+        "",
+        [this](double value) {
+            int index = static_cast<int>(std::round(value));
+            auto choice = getModelChoiceValueForIndex(index);
+            if (auto* obj = sharedModelParams != nullptr ? sharedModelParams->getDynamicObject() : nullptr)
+                obj->setProperty("model_choice", choice);
+        },
+        modelChoiceKnobId
+    });
+
+    configureModelChoiceSlider();
+}
+
+void LooperTrack::refreshModelChoiceOptions()
+{
+    modelChoiceOptions.clear();
+    if (sharedModelParams != nullptr && sharedModelParams->isObject())
+    {
+        if (auto* obj = sharedModelParams->getDynamicObject())
+        {
+            auto optionsVar = obj->getProperty("model_choice_options");
+            if (auto* arr = optionsVar.getArray())
+            {
+                for (const auto& item : *arr)
+                    modelChoiceOptions.push_back(item.toString());
+            }
+        }
+    }
+
+    if (modelChoiceOptions.empty())
+        modelChoiceOptions = {"default"};
+}
+
+void LooperTrack::syncCustomParamsToKnobs()
+{
+    if (!showModelParameterControls || sharedModelParams == nullptr || !sharedModelParams->isObject())
+        return;
+
+    auto* obj = sharedModelParams->getDynamicObject();
+    for (const auto& entry : vampParamToKnobId)
+    {
+        if (obj->hasProperty(entry.first))
+        {
+            double value = getCustomParamAsDouble(entry.first, 0.0);
+            parameterKnobs.setKnobValue(entry.second, value, juce::dontSendNotification);
+        }
+    }
+
+    if (!modelChoiceKnobId.isEmpty())
+    {
+        auto choice = obj->getProperty("model_choice").toString();
+        int index = getModelChoiceIndex(choice);
+        parameterKnobs.setKnobValue(modelChoiceKnobId, static_cast<double>(index), juce::dontSendNotification);
+    }
+}
+
+void LooperTrack::addModelParameterKnob(const juce::String& key,
+                                        const juce::String& label,
+                                        double min,
+                                        double max,
+                                        double interval,
+                                        double defaultValue,
+                                        bool isInteger,
+                                        bool isBoolean,
+                                        const juce::String& suffix)
+{
+    double initialValue = getCustomParamAsDouble(key, defaultValue);
+    auto paramId = trackIdPrefix + "_" + key;
+    vampParamToKnobId[key] = paramId;
+
+    parameterKnobs.addKnob({
+        label,
+        min,
+        max,
+        initialValue,
+        interval,
+        suffix,
+        [this, key, isInteger, isBoolean](double rawValue) {
+            if (sharedModelParams != nullptr)
+            {
+                if (auto* obj = sharedModelParams->getDynamicObject())
+                {
+                    if (isBoolean)
+                        obj->setProperty(key, rawValue >= 0.5);
+                    else if (isInteger)
+                        obj->setProperty(key, static_cast<int>(std::round(rawValue)));
+                    else
+                        obj->setProperty(key, rawValue);
+                }
+            }
+        },
+        paramId
+    });
+
+    if (isInteger || isBoolean)
+    {
+        if (auto* slider = parameterKnobs.getSliderForParameter(paramId))
+        {
+            slider->setNumDecimalPlacesToDisplay(0);
+            if (isBoolean)
+            {
+                slider->setRange(min, max, 1.0);
+                slider->textFromValueFunction = [](double value) {
+                    return value >= 0.5 ? "on" : "off";
+                };
+                slider->valueFromTextFunction = [](const juce::String& text) {
+                    return text.equalsIgnoreCase("on") ? 1.0 : 0.0;
+                };
+            }
+        }
+    }
+}
 void LooperTrack::timerCallback()
 {
     // Sync button states with model state

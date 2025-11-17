@@ -1,4 +1,5 @@
 #include "MidiLearnManager.h"
+#include <algorithm>
 
 using namespace Shared;
 
@@ -14,6 +15,18 @@ MidiMapping::MessageType messageTypeFromAttribute(const juce::String& typeName)
     return typeName.equalsIgnoreCase("note")
                ? MidiMapping::MessageType::Note
                : MidiMapping::MessageType::CC;
+}
+
+juce::String toModeAttributeString(MidiMapping::Mode mode)
+{
+    return mode == MidiMapping::Mode::Toggle ? "toggle" : "momentary";
+}
+
+MidiMapping::Mode modeFromAttribute(const juce::String& modeName)
+{
+    return modeName.equalsIgnoreCase("toggle")
+               ? MidiMapping::Mode::Toggle
+               : MidiMapping::Mode::Momentary;
 }
 }
 
@@ -66,7 +79,7 @@ void MidiLearnManager::unregisterParameter(const juce::String& parameterId)
     }
 }
 
-void MidiLearnManager::startLearning(const juce::String& parameterId)
+void MidiLearnManager::startLearning(const juce::String& parameterId, MidiMapping::Mode mode)
 {
     juce::ScopedLock lock(mapLock);
     
@@ -76,8 +89,8 @@ void MidiLearnManager::startLearning(const juce::String& parameterId)
         juce::Logger::writeToLog("MidiLearnManager: Cannot learn unknown parameter: " + parameterId);
         return;
     }
-    
     learningParameterId = parameterId;
+    learningMode = mode;
     juce::String deviceName = midiInput ? midiInput->getName() : "No device";
     juce::Logger::writeToLog("MidiLearnManager: Started learning for: " + parameterId + " (MIDI device: " + deviceName + ", enabled: " + (midiEnabled ? "Yes" : "No") + ")");
 }
@@ -90,6 +103,7 @@ void MidiLearnManager::stopLearning()
         juce::Logger::writeToLog("MidiLearnManager: Stopped learning for: " + learningParameterId);
     }
     learningParameterId = juce::String();
+    learningMode = MidiMapping::Mode::Momentary;
 }
 
 void MidiLearnManager::clearMapping(const juce::String& parameterId)
@@ -100,9 +114,9 @@ void MidiLearnManager::clearMapping(const juce::String& parameterId)
     if (it != parameterToMessageMap.end())
     {
         if (it->second.type == MidiMapping::MessageType::CC)
-            ccToParameterMap.erase(it->second.number);
+            removeParameterFromMessageMap(ccToParameterMap, it->second.number, parameterId);
         else
-            noteToParameterMap.erase(it->second.number);
+            removeParameterFromMessageMap(noteToParameterMap, it->second.number, parameterId);
 
         juce::Logger::writeToLog(
             "MidiLearnManager: Cleared mapping for: " + parameterId + " (" +
@@ -131,6 +145,7 @@ std::vector<MidiMapping> MidiLearnManager::getAllMappings() const
         mapping.parameterId = pair.first;
         mapping.type = pair.second.type;
         mapping.number = pair.second.number;
+        mapping.mode = pair.second.mode;
         mappings.push_back(mapping);
     }
     return mappings;
@@ -148,6 +163,7 @@ MidiMapping MidiLearnManager::getMappingForParameter(const juce::String& paramet
     {
         mapping.type = it->second.type;
         mapping.number = it->second.number;
+        mapping.mode = it->second.mode;
     }
     else
     {
@@ -240,6 +256,7 @@ void MidiLearnManager::saveMappings(const juce::File& file)
         mapping->setAttribute("messageNumber", pair.second.number);
         mapping->setAttribute("ccNumber", pair.second.number); // Backward compatibility
         mapping->setAttribute("messageType", toAttributeTypeString(pair.second.type));
+        mapping->setAttribute("mappingMode", toModeAttributeString(pair.second.mode));
     }
     
     if (root.writeTo(file))
@@ -276,6 +293,8 @@ void MidiLearnManager::loadMappings(const juce::File& file)
         int number = mapping->getIntAttribute("messageNumber", mapping->getIntAttribute("ccNumber", -1));
         juce::String typeName = mapping->getStringAttribute("messageType", "CC");
         auto messageType = messageTypeFromAttribute(typeName);
+        auto modeName = mapping->getStringAttribute("mappingMode", "momentary");
+        auto mappingMode = modeFromAttribute(modeName);
         
         if (number < 0)
             continue;
@@ -284,15 +303,35 @@ void MidiLearnManager::loadMappings(const juce::File& file)
         if (parameters.find(parameterId) != parameters.end())
         {
             if (messageType == MidiMapping::MessageType::CC)
-                ccToParameterMap[number] = parameterId;
+                addParameterToMessageMap(ccToParameterMap, number, parameterId);
             else
-                noteToParameterMap[number] = parameterId;
+                addParameterToMessageMap(noteToParameterMap, number, parameterId);
 
-            parameterToMessageMap[parameterId] = {messageType, number};
+            parameterToMessageMap[parameterId] = {messageType, number, mappingMode};
         }
     }
     
     juce::Logger::writeToLog("MidiLearnManager: Loaded " + juce::String(parameterToMessageMap.size()) + " mappings");
+}
+
+void MidiLearnManager::applyMappings(const std::vector<MidiMapping>& mappings)
+{
+    juce::ScopedLock lock(mapLock);
+    
+    ccToParameterMap.clear();
+    noteToParameterMap.clear();
+    parameterToMessageMap.clear();
+    
+    for (const auto& mapping : mappings)
+    {
+        if (!mapping.isValid())
+            continue;
+        
+        if (parameters.find(mapping.parameterId) == parameters.end())
+            continue;
+        
+        storeMappingLocked(mapping.parameterId, mapping.type, mapping.number, mapping.mode);
+    }
 }
 
 void MidiLearnManager::handleIncomingMidiMessage(juce::MidiInput* source, const juce::MidiMessage& message)
@@ -419,8 +458,9 @@ void MidiLearnManager::handleIncomingMidiMessage(juce::MidiInput* source, const 
         
         if (learningParameterId.isNotEmpty())
         {
-            storeMappingLocked(learningParameterId, MidiMapping::MessageType::CC, ccNumber);
+            storeMappingLocked(learningParameterId, MidiMapping::MessageType::CC, ccNumber, learningMode);
             learningParameterId = juce::String();
+            learningMode = MidiMapping::Mode::Momentary;
         }
         else
         {
@@ -436,8 +476,9 @@ void MidiLearnManager::handleIncomingMidiMessage(juce::MidiInput* source, const 
         {
             if (isEffectiveNoteOn)
             {
-                storeMappingLocked(learningParameterId, MidiMapping::MessageType::Note, noteNumber);
+                storeMappingLocked(learningParameterId, MidiMapping::MessageType::Note, noteNumber, learningMode);
                 learningParameterId = juce::String();
+                learningMode = MidiMapping::Mode::Momentary;
             }
         }
         else
@@ -459,10 +500,10 @@ void MidiLearnManager::processControlChange(int ccNumber, int ccValue)
     if (it == ccToParameterMap.end())
         return;
     
-    // Convert MIDI value (0-127) to normalized value (0.0-1.0)
     float normalizedValue = ccValue / 127.0f;
     
-    applyParameterValue(it->second, normalizedValue);
+    for (const auto& parameterId : it->second)
+        applyParameterValue(parameterId, normalizedValue);
 }
 
 void MidiLearnManager::processNoteMessage(int noteNumber, bool isNoteOn)
@@ -476,8 +517,37 @@ void MidiLearnManager::processNoteMessage(int noteNumber, bool isNoteOn)
     if (it == noteToParameterMap.end())
         return;
     
-    float normalizedValue = isNoteOn ? 1.0f : 0.0f;
-    applyParameterValue(it->second, normalizedValue);
+    for (const auto& parameterId : it->second)
+    {
+        auto mappingIt = parameterToMessageMap.find(parameterId);
+        if (mappingIt == parameterToMessageMap.end())
+            continue;
+        
+        if (mappingIt->second.mode == MidiMapping::Mode::Toggle)
+        {
+            if (isNoteOn)
+                handleToggleForParameter(parameterId);
+        }
+        else
+        {
+            float normalizedValue = isNoteOn ? 1.0f : 0.0f;
+            applyParameterValue(parameterId, normalizedValue);
+        }
+    }
+}
+
+void MidiLearnManager::handleToggleForParameter(const juce::String& parameterId)
+{
+    auto paramIt = parameters.find(parameterId);
+    if (paramIt == parameters.end())
+        return;
+    
+    float currentValue = 0.0f;
+    if (paramIt->second.getValue)
+        currentValue = paramIt->second.getValue();
+    
+    bool isOn = currentValue > 0.5f;
+    applyParameterValue(parameterId, isOn ? 0.0f : 1.0f);
 }
 
 void MidiLearnManager::applyParameterValue(const juce::String& parameterId, float normalizedValue)
@@ -501,42 +571,31 @@ void MidiLearnManager::applyParameterValue(const juce::String& parameterId, floa
 
 void MidiLearnManager::storeMappingLocked(const juce::String& parameterId,
                                           MidiMapping::MessageType type,
-                                          int number)
+                                          int number,
+                                          MidiMapping::Mode mode)
 {
-    // Remove any existing mapping tied to this message number
-    if (type == MidiMapping::MessageType::CC)
-    {
-        auto oldParamIt = ccToParameterMap.find(number);
-        if (oldParamIt != ccToParameterMap.end())
-        {
-            parameterToMessageMap.erase(oldParamIt->second);
-        }
-        ccToParameterMap[number] = parameterId;
-    }
-    else
-    {
-        auto oldParamIt = noteToParameterMap.find(number);
-        if (oldParamIt != noteToParameterMap.end())
-        {
-            parameterToMessageMap.erase(oldParamIt->second);
-        }
-        noteToParameterMap[number] = parameterId;
-    }
-    
     // Remove the previous assignment for this parameter, regardless of type
     auto parameterAssignment = parameterToMessageMap.find(parameterId);
     if (parameterAssignment != parameterToMessageMap.end())
     {
         if (parameterAssignment->second.type == MidiMapping::MessageType::CC)
-            ccToParameterMap.erase(parameterAssignment->second.number);
+            removeParameterFromMessageMap(ccToParameterMap, parameterAssignment->second.number, parameterId);
         else
-            noteToParameterMap.erase(parameterAssignment->second.number);
+            removeParameterFromMessageMap(noteToParameterMap, parameterAssignment->second.number, parameterId);
+        
+        parameterToMessageMap.erase(parameterAssignment);
     }
     
-    parameterToMessageMap[parameterId] = {type, number};
+    if (type == MidiMapping::MessageType::CC)
+        addParameterToMessageMap(ccToParameterMap, number, parameterId);
+    else
+        addParameterToMessageMap(noteToParameterMap, number, parameterId);
+    
+    parameterToMessageMap[parameterId] = {type, number, mode};
     
     juce::Logger::writeToLog("MidiLearnManager: Mapped " + MidiMapping::getTypeName(type) +
-                             " " + juce::String(number) + " to " + parameterId);
+                             " " + juce::String(number) + " to " + parameterId +
+                             " (" + (mode == MidiMapping::Mode::Toggle ? "toggle" : "momentary") + ")");
     
     if (onParameterLearned)
     {
@@ -544,6 +603,7 @@ void MidiLearnManager::storeMappingLocked(const juce::String& parameterId,
         mapping.parameterId = parameterId;
         mapping.type = type;
         mapping.number = number;
+        mapping.mode = mode;
         
         juce::MessageManager::callAsync([this, mapping]()
         {
@@ -551,5 +611,31 @@ void MidiLearnManager::storeMappingLocked(const juce::String& parameterId,
                 onParameterLearned(mapping);
         });
     }
+}
+
+void MidiLearnManager::addParameterToMessageMap(std::map<int, std::vector<juce::String>>& map,
+                                                int number,
+                                                const juce::String& parameterId)
+{
+    if (parameterId.isEmpty() || number < 0)
+        return;
+    
+    auto& entries = map[number];
+    if (std::find(entries.begin(), entries.end(), parameterId) == entries.end())
+        entries.push_back(parameterId);
+}
+
+void MidiLearnManager::removeParameterFromMessageMap(std::map<int, std::vector<juce::String>>& map,
+                                                     int number,
+                                                     const juce::String& parameterId)
+{
+    auto it = map.find(number);
+    if (it == map.end())
+        return;
+    
+    auto& entries = it->second;
+    entries.erase(std::remove(entries.begin(), entries.end(), parameterId), entries.end());
+    if (entries.empty())
+        map.erase(it);
 }
 

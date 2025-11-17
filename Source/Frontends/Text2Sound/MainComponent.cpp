@@ -5,7 +5,14 @@
 using namespace Text2Sound;
 
 // TODO: Remove this debug macro after fixing segmentation fault
+#ifndef DEBUG_SEGFAULT
 #define DEBUG_SEGFAULT 1
+#endif
+
+#ifdef DBG_SEGFAULT
+#undef DBG_SEGFAULT
+#endif
+
 #if DEBUG_SEGFAULT
 #define DBG_SEGFAULT(msg) juce::Logger::writeToLog("[SEGFAULT] " + juce::String(__FILE__) + ":" + juce::String(__LINE__) + " - " + juce::String(msg))
 #else

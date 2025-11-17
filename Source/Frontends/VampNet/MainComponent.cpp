@@ -5,7 +5,14 @@
 using namespace VampNet;
 
 // TODO: Remove this debug macro after fixing segmentation fault
+#ifndef DEBUG_SEGFAULT
 #define DEBUG_SEGFAULT 1
+#endif
+
+#ifdef DBG_SEGFAULT
+#undef DBG_SEGFAULT
+#endif
+
 #if DEBUG_SEGFAULT
 #define DBG_SEGFAULT(msg) juce::Logger::writeToLog("[SEGFAULT] " + juce::String(__FILE__) + ":" + juce::String(__LINE__) + " - " + juce::String(msg))
 #else
@@ -18,6 +25,9 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
       midiSettingsButton("midi settings"),
       clickSynthButton("click synth"),
       samplerButton("sampler"),
+      saveConfigButton("save config"),
+      loadConfigButton("load config"),
+      gitInfoButton("(i)"),
       titleLabel("Title", "tape looper - vampnet"),
       audioDeviceDebugLabel("AudioDebug", ""),
       midiLearnOverlay(midiLearnManager)
@@ -41,9 +51,14 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
         DBG_SEGFAULT("Creating LooperTrack " + juce::String(i));
         tracks.push_back(std::make_unique<LooperTrack>(looperEngine, i, gradioUrlProvider, &midiLearnManager, pannerType));
         DBG_SEGFAULT("Adding LooperTrack " + juce::String(i) + " to view");
-        addAndMakeVisible(tracks[i].get());
+        tracksContainer.addAndMakeVisible(tracks[i].get());
     }
     DBG_SEGFAULT("All tracks created");
+    
+    tracksContainer.setInterceptsMouseClicks(false, true);
+    trackViewport.setViewedComponent(&tracksContainer, false);
+    trackViewport.setScrollBarsShown(false, true);
+    addAndMakeVisible(trackViewport);
     
     // Load MIDI mappings AFTER tracks are created (so parameters are registered)
     auto appDataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
@@ -51,6 +66,8 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     auto midiMappingsFile = appDataDir.getChildFile("midi_mappings_vampnet.xml");
     if (midiMappingsFile.existsAsFile())
         midiLearnManager.loadMappings(midiMappingsFile);
+
+    loadDefaultSessionConfig();
     
     // Set size based on number of tracks
     // VampNet has 3 knobs instead of 2, so slightly wider tracks
@@ -94,6 +111,35 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
                                   .withHeight(20.0f)));
     addAndMakeVisible(titleLabel);
     
+    gitInfo = Shared::GitInfoProvider::query();
+    gitInfoButton.setTooltip("show git info");
+    gitInfoButton.onClick = [this]()
+    {
+        juce::String message;
+        if (gitInfo.isValid())
+        {
+            message << "branch: " << gitInfo.branch << "\n"
+                    << "commit: " << gitInfo.commit << "\n"
+                    << "time: " << gitInfo.timestamp;
+        }
+        else
+        {
+            message = gitInfo.error.isNotEmpty() ? gitInfo.error : "git info unavailable";
+        }
+        
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
+                                               "git info",
+                                               message);
+    };
+    addAndMakeVisible(gitInfoButton);
+    gitInfoButton.setEnabled(gitInfo.isValid());
+
+    saveConfigButton.onClick = [this]() { saveConfigButtonClicked(); };
+    addAndMakeVisible(saveConfigButton);
+
+    loadConfigButton.onClick = [this]() { loadConfigButtonClicked(); };
+    addAndMakeVisible(loadConfigButton);
+    
     // Setup audio device debug label (top right corner)
     audioDeviceDebugLabel.setJustificationType(juce::Justification::topRight);
     audioDeviceDebugLabel.setFont(juce::Font(juce::FontOptions()
@@ -111,6 +157,8 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
 
     // Start timer to update UI
     startTimer(50); // Update every 50ms
+
+    layoutTracks();
 }
 
 MainComponent::~MainComponent()
@@ -139,8 +187,11 @@ void MainComponent::resized()
 {
     auto bounds = getLocalBounds().reduced(10);
 
-    // Title at top
-    titleLabel.setBounds(bounds.removeFromTop(40));
+    // Title + git info button
+    auto titleArea = bounds.removeFromTop(40);
+    auto infoArea = titleArea.removeFromLeft(40);
+    gitInfoButton.setBounds(infoArea.reduced(5));
+    titleLabel.setBounds(titleArea);
     bounds.removeFromTop(10);
 
     // Control buttons
@@ -154,23 +205,15 @@ void MainComponent::resized()
     clickSynthButton.setBounds(controlArea.removeFromLeft(120));
     controlArea.removeFromLeft(10);
     samplerButton.setBounds(controlArea.removeFromLeft(120));
+    controlArea.removeFromLeft(10);
+    saveConfigButton.setBounds(controlArea.removeFromLeft(120));
+    controlArea.removeFromLeft(10);
+    loadConfigButton.setBounds(controlArea.removeFromLeft(120));
     bounds.removeFromTop(10);
 
     // Tracks arranged horizontally with fixed width
-    if (!tracks.empty())
-    {
-        const int fixedTrackWidth = 260;  // Matches constructor
-        const int trackSpacing = 5;
-        
-        for (size_t i = 0; i < tracks.size(); ++i)
-        {
-            tracks[i]->setBounds(bounds.removeFromLeft(fixedTrackWidth));
-            if (i < tracks.size() - 1)
-            {
-                bounds.removeFromLeft(trackSpacing);
-            }
-        }
-    }
+    trackViewport.setBounds(bounds);
+    layoutTracks();
     
     // MIDI learn overlay covers entire window
     midiLearnOverlay.setBounds(getLocalBounds());
@@ -410,3 +453,177 @@ void MainComponent::showMidiSettings()
     );
 }
 
+void MainComponent::saveConfigButtonClicked()
+{
+    SessionConfig config = buildSessionConfig();
+    juce::FileChooser chooser("Save VampNet config", getConfigDirectory(), "*.json");
+    if (!chooser.browseForFileToSave(true))
+        return;
+
+    auto file = chooser.getResult();
+    auto result = config.saveToFile(file);
+    if (result.failed())
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "save failed",
+                                               result.getErrorMessage());
+        return;
+    }
+
+    juce::AlertWindow prompt("config saved",
+                             "Config saved to:\n" + file.getFullPathName(),
+                             juce::AlertWindow::NoIcon);
+    auto* toggle = new juce::ToggleButton("Set as default");
+    prompt.addCustomComponent(toggle);
+    prompt.addButton("done", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    if (prompt.runModalLoop() == 1 && toggle->getToggleState())
+    {
+        config.saveToFile(getDefaultConfigFile());
+    }
+}
+
+void MainComponent::loadConfigButtonClicked()
+{
+    juce::FileChooser chooser("Load VampNet config", getConfigDirectory(), "*.json");
+    if (!chooser.browseForFileToOpen())
+        return;
+
+    auto file = chooser.getResult();
+    SessionConfig config;
+    auto result = SessionConfig::loadFromFile(file, config);
+    if (result.failed())
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "load failed",
+                                               result.getErrorMessage());
+        return;
+    }
+
+    juce::AlertWindow prompt("load config",
+                             "Load this config?\n" + file.getFullPathName(),
+                             juce::AlertWindow::NoIcon);
+    auto* toggle = new juce::ToggleButton("Set as default");
+    prompt.addCustomComponent(toggle);
+    prompt.addButton("load", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    prompt.addButton("cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    if (prompt.runModalLoop() == 1)
+    {
+        applySessionConfig(config, true);
+        if (toggle->getToggleState())
+        {
+            config.saveToFile(getDefaultConfigFile());
+        }
+    }
+}
+
+void MainComponent::loadDefaultSessionConfig()
+{
+    auto defaultFile = getDefaultConfigFile();
+    if (!defaultFile.existsAsFile())
+        return;
+
+    SessionConfig config;
+    auto result = SessionConfig::loadFromFile(defaultFile, config);
+    if (result.wasOk())
+    {
+        applySessionConfig(config, false);
+    }
+    else
+    {
+        juce::Logger::writeToLog("Failed to load default VampNet config: " + result.getErrorMessage());
+    }
+}
+
+SessionConfig MainComponent::buildSessionConfig() const
+{
+    SessionConfig config;
+    config.gradioUrl = getGradioUrl();
+
+    for (const auto& trackPtr : tracks)
+    {
+        if (!trackPtr)
+            continue;
+
+        SessionConfig::TrackState state;
+        state.trackIndex = trackPtr->getTrackIndex();
+        state.knobState = trackPtr->getKnobState();
+        state.vampNetParams = trackPtr->getCustomParams();
+        state.autogenEnabled = trackPtr->isAutogenEnabled();
+        state.useOutputAsInput = trackPtr->isUseOutputAsInputEnabled();
+        state.levelDb = trackPtr->getLevelDb();
+        state.pannerState = trackPtr->getPannerState();
+
+        config.tracks.push_back(state);
+    }
+
+    config.midiMappings = midiLearnManager.getAllMappings();
+    return config;
+}
+
+void MainComponent::applySessionConfig(const SessionConfig& config, bool showErrorsOnFailure)
+{
+    if (config.gradioUrl.isNotEmpty())
+        setGradioUrl(config.gradioUrl);
+
+    for (const auto& trackState : config.tracks)
+    {
+        if (trackState.trackIndex < 0 || trackState.trackIndex >= static_cast<int>(tracks.size()))
+        {
+            if (showErrorsOnFailure)
+            {
+                juce::Logger::writeToLog("Config refers to missing track index " + juce::String(trackState.trackIndex));
+            }
+            continue;
+        }
+
+        auto* track = tracks[trackState.trackIndex].get();
+        if (trackState.knobState.isObject())
+            track->applyKnobState(trackState.knobState);
+
+        if (trackState.vampNetParams.isObject())
+            track->setCustomParams(trackState.vampNetParams);
+
+        track->setAutogenEnabled(trackState.autogenEnabled);
+        track->setUseOutputAsInputEnabled(trackState.useOutputAsInput);
+        track->setLevelDb(trackState.levelDb, juce::sendNotificationSync);
+        track->applyPannerState(trackState.pannerState);
+    }
+
+    if (!config.midiMappings.empty())
+        midiLearnManager.applyMappings(config.midiMappings);
+}
+
+void MainComponent::layoutTracks()
+{
+    const int fixedTrackWidth = 260;
+    const int trackSpacing = 5;
+    const int fixedTrackHeight = 720;
+    
+    int numTracks = static_cast<int>(tracks.size());
+    int contentWidth = numTracks > 0
+        ? (fixedTrackWidth * numTracks) + (trackSpacing * (numTracks - 1))
+        : trackViewport.getWidth();
+    contentWidth = juce::jmax(trackViewport.getWidth(), contentWidth);
+    
+    tracksContainer.setSize(contentWidth, fixedTrackHeight);
+    
+    int x = 0;
+    for (auto& track : tracks)
+    {
+        track->setBounds(x, 0, fixedTrackWidth, fixedTrackHeight);
+        x += fixedTrackWidth + trackSpacing;
+    }
+}
+
+juce::File MainComponent::getConfigDirectory() const
+{
+    auto dir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                   .getChildFile("TapeLooper");
+    dir.createDirectory();
+    return dir;
+}
+
+juce::File MainComponent::getDefaultConfigFile() const
+{
+    return getConfigDirectory().getChildFile("vampnet_default_config.json");
+}

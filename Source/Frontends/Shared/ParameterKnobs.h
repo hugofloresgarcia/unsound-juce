@@ -41,6 +41,21 @@ public:
     // Set slider value by index
     void setKnobValue(int index, double value, juce::NotificationType notification);
 
+    double getKnobValue(const juce::String& parameterId) const;
+    void setKnobValue(const juce::String& parameterId, double value, juce::NotificationType notification);
+
+    juce::Slider* getSliderForParameter(const juce::String& parameterId);
+    int getRequiredHeight(int availableWidth) const;
+
+    // Serialize knob state (parameterId -> value)
+    juce::var getState() const;
+
+    // Restore knob state from serialized object
+    void applyState(const juce::var& state, juce::NotificationType notification);
+
+    // Convenience helpers for config save/load
+    std::vector<juce::String> getParameterIds() const;
+
 private:
     struct KnobControl
     {
@@ -58,6 +73,9 @@ private:
     // MIDI learn support
     MidiLearnManager* midiLearnManager = nullptr;
     juce::String trackIdPrefix;
+
+    KnobControl* findKnobById(const juce::String& parameterId);
+    const KnobControl* findKnobById(const juce::String& parameterId) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ParameterKnobs)
 };

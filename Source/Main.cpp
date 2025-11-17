@@ -475,8 +475,8 @@ public:
             #if JUCE_IOS || JUCE_ANDROID
             setFullScreen(true);
             #else
-            setResizable(false, false); // Fixed window size
-            // Use the content component's size instead of a fixed size
+            setResizable(true, true);
+            setResizeLimits(800, 600, 8192, 4096);
             centreWithSize(mainComponent->getWidth(), mainComponent->getHeight());
             #endif
 
