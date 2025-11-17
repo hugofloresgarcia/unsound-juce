@@ -172,6 +172,9 @@ juce::Point<float> Panner2DComponent::component_to_pan(juce::Point<float> compon
     float x = (component_pos.x - bounds.getX()) / bounds.getWidth();
     float y = (component_pos.y - bounds.getY()) / bounds.getHeight();
     
+    // Invert X axis: 0 = right, 1 = left
+    x = 1.0f - x;
+    
     // Invert Y axis: 0 = bottom, 1 = top
     y = 1.0f - y;
     
@@ -185,6 +188,9 @@ juce::Point<float> Panner2DComponent::pan_to_component(float x, float y) const
     // Clamp pan coordinates
     x = juce::jlimit(0.0f, 1.0f, x);
     y = juce::jlimit(0.0f, 1.0f, y);
+    
+    // Invert X axis: 0 = right, 1 = left
+    x = 1.0f - x;
     
     // Invert Y axis: 0 = bottom, 1 = top
     y = 1.0f - y;

@@ -33,6 +33,10 @@ public:
     void set_pan(float x, float y);
     float get_pan_x() const;
     float get_pan_y() const;
+    
+    // Get current smoothed pan positions (actual values being used for audio)
+    float get_smoothed_pan_x() const { return m_smooth_x.getCurrentValue(); }
+    float get_smoothed_pan_y() const { return m_smooth_y.getCurrentValue(); }
 
 private:
     std::atomic<float> m_pan_x{0.5f}; // Default to center

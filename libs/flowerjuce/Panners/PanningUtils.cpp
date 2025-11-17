@@ -124,12 +124,11 @@ namespace PanningUtils
         // Channels 4-7: second row (left to right)
         // Channels 8-11: third row (left to right)
         // Channels 12-15: top row (left to right)
+
+        // map x and y to the range (0.3) -> 1.0
+        float scaled_x = juce::jmap(x, 0.0f, 1.0f, 0.275f, 1.0f);
+        float scaled_y = juce::jmap(y, 0.0f, 1.0f, 0.275f, 1.0f);
         
-        // Scale input from 0-1 to -0.5 to 1.25 (matching Max/MSP scale 0 1000 -0.5 1.25)
-        // Formula: scaled = (input - 0.0) / (1.0 - 0.0) * (1.25 - (-0.5)) + (-0.5)
-        //         = input * 1.75 - 0.5
-        float scaled_x = x * 1.75f - 0.5f;
-        float scaled_y = y * 1.75f - 0.5f;
         
         // Column offsets (left to right): -0.75, -0.5, -0.25, 0.0
         constexpr float column_offsets[4] = {-0.75f, -0.5f, -0.25f, 0.0f};
@@ -149,7 +148,7 @@ namespace PanningUtils
             float y_osc = std::sin(2.0f * juce::MathConstants<float>::pi * y_phase);
             
             // Apply gain formula: oscillator * 0.5 + 1.0
-            float y_gain = y_osc * 0.5f + 1.0f;
+            float y_gain = (y_osc + 1.0f) * 0.5f;
             
             for (int col = 0; col < 4; ++col)
             {
@@ -162,7 +161,7 @@ namespace PanningUtils
                 float x_osc = std::sin(2.0f * juce::MathConstants<float>::pi * x_phase);
                 
                 // Apply gain formula: oscillator * 0.5 + 1.0
-                float x_gain = x_osc * 0.5f + 1.0f;
+                float x_gain = (x_osc + 1.0f) * 0.5f;
                 
                 // Multiply x and y gains (matching Max/MSP patcher behavior)
                 gains[channel] = x_gain * y_gain;

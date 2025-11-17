@@ -59,7 +59,11 @@ private:
     
     // Channel level meters (peak detection with decay)
     std::array<std::atomic<float>, 16> channelLevels;
-    static constexpr float levelDecayFactor{0.9995f};
+    static constexpr float levelDecayFactor{0.99f}; // Faster decay for better responsiveness
+    
+    // Track channel with maximum gain and channels within 3dB
+    std::atomic<int> maxGainChannel{-1}; // -1 means no channel selected
+    std::array<std::atomic<bool>, 16> channelsWithin3Db; // Track which channels are within 3dB of max
     
     // Debugging counters
     std::atomic<int> callbackCount{0};

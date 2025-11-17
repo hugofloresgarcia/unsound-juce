@@ -26,9 +26,38 @@ MainComponent::MainComponent()
         level.store(0.0f);
     }
     
+    // Initialize max gain channel and within-3dB tracking
+    maxGainChannel.store(-1);
+    for (auto& flag : channelsWithin3Db)
+    {
+        flag.store(false);
+    }
+    
     // Prepare CLEAT panner
     cleatPanner.prepare(44100.0);
     cleatPanner.set_pan(0.5f, 0.5f); // Center position
+    
+    // Compute initial max gain channel and channels within 3dB (center position)
+    auto initialGains = PanningUtils::compute_cleat_gains(0.5f, 0.5f);
+    int maxChannel = -1;
+    float maxGain = 0.0f;
+    for (int i = 0; i < 16; ++i)
+    {
+        if (initialGains[i] > maxGain)
+        {
+            maxGain = initialGains[i];
+            maxChannel = i;
+        }
+    }
+    maxGainChannel.store(maxChannel);
+    
+    // Find channels within 3dB of max
+    float maxGainDb = linearToDb(maxGain);
+    for (int i = 0; i < 16; ++i)
+    {
+        float gainDb = linearToDb(initialGains[i]);
+        channelsWithin3Db[i].store((maxGainDb - gainDb) <= 3.0f);
+    }
     
     DBG("[CLEATPinkNoiseTest] MainComponent constructor - panner prepared, pan set to (0.5, 0.5)");
     
@@ -131,13 +160,30 @@ void MainComponent::paint(juce::Graphics& g)
 
 void MainComponent::drawChannelMeter(juce::Graphics& g, juce::Rectangle<int> area, int channel, float level)
 {
+    // Check if this is the max gain channel or within 3dB
+    bool isMaxChannel = (maxGainChannel.load() == channel);
+    bool isWithin3Db = channelsWithin3Db[channel].load();
+    
     // Background
     g.setColour(juce::Colours::darkgrey);
     g.fillRoundedRectangle(area.toFloat(), 3.0f);
     
-    // Border
-    g.setColour(juce::Colours::grey);
-    g.drawRoundedRectangle(area.toFloat(), 3.0f, 1.0f);
+    // Border - highlight max channel with cyan, within-3dB with yellow
+    if (isMaxChannel)
+    {
+        g.setColour(juce::Colours::cyan);
+        g.drawRoundedRectangle(area.toFloat(), 3.0f, 3.0f); // Thicker border for highlight
+    }
+    else if (isWithin3Db)
+    {
+        g.setColour(juce::Colours::yellow);
+        g.drawRoundedRectangle(area.toFloat(), 3.0f, 2.0f); // Medium border for within-3dB
+    }
+    else
+    {
+        g.setColour(juce::Colours::grey);
+        g.drawRoundedRectangle(area.toFloat(), 3.0f, 1.0f);
+    }
     
     // Level bar (vertical, bottom to top)
     if (level > 0.001f)
@@ -163,9 +209,22 @@ void MainComponent::drawChannelMeter(juce::Graphics& g, juce::Rectangle<int> are
         g.fillRoundedRectangle(levelRect, 2.0f);
     }
     
-    // Channel number label
-    g.setColour(juce::Colours::white);
-    g.setFont(juce::Font(10.0f));
+    // Channel number label - highlight max channel and within-3dB channels
+    if (isMaxChannel)
+    {
+        g.setColour(juce::Colours::cyan);
+        g.setFont(juce::Font(10.0f, juce::Font::bold));
+    }
+    else if (isWithin3Db)
+    {
+        g.setColour(juce::Colours::yellow);
+        g.setFont(juce::Font(10.0f, juce::Font::bold));
+    }
+    else
+    {
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::Font(10.0f));
+    }
     g.drawText(juce::String(channel), area, juce::Justification::centredTop);
     
     // Level value in dB
@@ -241,10 +300,32 @@ void MainComponent::timerCallback()
     static int timerCallCount = 0;
     timerCallCount++;
     
-    // Update pan label
-    float panX = cleatPanner.get_pan_x();
-    float panY = cleatPanner.get_pan_y();
+    // Update pan label (show smoothed values, which are what's actually being used)
+    float panX = cleatPanner.get_smoothed_pan_x();
+    float panY = cleatPanner.get_smoothed_pan_y();
     panLabel.setText("Pan: " + juce::String(panX, 2) + ", " + juce::String(panY, 2), juce::dontSendNotification);
+    
+    // Update max gain channel and channels within 3dB based on current smoothed pan position
+    auto gains = PanningUtils::compute_cleat_gains(panX, panY);
+    int maxChannel = -1;
+    float maxGain = 0.0f;
+    for (int i = 0; i < 16; ++i)
+    {
+        if (gains[i] > maxGain)
+        {
+            maxGain = gains[i];
+            maxChannel = i;
+        }
+    }
+    maxGainChannel.store(maxChannel);
+    
+    // Find channels within 3dB of max
+    float maxGainDb = linearToDb(maxGain);
+    for (int i = 0; i < 16; ++i)
+    {
+        float gainDb = linearToDb(gains[i]);
+        channelsWithin3Db[i].store((maxGainDb - gainDb) <= 3.0f);
+    }
     
     // Update level label
     levelLabel.setText("Level: " + juce::String(outputLevelDb, 1) + " dB", juce::dontSendNotification);
@@ -448,13 +529,33 @@ void MainComponent::panPositionChanged(float x, float y)
     // Get and log current gains for debugging
     auto gains = PanningUtils::compute_cleat_gains(x, y);
     DBG("[CLEATPinkNoiseTest] Computed gains:");
+    
+    // Find max gain channel
+    int maxChannel = -1;
+    float maxGain = 0.0f;
     for (int i = 0; i < 16; ++i)
     {
         if (gains[i] > 0.001f)
         {
             DBG("  Channel " << i << ": " << gains[i] << " (" << linearToDb(gains[i]) << " dB)");
         }
+        if (gains[i] > maxGain)
+        {
+            maxGain = gains[i];
+            maxChannel = i;
+        }
     }
+    maxGainChannel.store(maxChannel);
+    
+    // Find channels within 3dB of max
+    float maxGainDb = linearToDb(maxGain);
+    for (int i = 0; i < 16; ++i)
+    {
+        float gainDb = linearToDb(gains[i]);
+        channelsWithin3Db[i].store((maxGainDb - gainDb) <= 3.0f);
+    }
+    
+    DBG("[CLEATPinkNoiseTest] Max gain channel: " << maxChannel << " (gain: " << maxGain << ", " << maxGainDb << " dB)");
 }
 
 float MainComponent::dbToLinear(float db)

@@ -32,6 +32,16 @@ target_sources(flowerjuce PRIVATE
     DSP/OnsetDetector.h
 )
 
+# Utils source files
+target_sources(flowerjuce PRIVATE
+    Utils/Utils.cpp
+)
+
+# Utils headers
+target_sources(flowerjuce PRIVATE
+    Utils/Utils.h
+)
+
 # GradioClient source files
 target_sources(flowerjuce PRIVATE
     GradioClient/GradioClient.cpp
