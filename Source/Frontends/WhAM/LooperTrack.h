@@ -17,17 +17,13 @@
 #include "../../Panners/QuadPanner.h"
 #include "../../Panners/CLEATPanner.h"
 #include "../../Panners/Panner2DComponent.h"
+#include "ModelParamsPopup.h"
 #include <memory>
 #include <functional>
 #include <utility>
 #include <map>
 #include <vector>
 #include <cmath>
-
-namespace Shared
-{
-    class ModelParameterDialog;
-}
 
 namespace WhAM
 {
@@ -101,13 +97,7 @@ private:
 class LooperTrack : public juce::Component, public juce::Timer
 {
 public:
-    LooperTrack(VampNetMultiTrackLooperEngine& engine,
-                int trackIndex,
-                std::function<juce::String()> gradioUrlProvider,
-                Shared::MidiLearnManager* midiManager = nullptr,
-                const juce::String& pannerType = "Stereo",
-                juce::var* sharedModelParams = nullptr,
-                bool showModelParameterControls = true);
+    LooperTrack(VampNetMultiTrackLooperEngine& engine, int trackIndex, std::function<juce::String()> gradioUrlProvider, Shared::MidiLearnManager* midiManager = nullptr, const juce::String& pannerType = "Stereo");
     ~LooperTrack() override;
 
     void paint(juce::Graphics& g) override;
@@ -121,7 +111,7 @@ public:
     juce::var getKnobState() const;
     void applyKnobState(const juce::var& state, juce::NotificationType notification = juce::sendNotificationSync);
 
-    juce::var getCustomParams() const { return sharedModelParams != nullptr ? *sharedModelParams : juce::var(); }
+    juce::var getCustomParams() const { return customVampNetParams; }
     void setCustomParams(const juce::var& params, juce::NotificationType notification = juce::dontSendNotification);
 
     bool isAutogenEnabled() const { return autogenToggle.getToggleState(); }
@@ -143,7 +133,7 @@ public:
     void updateChannelSelectors();
     
     // Public static method to get default parameters
-    static juce::var createDefaultVampNetParams();
+    static juce::var getDefaultVampNetParams();
     
     // Check if generation is currently in progress
     bool isGenerating() const;
@@ -183,14 +173,12 @@ private:
     std::function<juce::String()> gradioUrlProvider;
     
     // Custom VampNet parameters (excluding periodic prompt which is in UI)
-    juce::var ownedModelParams;
-    juce::var* sharedModelParams = nullptr;
+    juce::var customVampNetParams;
     std::map<juce::String, juce::String> vampParamToKnobId;
     std::vector<juce::String> modelChoiceOptions;
     juce::String modelChoiceKnobId;
     
-    // Parameter configuration dialog
-    std::unique_ptr<Shared::ModelParameterDialog> parameterDialog;
+    std::unique_ptr<ModelParamsPopup> modelParamsPopup;
     
     void applyLookAndFeel();
 
@@ -228,7 +216,11 @@ private:
     std::unique_ptr<Shared::MidiLearnable> resetButtonLearnable;
     std::unique_ptr<Shared::MidiLearnMouseListener> resetButtonMouseListener;
     juce::String trackIdPrefix;
-    bool showModelParameterControls = true;
+
+    Shared::ParameterKnobs* getModelParameterKnobComponent();
+    const Shared::ParameterKnobs* getModelParameterKnobComponent() const;
+    void showModelParamsPopup();
+    void hideModelParamsPopup();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LooperTrack)
 };

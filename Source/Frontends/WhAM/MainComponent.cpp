@@ -24,12 +24,13 @@ using namespace WhAM;
 
 MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     : syncButton("sync all"),
-      gradioSettingsButton("gradio settings"),
-      midiSettingsButton("midi settings"),
+      gradioSettingsButton("gradio"),
+      midiSettingsButton("midi"),
       clickSynthButton("click synth"),
       samplerButton("sampler"),
       vizButton("viz"),
       overflowButton("..."),
+      gitInfoButton("(i)"),
       titleLabel("Title", "tape looper - wham"),
       audioDeviceDebugLabel("AudioDebug", ""),
       midiLearnOverlay(midiLearnManager)
@@ -47,19 +48,11 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     DBG_SEGFAULT("Creating tracks, numTracks=" + juce::String(numTracks));
     int actualNumTracks = juce::jmin(numTracks, looperEngine.getNumTracks());
     DBG_SEGFAULT("actualNumTracks=" + juce::String(actualNumTracks) + " (limited by engine max=" + juce::String(looperEngine.getNumTracks()) + ")");
-    sharedModelParams = LooperTrack::createDefaultVampNetParams();
     std::function<juce::String()> gradioUrlProvider = [this]() { return getGradioUrl(); };
     for (int i = 0; i < actualNumTracks; ++i)
     {
         DBG_SEGFAULT("Creating LooperTrack " + juce::String(i));
-        bool showModelParameterControls = (i == 0);
-        tracks.push_back(std::make_unique<LooperTrack>(looperEngine,
-                                                       i,
-                                                       gradioUrlProvider,
-                                                       &midiLearnManager,
-                                                       pannerType,
-                                                       &sharedModelParams,
-                                                       showModelParameterControls));
+        tracks.push_back(std::make_unique<LooperTrack>(looperEngine, i, gradioUrlProvider, &midiLearnManager, pannerType));
         DBG_SEGFAULT("Adding LooperTrack " + juce::String(i) + " to container");
         tracksContainer.addAndMakeVisible(tracks[i].get());
     }
@@ -102,7 +95,6 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     addAndMakeVisible(titleLabel);
     
     gitInfo = Shared::GitInfoProvider::query();
-    gitInfoButton.setButtonText("(i)");
     gitInfoButton.setTooltip("show git info");
     gitInfoButton.onClick = [this]()
     {
@@ -227,11 +219,11 @@ void MainComponent::resized()
 
     std::vector<ButtonInfo> buttons = {
         {&syncButton, 120},
-        {&gradioSettingsButton, 180},
-        {&midiSettingsButton, 120},
+        {&gradioSettingsButton, 100},
+        {&midiSettingsButton, 80},
         {&clickSynthButton, 120},
         {&samplerButton, 120},
-        {&vizButton, 120},
+        {&vizButton, 70},
         {&saveConfigButton, 130},
         {&loadConfigButton, 130}
     };
@@ -665,8 +657,8 @@ void MainComponent::showOverflowMenu()
     
     std::vector<ButtonMenuItem> allButtons = {
         {&syncButton, "sync all", 1},
-        {&gradioSettingsButton, "gradio settings", 2},
-        {&midiSettingsButton, "midi settings", 3},
+        {&gradioSettingsButton, "gradio", 2},
+        {&midiSettingsButton, "midi", 3},
         {&clickSynthButton, "click synth", 4},
         {&samplerButton, "sampler", 5},
         {&vizButton, "viz", 6},
@@ -688,7 +680,7 @@ void MainComponent::showOverflowMenu()
     // Calculate visible button count (same logic as resized())
     int visibleButtonCount = 0;
     int usedWidth = 0;
-    std::vector<int> buttonWidths = {120, 180, 120, 120, 120, 120, 130, 130};
+    std::vector<int> buttonWidths = {120, 100, 80, 120, 120, 70, 130, 130};
     
     // First pass: how many fit without overflow
     for (size_t i = 0; i < buttonWidths.size(); ++i)

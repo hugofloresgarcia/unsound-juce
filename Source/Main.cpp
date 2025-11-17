@@ -23,7 +23,7 @@ public:
     {
         // Show startup dialog before creating main window
         int numTracks = 8; // Default value, will be updated from dialog
-        juce::String selectedFrontend = "basic"; // Default frontend
+        juce::String selectedFrontend = "WhAM"; // Default frontend
         juce::String selectedPanner = "Stereo"; // Default panner
         juce::AudioDeviceManager::AudioDeviceSetup deviceSetup;
         

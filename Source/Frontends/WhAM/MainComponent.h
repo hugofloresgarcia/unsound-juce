@@ -45,7 +45,6 @@ private:
     std::vector<std::unique_ptr<WhAM::LooperTrack>> tracks;
     juce::Viewport trackViewport;
     juce::Component tracksContainer;
-    juce::var sharedModelParams;
     
     // Track selection and recording state
     int activeTrackIndex = 0;  // Currently selected track (0-7)

@@ -21,7 +21,7 @@ using namespace Basic;
 
 MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     : syncButton("sync all"),
-      midiSettingsButton("midi settings"),
+      midiSettingsButton("midi"),
       titleLabel("Title", "tape looper"),
       audioDeviceDebugLabel("AudioDebug", ""),
       midiLearnOverlay(midiLearnManager)

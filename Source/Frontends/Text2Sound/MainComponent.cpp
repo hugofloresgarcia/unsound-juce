@@ -21,8 +21,8 @@ using namespace Text2Sound;
 
 MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     : syncButton("sync all"),
-      gradioSettingsButton("gradio settings"),
-      midiSettingsButton("midi settings"),
+      gradioSettingsButton("gradio"),
+      midiSettingsButton("midi"),
       titleLabel("Title", "tape looper"),
       audioDeviceDebugLabel("AudioDebug", ""),
       midiLearnOverlay(midiLearnManager)

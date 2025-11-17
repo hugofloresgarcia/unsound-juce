@@ -21,8 +21,8 @@ using namespace VampNet;
 
 MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     : syncButton("sync all"),
-      gradioSettingsButton("gradio settings"),
-      midiSettingsButton("midi settings"),
+      gradioSettingsButton("gradio"),
+      midiSettingsButton("midi"),
       clickSynthButton("click synth"),
       samplerButton("sampler"),
       saveConfigButton("save config"),

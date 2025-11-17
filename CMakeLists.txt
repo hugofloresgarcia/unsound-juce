@@ -157,6 +157,7 @@ target_sources(TapeLooper PRIVATE
     Source/Frontends/WhAM/Sampler.cpp
     Source/Frontends/WhAM/SessionConfig.cpp
     Source/Frontends/WhAM/TokenVisualizer.cpp
+    Source/Frontends/WhAM/ModelParamsPopup.cpp
 )
 
 # WhAM frontend headers
@@ -167,6 +168,7 @@ target_sources(TapeLooper PRIVATE
     Source/Frontends/WhAM/Sampler.h
     Source/Frontends/WhAM/SessionConfig.h
     Source/Frontends/WhAM/TokenVisualizer.h
+    Source/Frontends/WhAM/ModelParamsPopup.h
 )
 
 # Application source files

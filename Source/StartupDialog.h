@@ -26,7 +26,7 @@ public:
 private:
     juce::AudioDeviceManager& audioDeviceManager;
     int numTracks{8};
-    juce::String selectedFrontend{"Basic"};
+    juce::String selectedFrontend{"WhAM"};
     juce::String selectedPanner{"Stereo"};
     bool okClicked{false};
     

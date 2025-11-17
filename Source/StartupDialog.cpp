@@ -29,11 +29,12 @@ StartupDialog::StartupDialog(juce::AudioDeviceManager& deviceManager)
     addAndMakeVisible(numTracksLabel);
     
     // Setup frontend selector
-    frontendCombo.addItem("basic", 1);
-    frontendCombo.addItem("text2sound", 2);
-    frontendCombo.addItem("vampnet", 3);
-    frontendCombo.addItem("wham", 4);
-    frontendCombo.setSelectedId(1); // Default to "basic"
+    frontendCombo.addItem("Basic", 1);
+    frontendCombo.addItem("Text2Sound", 2);
+    frontendCombo.addItem("VampNet", 3);
+    frontendCombo.addItem("WhAM", 4);
+    frontendCombo.setSelectedId(4); // Default to "WhAM"
+    selectedFrontend = frontendCombo.getText();
     frontendCombo.onChange = [this]
     {
         selectedFrontend = frontendCombo.getText();
@@ -55,6 +56,14 @@ StartupDialog::StartupDialog(juce::AudioDeviceManager& deviceManager)
     
     // Setup audio device selector
     addAndMakeVisible(audioDeviceSelector);
+
+    // Auto-select MIDI input if only one is available
+    auto midiInputs = juce::MidiInput::getAvailableDevices();
+    if (midiInputs.size() == 1)
+    {
+        const auto& device = midiInputs.getReference(0);
+        audioDeviceManager.setMidiInputDeviceEnabled(device.identifier, true);
+    }
     
     // Setup OK button
     okButton.addListener(this);
