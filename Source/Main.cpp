@@ -44,8 +44,8 @@ public:
             dialogOptions.dialogBackgroundColour = juce::Colours::black;
             dialogOptions.escapeKeyTriggersCloseButton = false;
             dialogOptions.useNativeTitleBar = false;
-            dialogOptions.resizable = false;
-            
+            dialogOptions.resizable = true;
+
             #if JUCE_MODAL_LOOPS_PERMITTED
             dialogOptions.componentToCentreAround = juce::TopLevelWindow::getActiveTopLevelWindow();
             juce::Process::makeForegroundProcess();

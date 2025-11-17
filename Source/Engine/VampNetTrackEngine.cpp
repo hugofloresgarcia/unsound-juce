@@ -234,7 +234,7 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
     {
         float inputLevel = 0.0f;
         float maxInput = 0.0f;
-        if (inputChannelData[0] != nullptr && numInputChannels > 0 && numSamples > 0)
+        if (numInputChannels > 0 && numSamples > 0 && inputChannelData != nullptr && inputChannelData[0] != nullptr)
         {
             inputLevel = std::abs(inputChannelData[0][0]);
             for (int s = 0; s < numSamples && s < 100; ++s)
