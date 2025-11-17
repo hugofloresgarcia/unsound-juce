@@ -327,9 +327,7 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     {
         configureParamsButton.setToggleState(false, juce::dontSendNotification);
     };
-    modelParamsPopup->setVisible(false);
-    addChildComponent(modelParamsPopup.get());
-    
+
     // Setup track label
     trackLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(trackLabel);
@@ -718,9 +716,6 @@ void LooperTrack::resized()
     
     // Remaining area is waveform
     waveformDisplay.setBounds(remainingArea);
-
-    if (modelParamsPopup != nullptr)
-        modelParamsPopup->setBounds(getLocalBounds());
 }
 
 void LooperTrack::recordEnableButtonToggled(bool enabled)
@@ -1084,16 +1079,9 @@ void LooperTrack::showModelParamsPopup()
         return;
 
     syncCustomParamsToKnobs();
-    modelParamsPopup->setBounds(getLocalBounds());
-    modelParamsPopup->toFront(false);
-    modelParamsPopup->show(configureParamsButton.getBounds());
-    // Force layout update - this will also resize the ParameterKnobs component
-    modelParamsPopup->resized();
-    // Also explicitly resize the ParameterKnobs component to ensure knobs are laid out
-    if (auto* knobs = getModelParameterKnobComponent())
-    {
-        knobs->resized();
-    }
+
+    auto anchor = configureParamsButton.getScreenBounds();
+    modelParamsPopup->show(anchor);
     configureParamsButton.setToggleState(true, juce::dontSendNotification);
 }
 

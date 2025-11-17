@@ -5,45 +5,131 @@ namespace WhAM
 
 namespace
 {
-constexpr int kPanelMaxWidth = 520;
-constexpr int kPanelMaxHeight = 420;
 constexpr int kPanelPadding = 20;
+constexpr int kHeaderHeight = 60;
+constexpr int kMinWidth = 500;
+constexpr int kMinHeight = 350;
 } // namespace
 
-ModelParamsPopup::ModelParamsPopup(Shared::MidiLearnManager* midiManager, const juce::String& trackPrefix)
-    : parameterKnobs(midiManager, trackPrefix)
+//==============================================================================
+// ContentComponent - holds the actual controls shown inside the window
+class ModelParamsPopup::ContentComponent : public juce::Component
 {
-    setInterceptsMouseClicks(true, true);
-    setVisible(false);
+public:
+    ContentComponent(Shared::MidiLearnManager* midiManager,
+                     const juce::String& trackPrefix,
+                     std::function<void()> onCloseClickedIn)
+        : parameterKnobs(midiManager, trackPrefix),
+          onCloseClicked(std::move(onCloseClickedIn))
+    {
+        titleLabel.setText("Model parameters", juce::dontSendNotification);
+        titleLabel.setJustificationType(juce::Justification::centredLeft);
+        titleLabel.setFont(juce::FontOptions(16.0f, juce::Font::bold));
+        addAndMakeVisible(titleLabel);
 
-    addAndMakeVisible(panel);
-    panel.addAndMakeVisible(parameterKnobs);
+        subtitleLabel.setText("These knobs feed VampNet's advanced controls.", juce::dontSendNotification);
+        subtitleLabel.setJustificationType(juce::Justification::centredLeft);
+        subtitleLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+        addAndMakeVisible(subtitleLabel);
 
-    titleLabel.setText("Model parameters", juce::dontSendNotification);
-    titleLabel.setJustificationType(juce::Justification::centredLeft);
-    titleLabel.setFont(juce::FontOptions(16.0f, juce::Font::bold));
-    panel.addAndMakeVisible(titleLabel);
+        closeButton.setButtonText("close");
+        closeButton.onClick = [this]()
+        {
+            if (onCloseClicked)
+                onCloseClicked();
+        };
+        addAndMakeVisible(closeButton);
 
-    subtitleLabel.setText("These knobs feed VampNet's advanced controls.", juce::dontSendNotification);
-    subtitleLabel.setJustificationType(juce::Justification::centredLeft);
-    subtitleLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
-    panel.addAndMakeVisible(subtitleLabel);
+        addAndMakeVisible(parameterKnobs);
+    }
 
-    closeButton.setButtonText("close");
-    closeButton.onClick = [this]()
+    Shared::ParameterKnobs& getKnobs() noexcept               { return parameterKnobs; }
+    const Shared::ParameterKnobs& getKnobs() const noexcept   { return parameterKnobs; }
+
+    void paint(juce::Graphics& g) override
+    {
+        g.fillAll(juce::Colours::black);
+    }
+
+    void resized() override
+    {
+        auto bounds = getLocalBounds().reduced(kPanelPadding);
+
+        auto headerArea = bounds.removeFromTop(kHeaderHeight);
+        closeButton.setBounds(headerArea.removeFromRight(80));
+        headerArea.removeFromRight(10);
+        titleLabel.setBounds(headerArea.removeFromTop(24));
+        subtitleLabel.setBounds(headerArea.removeFromTop(20));
+        bounds.removeFromTop(10);
+
+        parameterKnobs.setBounds(bounds);
+    }
+
+private:
+    Shared::ParameterKnobs parameterKnobs;
+    juce::Label titleLabel;
+    juce::Label subtitleLabel;
+    juce::TextButton closeButton;
+    std::function<void()> onCloseClicked;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ContentComponent)
+};
+
+//==============================================================================
+// ModelParamsPopup
+ModelParamsPopup::ModelParamsPopup(Shared::MidiLearnManager* midiManager,
+                                   const juce::String& trackPrefix)
+    : juce::DialogWindow("Model parameters",
+                         juce::Colours::darkgrey,
+                         true)
+{
+    contentComponent = new ContentComponent(midiManager, trackPrefix, [this]()
     {
         dismiss();
-    };
-    panel.addAndMakeVisible(closeButton);
+    });
+
+    setContentOwned(contentComponent, true);
+    setUsingNativeTitleBar(true);
+    setResizable(true, true);
+
+    auto displays = juce::Desktop::getInstance().getDisplays();
+    if (auto* mainDisplay = displays.getPrimaryDisplay())
+    {
+        auto screenArea = mainDisplay->userArea;
+        const int windowWidth  = juce::jlimit(kMinWidth,  screenArea.getWidth(),  screenArea.getWidth()  * 3 / 5);
+        const int windowHeight = juce::jlimit(kMinHeight, screenArea.getHeight(), screenArea.getHeight() * 3 / 5);
+
+        centreWithSize(windowWidth, windowHeight);
+        setResizeLimits(kMinWidth, kMinHeight, screenArea.getWidth(), screenArea.getHeight());
+    }
+    else
+    {
+        centreWithSize(700, 500);
+        setResizeLimits(kMinWidth, kMinHeight, 3840, 2160);
+    }
+
+    setVisible(false);
+}
+
+ModelParamsPopup::~ModelParamsPopup() = default;
+
+Shared::ParameterKnobs& ModelParamsPopup::getKnobs()
+{
+    jassert(contentComponent != nullptr);
+    return contentComponent->getKnobs();
+}
+
+const Shared::ParameterKnobs& ModelParamsPopup::getKnobs() const
+{
+    jassert(contentComponent != nullptr);
+    return contentComponent->getKnobs();
 }
 
 void ModelParamsPopup::show(const juce::Rectangle<int>& anchorArea)
 {
-    anchorBounds = anchorArea;
+    positionRelativeTo(anchorArea);
     setVisible(true);
-    toFront(false);
-    updatePanelBounds();
-    resized(); // Ensure layout is updated when shown
+    toFront(true);
 }
 
 void ModelParamsPopup::dismiss()
@@ -57,66 +143,35 @@ void ModelParamsPopup::dismiss()
         onDismissed();
 }
 
-void ModelParamsPopup::paint(juce::Graphics& g)
+void ModelParamsPopup::closeButtonPressed()
 {
-    if (!isVisible())
-        return;
-
-    g.setColour(juce::Colours::black.withAlpha(0.45f));
-    g.fillRect(getLocalBounds());
+    dismiss();
 }
 
-void ModelParamsPopup::PanelComponent::paint(juce::Graphics& g)
+void ModelParamsPopup::positionRelativeTo(const juce::Rectangle<int>& anchorArea)
 {
-    auto bounds = getLocalBounds().toFloat();
-    juce::DropShadow shadow(juce::Colours::black.withAlpha(0.5f), 12, {});
-    shadow.drawForRectangle(g, getLocalBounds());
-
-    g.setColour(juce::Colours::darkgrey.withBrightness(0.18f));
-    g.fillRoundedRectangle(bounds.reduced(6.0f), 12.0f);
-
-    g.setColour(juce::Colours::white.withAlpha(0.15f));
-    g.drawRoundedRectangle(bounds.reduced(6.5f), 12.0f, 1.5f);
-}
-
-void ModelParamsPopup::resized()
-{
-    panel.setBounds({});
-    updatePanelBounds();
-
-    auto panelBounds = panel.getLocalBounds().reduced(kPanelPadding);
-    auto headerArea = panelBounds.removeFromTop(50);
-    closeButton.setBounds(headerArea.removeFromRight(80));
-    headerArea.removeFromRight(10);
-    titleLabel.setBounds(headerArea.removeFromTop(24));
-    subtitleLabel.setBounds(headerArea.removeFromTop(20));
-    panelBounds.removeFromTop(10);
-
-    parameterKnobs.setBounds(panelBounds);
-}
-
-void ModelParamsPopup::mouseUp(const juce::MouseEvent& event)
-{
-    if (isVisible() && !panel.getBounds().contains(event.getPosition()))
-        dismiss();
-}
-
-void ModelParamsPopup::updatePanelBounds()
-{
-    auto bounds = getLocalBounds().reduced(kPanelPadding);
-    if (bounds.isEmpty())
+    auto displays = juce::Desktop::getInstance().getDisplays();
+    if (auto* mainDisplay = displays.getPrimaryDisplay())
     {
-        panel.setBounds({});
-        return;
+        auto screenArea = mainDisplay->userArea;
+
+        auto bounds = getBounds();
+        if (bounds.isEmpty())
+            bounds.setSize(kMinWidth, kMinHeight);
+
+        if (!anchorArea.isEmpty())
+            bounds.setCentre(anchorArea.getCentre());
+        else
+            bounds.setCentre(screenArea.getCentre());
+
+        bounds = bounds.constrainedWithin(screenArea);
+        setBounds(bounds);
     }
-
-    auto desired = juce::Rectangle<int>(
-        juce::jmin(bounds.getWidth(), kPanelMaxWidth),
-        juce::jmin(bounds.getHeight(), kPanelMaxHeight));
-
-    desired.setCentre(anchorBounds.isEmpty() ? bounds.getCentre() : anchorBounds.getCentre());
-    desired = desired.constrainedWithin(bounds);
-    panel.setBounds(desired);
+    else
+    {
+        if (getWidth() == 0 || getHeight() == 0)
+            centreWithSize(kMinWidth, kMinHeight);
+    }
 }
 
 } // namespace WhAM

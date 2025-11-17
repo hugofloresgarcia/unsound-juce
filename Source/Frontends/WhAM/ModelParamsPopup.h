@@ -6,13 +6,14 @@
 namespace WhAM
 {
 
-class ModelParamsPopup : public juce::Component
+class ModelParamsPopup : public juce::DialogWindow
 {
 public:
     ModelParamsPopup(Shared::MidiLearnManager* midiManager, const juce::String& trackPrefix);
+    ~ModelParamsPopup() override;
 
-    Shared::ParameterKnobs& getKnobs() { return parameterKnobs; }
-    const Shared::ParameterKnobs& getKnobs() const { return parameterKnobs; }
+    Shared::ParameterKnobs& getKnobs();
+    const Shared::ParameterKnobs& getKnobs() const;
 
     void show(const juce::Rectangle<int>& anchorArea);
     void dismiss();
@@ -20,25 +21,14 @@ public:
 
     std::function<void()> onDismissed;
 
-    void paint(juce::Graphics& g) override;
-    void resized() override;
-    void mouseUp(const juce::MouseEvent& event) override;
+    void closeButtonPressed() override;
 
 private:
-    class PanelComponent : public juce::Component
-    {
-    public:
-        void paint(juce::Graphics& g) override;
-    };
+    class ContentComponent;
 
-    PanelComponent panel;
-    Shared::ParameterKnobs parameterKnobs;
-    juce::Label titleLabel;
-    juce::Label subtitleLabel;
-    juce::TextButton closeButton;
-    juce::Rectangle<int> anchorBounds;
+    ContentComponent* contentComponent = nullptr;
 
-    void updatePanelBounds();
+    void positionRelativeTo(const juce::Rectangle<int>& anchorArea);
 };
 
 } // namespace WhAM
