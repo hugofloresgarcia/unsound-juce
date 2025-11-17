@@ -1,5 +1,7 @@
 #include "MainComponent.h"
 #include "../Shared/ModelParameterDialog.h"
+#include "../Shared/SettingsDialog.h"
+#include "../Shared/ConfigManager.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <functional>
 
@@ -18,6 +20,7 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
       gradioSettingsButton("gradio settings"),
       midiSettingsButton("midi settings"),
       modelParamsButton("model params"),
+      settingsButton("settings"),
       titleLabel("Title", "tape looper"),
       audioDeviceDebugLabel("AudioDebug", ""),
       midiLearnOverlay(midiLearnManager),
@@ -43,6 +46,8 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
         tracks.push_back(std::make_unique<LooperTrack>(looperEngine, i, gradioUrlProvider, &midiLearnManager, pannerType));
         // Initialize track with shared model params
         tracks[i]->updateModelParams(sharedModelParams);
+        // Initialize track with current smoothing time
+        tracks[i]->setPannerSmoothingTime(pannerSmoothingTime);
         DBG_SEGFAULT("Adding LooperTrack " + juce::String(i) + " to view");
         addAndMakeVisible(tracks[i].get());
     }
@@ -54,6 +59,14 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     auto midiMappingsFile = appDataDir.getChildFile("midi_mappings_text2sound.xml");
     if (midiMappingsFile.existsAsFile())
         midiLearnManager.loadMappings(midiMappingsFile);
+    
+    // Load Gradio URL from config
+    juce::String savedGradioUrl = Shared::ConfigManager::loadStringValue("text2sound", "gradioUrl", gradioUrl);
+    if (savedGradioUrl.isNotEmpty())
+    {
+        gradioUrl = savedGradioUrl;
+        DBG("MainComponent: Loaded Gradio URL from config: " + gradioUrl);
+    }
     
     // Set size based on number of tracks
     // Each track has a fixed width, and window adjusts to fit all tracks
@@ -85,6 +98,24 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     // Setup model params button
     modelParamsButton.onClick = [this] { modelParamsButtonClicked(); };
     addAndMakeVisible(modelParamsButton);
+    
+    // Setup settings button
+    settingsButton.onClick = [this] { settingsButtonClicked(); };
+    addAndMakeVisible(settingsButton);
+    
+    // Create settings dialog
+    settingsDialog = std::make_unique<Shared::SettingsDialog>(
+        pannerSmoothingTime,
+        [this](double smoothingTime) {
+            pannerSmoothingTime = smoothingTime;
+            DBG("MainComponent: Panner smoothing time updated to " + juce::String(smoothingTime) + " seconds");
+            // Apply smoothing to all panner components
+            for (auto& track : tracks)
+            {
+                track->setPannerSmoothingTime(smoothingTime);
+            }
+        }
+    );
     
     // Create model params dialog
     modelParamsDialog = std::make_unique<Shared::ModelParameterDialog>(
@@ -139,6 +170,10 @@ MainComponent::~MainComponent()
     auto midiMappingsFile = appDataDir.getChildFile("midi_mappings_text2sound.xml");
     midiLearnManager.saveMappings(midiMappingsFile);
     
+    // Save Gradio URL to config
+    Shared::ConfigManager::saveStringValue("text2sound", "gradioUrl", gradioUrl);
+    DBG("MainComponent: Saved Gradio URL to config: " + gradioUrl);
+    
     setLookAndFeel(nullptr);
 }
 
@@ -164,6 +199,8 @@ void MainComponent::resized()
     midiSettingsButton.setBounds(controlArea.removeFromLeft(120));
     controlArea.removeFromLeft(10);
     modelParamsButton.setBounds(controlArea.removeFromLeft(120));
+    controlArea.removeFromLeft(10);
+    settingsButton.setBounds(controlArea.removeFromLeft(120));
     bounds.removeFromTop(10);
 
     // Tracks arranged horizontally (columns) with fixed width
@@ -268,6 +305,10 @@ void MainComponent::showGradioSettings()
             newUrl += "/";
 
         setGradioUrl(newUrl);
+        
+        // Save to config immediately when changed
+        Shared::ConfigManager::saveStringValue("text2sound", "gradioUrl", newUrl);
+        DBG("MainComponent: Saved Gradio URL to config: " + newUrl);
     }
 }
 
@@ -275,6 +316,7 @@ void MainComponent::setGradioUrl(const juce::String& newUrl)
 {
     const juce::ScopedLock lock(gradioSettingsLock);
     gradioUrl = newUrl;
+    // Note: Saving to config is handled in showGradioSettings() after validation
 }
 
 juce::String MainComponent::getGradioUrl() const
@@ -323,5 +365,23 @@ void MainComponent::showModelParams()
         // Show the dialog (non-modal)
         modelParamsDialog->setVisible(true);
         modelParamsDialog->toFront(true);
+    }
+}
+
+void MainComponent::settingsButtonClicked()
+{
+    showSettings();
+}
+
+void MainComponent::showSettings()
+{
+    if (settingsDialog != nullptr)
+    {
+        // Update the dialog with current smoothing time
+        settingsDialog->updateSmoothingTime(pannerSmoothingTime);
+        
+        // Show the dialog (non-modal)
+        settingsDialog->setVisible(true);
+        settingsDialog->toFront(true);
     }
 }

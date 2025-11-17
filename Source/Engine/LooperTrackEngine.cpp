@@ -249,6 +249,12 @@ bool LooperTrackEngine::processBlock(const float* const* inputChannelData,
 
             // Playback (read head processes the sample)
             float sampleValue = processPlayback(track, isFirstCall && sample == 0);
+            
+            // Feed audio sample to callback if set (for onset detection, etc.)
+            if (audioSampleCallback)
+            {
+                audioSampleCallback(sampleValue);
+            }
 
             // Configure output bus from read head's channel setting
             int outputChannel = track.readHead.getOutputChannel();

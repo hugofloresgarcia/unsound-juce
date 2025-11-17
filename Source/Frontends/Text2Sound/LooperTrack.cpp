@@ -182,6 +182,37 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     panCoordLabel.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(panCoordLabel);
     
+    // Setup trajectory toggle button [tr]
+    trajectoryToggle.setButtonText("");
+    trajectoryToggle.setLookAndFeel(&emptyToggleLookAndFeel);
+    trajectoryToggle.onClick = [this] {
+        if (panner2DComponent != nullptr)
+        {
+            panner2DComponent->setTrajectoryRecordingEnabled(trajectoryToggle.getToggleState());
+            trajectoryPlaying.store(panner2DComponent->isPlaying()); // Update cached state
+        }
+    };
+    addAndMakeVisible(trajectoryToggle);
+    
+    // Setup onset toggle button [o]
+    onsetToggle.setButtonText("");
+    onsetToggle.setLookAndFeel(&emptyToggleLookAndFeel);
+    onsetToggle.onClick = [this] {
+        bool enabled = onsetToggle.getToggleState();
+        onsetToggleEnabled.store(enabled); // Update atomic flag for audio thread
+        if (panner2DComponent != nullptr)
+        {
+            panner2DComponent->setOnsetTriggeringEnabled(enabled);
+            trajectoryPlaying.store(panner2DComponent->isPlaying()); // Update cached state
+        }
+    };
+    addAndMakeVisible(onsetToggle);
+    
+    // Setup audio sample callback for onset detection
+    looperEngine.getTrackEngine(trackIndex).setAudioSampleCallback([this](float sample) {
+        feedAudioSample(sample);
+    });
+    
     // Setup reset button
     resetButton.onClick = [this] { resetButtonClicked(); };
     addAndMakeVisible(resetButton);
@@ -352,6 +383,11 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
                 quadPanner->setPan(x, y);
                 panCoordLabel.setText(juce::String(x, 2) + ", " + juce::String(y, 2), juce::dontSendNotification);
             }
+            // Update cached trajectory playing state
+            if (panner2DComponent != nullptr)
+            {
+                trajectoryPlaying.store(panner2DComponent->isPlaying());
+            }
         };
         addAndMakeVisible(panner2DComponent.get());
     }
@@ -365,6 +401,11 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
             {
                 cleatPanner->setPan(x, y);
                 panCoordLabel.setText(juce::String(x, 2) + ", " + juce::String(y, 2), juce::dontSendNotification);
+            }
+            // Update cached trajectory playing state
+            if (panner2DComponent != nullptr)
+            {
+                trajectoryPlaying.store(panner2DComponent->isPlaying());
             }
         };
         addAndMakeVisible(panner2DComponent.get());
@@ -439,6 +480,49 @@ void LooperTrack::paint(juce::Graphics& g)
     g.setColour(juce::Colours::grey);
     g.setFont(juce::Font(juce::FontOptions().withHeight(14.0f)));
     g.drawText("-->", arrowArea, juce::Justification::centred);
+    
+    // Draw custom toggle buttons for trajectory and onset
+    if (panner2DComponent != nullptr && panner2DComponent->isVisible())
+    {
+        // Draw [tr] toggle button (orange)
+        drawCustomToggleButton(g, trajectoryToggle, "tr", trajectoryToggle.getBounds(),
+                              juce::Colour(0xfff36e27), juce::Colour(0xfff36e27), false);
+        
+        // Draw [o] toggle button (teal)
+        drawCustomToggleButton(g, onsetToggle, "o", onsetToggle.getBounds(),
+                              juce::Colour(0xff1eb19d), juce::Colour(0xff1eb19d), false);
+        
+        // Draw onset indicator LED next to [o] button
+        if (onsetToggle.isVisible())
+        {
+            auto ledBounds = onsetToggle.getBounds();
+            ledBounds = ledBounds.translated(ledBounds.getWidth() + 3, 0); // Position to the right
+            ledBounds.setWidth(8);
+            ledBounds.setHeight(8);
+            
+            // Draw LED background (dark circle)
+            g.setColour(juce::Colours::black);
+            g.fillEllipse(ledBounds.toFloat());
+            
+            // Draw LED glow if onset detected
+            double currentBrightness = onsetLEDBrightness.load();
+            if (currentBrightness > 0.0)
+            {
+                float brightness = static_cast<float>(currentBrightness);
+                juce::Colour ledColor = juce::Colour(0xff00ff00).withAlpha(brightness); // Green LED
+                g.setColour(ledColor);
+                g.fillEllipse(ledBounds.toFloat());
+                
+                // Draw outer glow
+                g.setColour(ledColor.withAlpha(brightness * 0.3f));
+                g.fillEllipse(ledBounds.toFloat().expanded(2.0f));
+            }
+            
+            // Draw LED border
+            g.setColour(juce::Colour(0xff1eb19d).withAlpha(0.5f)); // Teal border to match [o] button
+            g.drawEllipse(ledBounds.toFloat(), 1.0f);
+        }
+    }
 }
 
 void LooperTrack::resized()
@@ -538,6 +622,24 @@ void LooperTrack::resized()
     {
         auto panLabelArea = bottomArea.removeFromTop(labelHeight);
         panLabel.setBounds(panLabelArea.removeFromLeft(50)); // "pan" label on left
+        
+        // Add toggle buttons between panLabel and panCoordLabel
+        const int buttonWidth = 30;
+        const int buttonSpacing = 5;
+        if (panner2DComponent != nullptr && panner2DComponent->isVisible())
+        {
+            trajectoryToggle.setBounds(panLabelArea.removeFromLeft(buttonWidth));
+            panLabelArea.removeFromLeft(buttonSpacing);
+            onsetToggle.setBounds(panLabelArea.removeFromLeft(buttonWidth));
+            panLabelArea.removeFromLeft(buttonSpacing);
+        }
+        else
+        {
+            // Hide toggles if 2D panner is not visible
+            trajectoryToggle.setBounds(0, 0, 0, 0);
+            onsetToggle.setBounds(0, 0, 0, 0);
+        }
+        
         panCoordLabel.setBounds(panLabelArea); // Coordinates on right
         bottomArea.removeFromTop(spacingSmall);
         
@@ -627,18 +729,9 @@ void LooperTrack::generateButtonClicked()
     // Reset status text
     gradioStatusText = "";
 
-    // Determine if we have audio - if not, pass empty File (will be treated as null)
-    juce::File audioFile;
-    if (track.tapeLoop.hasRecorded.load())
-    {
-        // We have audio - pass a sentinel file (the worker thread will save the buffer)
-        audioFile = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("has_audio");
-        DBG("LooperTrack: Has audio - passing sentinel file: " + audioFile.getFullPathName());
-    }
-    else
-    {
-        DBG("LooperTrack: No audio - passing empty file");
-    }
+    // Always pass empty File (null) to gradio - audio is never sent
+    juce::File audioFile; // Always empty - audio is always null
+    DBG("LooperTrack: Always passing empty file (null audio) to gradio");
 
     // Create and start background worker thread
     gradioWorkerThread = std::make_unique<GradioWorkerThread>(looperEngine,
@@ -668,6 +761,16 @@ void LooperTrack::updateModelParams(const juce::var& newParams)
     customText2SoundParams = newParams;
     DBG("LooperTrack: Model parameters updated for track " + juce::String(trackIndex));
 }
+
+void LooperTrack::setPannerSmoothingTime(double smoothingTime)
+{
+    if (panner2DComponent != nullptr)
+    {
+        panner2DComponent->setSmoothingTime(smoothingTime);
+        DBG("LooperTrack: Panner smoothing time set to " + juce::String(smoothingTime) + " seconds for track " + juce::String(trackIndex));
+    }
+}
+
 
 juce::var LooperTrack::getDefaultText2SoundParams()
 {
@@ -850,6 +953,94 @@ float LooperTrack::getPlaybackSpeed() const
     return static_cast<float>(parameterKnobs.getKnobValue(0));
 }
 
+void LooperTrack::drawCustomToggleButton(juce::Graphics& g, juce::ToggleButton& button, 
+                                         const juce::String& letter, juce::Rectangle<int> bounds,
+                                         juce::Colour onColor, juce::Colour offColor,
+                                         bool showMidiIndicator)
+{
+    bool isOn = button.getToggleState();
+    
+    // Color scheme - use provided colors
+    juce::Colour bgColor = isOn ? onColor : juce::Colours::black;
+    juce::Colour textColor = isOn ? juce::Colours::black : offColor;
+    juce::Colour borderColor = offColor;
+    
+    // Draw background
+    g.setColour(bgColor);
+    g.fillRoundedRectangle(bounds.toFloat(), 6.0f);
+    
+    // Draw border (thicker if MIDI mapped)
+    g.setColour(borderColor);
+    g.drawRoundedRectangle(bounds.toFloat(), 6.0f, showMidiIndicator ? 3.0f : 2.0f);
+    
+    // Draw MIDI indicator dot in top right corner
+    if (showMidiIndicator)
+    {
+        g.setColour(juce::Colour(0xffed1683));  // Pink
+        g.fillEllipse(bounds.getRight() - 8.0f, bounds.getY() + 2.0f, 4.0f, 4.0f);
+    }
+    
+    // Draw letter
+    g.setColour(textColor);
+    g.setFont(juce::Font(juce::FontOptions()
+                        .withName(juce::Font::getDefaultMonospacedFontName())
+                        .withHeight(18.0f)));
+    g.drawText(letter, bounds, juce::Justification::centred);
+}
+
+void LooperTrack::feedAudioSample(float sample)
+{
+    // Feed audio sample to onset detector (called from audio thread)
+    // Process onset detection directly here for low latency
+    
+    // Only process if onset toggle is enabled and trajectory is playing (use atomic flags)
+    if (!onsetToggleEnabled.load() || !trajectoryPlaying.load())
+        return;
+    
+    // Add sample to processing buffer (lock-free, single writer from audio thread)
+    int currentFill = onsetBufferFill.load();
+    if (currentFill < onsetBlockSize)
+    {
+        onsetProcessingBuffer[currentFill] = sample;
+        int newFill = currentFill + 1;
+        onsetBufferFill.store(newFill);
+        
+        // When buffer is full, process for onset detection
+        if (newFill >= onsetBlockSize)
+        {
+            // Get sample rate (cached to avoid repeated atomic reads)
+            auto& track = looperEngine.getTrack(trackIndex);
+            double sampleRate = track.writeHead.getSampleRate();
+            if (sampleRate <= 0.0)
+                sampleRate = 44100.0;
+            lastOnsetSampleRate = sampleRate;
+            
+            // Process block for onset detection
+            bool detected = onsetDetector.processBlock(onsetProcessingBuffer.data(), onsetBlockSize, sampleRate);
+            
+            if (detected)
+            {
+                // DBG("LooperTrack: Onset detected in track " + juce::String(trackIndex) + " (audio thread) - advancing trajectory");
+                
+                // Update atomic flags for UI thread
+                onsetDetected.store(true);
+                double currentTime = juce::Time::getMillisecondCounterHiRes() / 1000.0;
+                onsetLEDBrightness.store(1.0);
+                lastOnsetLEDTime.store(currentTime);
+                
+                // Set flag to advance trajectory (will be processed on message thread)
+                pendingTrajectoryAdvance.store(true);
+                
+                // Trigger async update for UI repaint and trajectory advancement (non-blocking, safe from audio thread)
+                triggerAsyncUpdate();
+            }
+            
+            // Reset buffer
+            onsetBufferFill.store(0);
+        }
+    }
+}
+
 void LooperTrack::timerCallback()
 {
     // Sync button states with model state
@@ -857,6 +1048,15 @@ void LooperTrack::timerCallback()
     
     bool modelIsPlaying = track.isPlaying.load();
     transportControls.setPlayState(modelIsPlaying);
+    
+    // Update cached trajectory playing state (for audio thread access)
+    if (panner2DComponent != nullptr)
+    {
+        trajectoryPlaying.store(panner2DComponent->isPlaying());
+    }
+    
+    // Note: Onset detection is now processed directly in feedAudioSample() from audio thread
+    // for low latency. Timer callback only handles LED fade-out.
     
     float currentPos = track.readHead.getPos();
     float wrapPos = static_cast<float>(track.writeHead.getWrapPos());
@@ -897,9 +1097,45 @@ void LooperTrack::timerCallback()
     
     lastReadHeadPosition = currentPos;
     
+    // Update onset LED brightness (fade out over time)
+    double currentLEDBrightness = onsetLEDBrightness.load();
+    if (currentLEDBrightness > 0.0)
+    {
+        double currentTime = juce::Time::getMillisecondCounterHiRes() / 1000.0;
+        double lastLEDTime = lastOnsetLEDTime.load();
+        double elapsed = currentTime - lastLEDTime;
+        if (elapsed >= onsetLEDDecayTime)
+        {
+            onsetLEDBrightness.store(0.0);
+        }
+        else
+        {
+            // Linear fade out
+            double newBrightness = 1.0 - (elapsed / onsetLEDDecayTime);
+            onsetLEDBrightness.store(newBrightness);
+        }
+    }
+    
     // Update displays
     waveformDisplay.repaint();
     levelControl.repaint();
+    repaint(); // Repaint to update LED fade
+}
+
+void LooperTrack::handleAsyncUpdate()
+{
+    // Called from message thread when onset is detected (triggered from audio thread)
+    // Advance trajectory if pending
+    if (pendingTrajectoryAdvance.load())
+    {
+        pendingTrajectoryAdvance.store(false);
+        if (panner2DComponent != nullptr)
+        {
+            panner2DComponent->advanceTrajectoryOnset();
+        }
+    }
+    
+    // Force immediate repaint to show LED
     repaint();
 }
 

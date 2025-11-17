@@ -8,6 +8,18 @@ Panner2DComponent::Panner2DComponent()
     panX = 0.5f;
     panY = 0.5f;
     isDragging = false;
+    recordingState = Idle;
+    trajectoryRecordingEnabled = false;
+    onsetTriggeringEnabled = false;
+    smoothingTime = 0.0;
+    smoothedPanX.setCurrentAndTargetValue(0.5f);
+    smoothedPanY.setCurrentAndTargetValue(0.5f);
+    lastSampleRate = 44100.0;
+}
+
+Panner2DComponent::~Panner2DComponent()
+{
+    stopTimer();
 }
 
 void Panner2DComponent::paint(juce::Graphics& g)
@@ -78,6 +90,12 @@ void Panner2DComponent::mouseDown(const juce::MouseEvent& e)
         isDragging = true;
         auto panPos = componentToPan(e.position);
         setPanPosition(panPos.x, panPos.y, juce::sendNotification);
+        
+        // Start recording if trajectory recording is enabled
+        if (trajectoryRecordingEnabled && recordingState == Idle)
+        {
+            startRecording();
+        }
     }
 }
 
@@ -87,6 +105,24 @@ void Panner2DComponent::mouseDrag(const juce::MouseEvent& e)
     {
         auto panPos = componentToPan(e.position);
         setPanPosition(panPos.x, panPos.y, juce::sendNotification);
+        
+        // Record trajectory point if recording
+        if (recordingState == Recording)
+        {
+            double currentTime = juce::Time::getMillisecondCounterHiRes() / 1000.0;
+            double elapsedTime = currentTime - recordingStartTime;
+            
+            // Record at 10fps (every 100ms)
+            if (currentTime - lastRecordTime >= recordInterval)
+            {
+                TrajectoryPoint point;
+                point.x = panPos.x;
+                point.y = panPos.y;
+                point.time = elapsedTime;
+                trajectory.push_back(point);
+                lastRecordTime = currentTime;
+            }
+        }
     }
 }
 
@@ -95,6 +131,13 @@ void Panner2DComponent::mouseUp(const juce::MouseEvent& e)
     if (isDragging)
     {
         isDragging = false;
+        
+        // Stop recording and start playback if we were recording
+        if (recordingState == Recording && !trajectory.empty())
+        {
+            stopRecording();
+            startPlayback();
+        }
     }
 }
 
@@ -156,5 +199,283 @@ void Panner2DComponent::clampPan(float& x, float& y) const
 {
     x = juce::jlimit(0.0f, 1.0f, x);
     y = juce::jlimit(0.0f, 1.0f, y);
+}
+
+void Panner2DComponent::startRecording()
+{
+    DBG("Panner2DComponent: Starting trajectory recording");
+    recordingState = Recording;
+    trajectory.clear();
+    recordingStartTime = juce::Time::getMillisecondCounterHiRes() / 1000.0;
+    lastRecordTime = recordingStartTime;
+    
+    // Record initial position
+    TrajectoryPoint initialPoint;
+    initialPoint.x = panX;
+    initialPoint.y = panY;
+    initialPoint.time = 0.0;
+    trajectory.push_back(initialPoint);
+}
+
+void Panner2DComponent::stopRecording()
+{
+    DBG("Panner2DComponent: Stopping trajectory recording, recorded " + juce::String(trajectory.size()) + " points");
+    recordingState = Idle;
+}
+
+void Panner2DComponent::startPlayback()
+{
+    if (trajectory.empty())
+    {
+        DBG("Panner2DComponent: Cannot start playback, trajectory is empty");
+        return;
+    }
+    
+    DBG("Panner2DComponent: Starting trajectory playback, " + juce::String(trajectory.size()) + " points");
+    recordingState = Playing;
+    currentPlaybackIndex = 0;
+    playbackStartTime = juce::Time::getMillisecondCounterHiRes() / 1000.0;
+    lastPlaybackTime = playbackStartTime;
+    
+    // Initialize smoothed values to current position
+    smoothedPanX.setCurrentAndTargetValue(panX);
+    smoothedPanY.setCurrentAndTargetValue(panY);
+    
+    // Start timer for playback animation
+    // If smoothing is enabled, we need timer for smooth updates
+    // If onset triggering is disabled, we need timer for trajectory advancement
+    if (!onsetTriggeringEnabled || smoothingTime > 0.0)
+    {
+        startTimer(16); // ~60fps for smooth updates (especially important for smoothing)
+    }
+    else
+    {
+        // No timer needed - only onsets will advance, no smoothing
+        stopTimer();
+    }
+}
+
+void Panner2DComponent::stopPlayback()
+{
+    DBG("Panner2DComponent: Stopping trajectory playback");
+    recordingState = Idle;
+    stopTimer();
+}
+
+void Panner2DComponent::setTrajectoryRecordingEnabled(bool enabled)
+{
+    trajectoryRecordingEnabled = enabled;
+    if (!enabled && recordingState == Recording)
+    {
+        stopRecording();
+    }
+    if (!enabled && recordingState == Playing)
+    {
+        stopPlayback();
+    }
+}
+
+void Panner2DComponent::setOnsetTriggeringEnabled(bool enabled)
+{
+    bool wasEnabled = onsetTriggeringEnabled;
+    onsetTriggeringEnabled = enabled;
+    
+    // If playback is active, update timer state
+    if (recordingState == Playing)
+    {
+        if (enabled)
+        {
+            // If smoothing is enabled, we still need timer for smooth updates
+            // Otherwise, stop timer - will advance ONLY on onsets
+            if (smoothingTime > 0.0)
+            {
+                startTimer(16); // ~60fps for smooth updates
+                DBG("Panner2DComponent: Onset triggering enabled with smoothing - timer running for smooth updates only");
+            }
+            else
+            {
+                stopTimer();
+                DBG("Panner2DComponent: Onset triggering enabled - timer stopped, trajectory will advance only on onsets");
+            }
+        }
+        else
+        {
+            // Start timer - will advance at fixed rate (and smooth if enabled)
+            if (smoothingTime > 0.0)
+            {
+                startTimer(16); // ~60fps for smooth updates
+            }
+            else
+            {
+                startTimer(100); // 100ms = 10fps
+            }
+            DBG("Panner2DComponent: Onset triggering disabled - timer started for fixed-rate playback");
+        }
+    }
+}
+
+void Panner2DComponent::setSmoothingTime(double smoothingTimeSeconds)
+{
+    smoothingTime = smoothingTimeSeconds;
+    
+    // Update smoothed values with new smoothing time
+    // Use 60Hz update rate for UI smoothing (timer runs at ~60fps)
+    const double uiUpdateRate = 60.0;
+    smoothedPanX.reset(uiUpdateRate, smoothingTime);
+    smoothedPanY.reset(uiUpdateRate, smoothingTime);
+    smoothedPanX.setCurrentAndTargetValue(panX);
+    smoothedPanY.setCurrentAndTargetValue(panY);
+    lastSampleRate = uiUpdateRate; // Store for reference
+    
+    // If playback is active, update timer state based on smoothing
+    if (recordingState == Playing)
+    {
+        if (smoothingTime > 0.0)
+        {
+            // Need timer for smooth updates
+            startTimer(16); // ~60fps for smooth updates
+        }
+        else if (!onsetTriggeringEnabled)
+        {
+            // No smoothing, but timer needed for trajectory advancement
+            startTimer(100); // 100ms = 10fps
+        }
+        else
+        {
+            // No smoothing, onset triggering enabled - no timer needed
+            stopTimer();
+        }
+    }
+    
+    DBG("Panner2DComponent: Smoothing time set to " + juce::String(smoothingTime) + " seconds");
+}
+
+void Panner2DComponent::advanceTrajectoryOnset()
+{
+    if (recordingState != Playing || trajectory.empty())
+        return;
+    
+    // Advance to next point in trajectory
+    currentPlaybackIndex++;
+    
+    // Loop if we've reached the end
+    if (currentPlaybackIndex >= trajectory.size())
+    {
+        currentPlaybackIndex = 0;
+    }
+    
+    // Update pan position with smoothing
+    const auto& point = trajectory[currentPlaybackIndex];
+    updatePanPositionWithSmoothing(point.x, point.y);
+}
+
+void Panner2DComponent::advanceTrajectoryTimer()
+{
+    if (recordingState != Playing || trajectory.empty())
+        return;
+    
+    // Advance to next point in trajectory
+    currentPlaybackIndex++;
+    
+    // Loop if we've reached the end
+    if (currentPlaybackIndex >= trajectory.size())
+    {
+        currentPlaybackIndex = 0;
+    }
+    
+    // Update pan position with smoothing
+    const auto& point = trajectory[currentPlaybackIndex];
+    updatePanPositionWithSmoothing(point.x, point.y);
+}
+
+void Panner2DComponent::timerCallback()
+{
+    if (recordingState != Playing || trajectory.empty())
+    {
+        stopTimer();
+        return;
+    }
+    
+    // Update smoothed values if smoothing is enabled (always check this first)
+    bool needsRepaint = false;
+    if (smoothingTime > 0.0)
+    {
+        smoothedPanX.skip(1);
+        smoothedPanY.skip(1);
+        
+        float smoothedX = smoothedPanX.getNextValue();
+        float smoothedY = smoothedPanY.getNextValue();
+        
+        // Only update if values changed (to avoid unnecessary repaints)
+        if (std::abs(panX - smoothedX) > 0.001f || std::abs(panY - smoothedY) > 0.001f)
+        {
+            panX = smoothedX;
+            panY = smoothedY;
+            needsRepaint = true;
+        }
+    }
+    
+    // Advance trajectory on timer ONLY if onset triggering is disabled
+    // If onset triggering is enabled, trajectory advances only via advanceTrajectoryOnset()
+    if (!onsetTriggeringEnabled)
+    {
+        double currentTime = juce::Time::getMillisecondCounterHiRes() / 1000.0;
+        
+        // Advance at 10fps (every 100ms) - but only if timer interval is appropriate
+        // If we're running at 60fps for smoothing, we need to check time difference
+        if (currentTime - lastPlaybackTime >= playbackInterval)
+        {
+            advanceTrajectoryTimer();
+            lastPlaybackTime = currentTime;
+            needsRepaint = true; // Trajectory advanced, will need repaint
+        }
+    }
+    
+    // Repaint if needed
+    if (needsRepaint)
+    {
+        repaint();
+        if (onPanChange)
+        {
+            onPanChange(panX, panY);
+        }
+    }
+}
+
+Panner2DComponent::TrajectoryPoint Panner2DComponent::interpolateTrajectory(const TrajectoryPoint& p1, const TrajectoryPoint& p2, float t) const
+{
+    TrajectoryPoint result;
+    result.x = p1.x + (p2.x - p1.x) * t;
+    result.y = p1.y + (p2.y - p1.y) * t;
+    result.time = p1.time + (p2.time - p1.time) * t;
+    return result;
+}
+
+void Panner2DComponent::updatePanPositionWithSmoothing(float x, float y)
+{
+    clampPan(x, y);
+    
+    if (smoothingTime > 0.0)
+    {
+        // Use smoothed values - set target, actual update happens in timer callback
+        smoothedPanX.setTargetValue(x);
+        smoothedPanY.setTargetValue(y);
+    }
+    else
+    {
+        // No smoothing - update directly
+        if (panX != x || panY != y)
+        {
+            panX = x;
+            panY = y;
+            smoothedPanX.setCurrentAndTargetValue(x);
+            smoothedPanY.setCurrentAndTargetValue(y);
+            repaint();
+            if (onPanChange)
+            {
+                onPanChange(panX, panY);
+            }
+        }
+    }
 }
 

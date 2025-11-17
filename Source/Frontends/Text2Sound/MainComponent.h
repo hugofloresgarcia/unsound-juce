@@ -9,6 +9,12 @@
 #include "../../CustomLookAndFeel.h"
 #include "../Shared/MidiLearnManager.h"
 #include "../Shared/MidiLearnComponent.h"
+#include "../Shared/ConfigManager.h"
+
+namespace Shared
+{
+    class SettingsDialog;
+}
 
 namespace Text2Sound
 {
@@ -38,6 +44,7 @@ private:
     juce::TextButton gradioSettingsButton;
     juce::TextButton midiSettingsButton;
     juce::TextButton modelParamsButton;
+    juce::TextButton settingsButton;
     juce::Label titleLabel;
     juce::Label audioDeviceDebugLabel;
     CustomLookAndFeel customLookAndFeel;
@@ -47,6 +54,10 @@ private:
     // Shared model parameters for all tracks
     juce::var sharedModelParams;
     std::unique_ptr<Shared::ModelParameterDialog> modelParamsDialog;
+    std::unique_ptr<Shared::SettingsDialog> settingsDialog;
+    
+    // Shared settings
+    double pannerSmoothingTime{0.0}; // Smoothing time in seconds for panner trajectories
     
     Shared::MidiLearnOverlay midiLearnOverlay;
 
@@ -60,6 +71,8 @@ private:
     void showMidiSettings();
     void modelParamsButtonClicked();
     void showModelParams();
+    void settingsButtonClicked();
+    void showSettings();
     juce::var getSharedModelParams() const { return sharedModelParams; }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)

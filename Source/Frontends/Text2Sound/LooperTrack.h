@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <juce_events/juce_events.h>
 #include "../../Engine/MultiTrackLooperEngine.h"
 #include "../../GradioClient/GradioClient.h"
 #include "../Shared/WaveformDisplay.h"
@@ -20,9 +21,12 @@
 #include "../../Panners/QuadPanner.h"
 #include "../../Panners/CLEATPanner.h"
 #include "../../Panners/Panner2DComponent.h"
+#include "../../DSP/OnsetDetector.h"
+#include <juce_audio_basics/juce_audio_basics.h>
 #include <memory>
 #include <functional>
 #include <utility>
+#include <array>
 
 namespace Shared
 {
@@ -69,7 +73,7 @@ private:
     juce::Result saveBufferToFile(int trackIndex, juce::File& outputFile);
 };
 
-class LooperTrack : public juce::Component, public juce::Timer
+class LooperTrack : public juce::Component, public juce::Timer, public juce::AsyncUpdater
 {
 public:
     LooperTrack(MultiTrackLooperEngine& engine, int trackIndex, std::function<juce::String()> gradioUrlProvider, Shared::MidiLearnManager* midiManager = nullptr, const juce::String& pannerType = "Stereo");
@@ -88,6 +92,9 @@ public:
     
     // Update model parameters (called from MainComponent when shared params change)
     void updateModelParams(const juce::var& newParams);
+    
+    // Set panner smoothing time (called from MainComponent when settings change)
+    void setPannerSmoothingTime(double smoothingTime);
     
     // Public static method to get default parameters
     static juce::var getDefaultText2SoundParams();
@@ -123,6 +130,39 @@ private:
     juce::Slider stereoPanSlider; // For stereo panner
     juce::Label panLabel;
     juce::Label panCoordLabel; // Shows pan coordinates (x, y)
+    juce::ToggleButton trajectoryToggle; // [tr] toggle for trajectory recording
+    juce::ToggleButton onsetToggle; // [o] toggle for onset-based triggering
+    
+    // Onset detector for audio analysis
+    OnsetDetector onsetDetector;
+    
+    // Audio buffer for onset detection (thread-safe circular buffer)
+    static constexpr int audioBufferSize = 1024;
+    juce::AbstractFifo audioFifo{audioBufferSize};
+    std::array<float, audioBufferSize> audioBuffer;
+    std::atomic<bool> onsetDetected{false};
+    std::atomic<bool> pendingTrajectoryAdvance{false}; // Flag to advance trajectory on message thread
+    
+    // Onset indicator LED state (for visual feedback)
+    std::atomic<double> onsetLEDBrightness{0.0}; // 0.0 to 1.0, fades out over time
+    std::atomic<double> lastOnsetLEDTime{0.0};
+    static constexpr double onsetLEDDecayTime{0.2}; // LED stays lit for 200ms
+    
+    // Onset detection processing state (accessed from audio thread)
+    static constexpr int onsetBlockSize = 128; // Process in small blocks for low latency (~2.9ms at 44.1kHz)
+    std::array<float, onsetBlockSize> onsetProcessingBuffer;
+    std::atomic<int> onsetBufferFill{0}; // Thread-safe counter
+    double lastOnsetSampleRate{44100.0};
+    
+    // Thread-safe flags for audio thread access
+    std::atomic<bool> onsetToggleEnabled{false}; // Cached from UI thread
+    std::atomic<bool> trajectoryPlaying{false}; // Cached from panner state
+    
+    // Custom toggle button look and feel (similar to TransportControls)
+    Shared::EmptyToggleLookAndFeel emptyToggleLookAndFeel;
+    
+    // Method to feed audio samples to onset detector (called from audio thread)
+    void feedAudioSample(float sample);
     
     std::unique_ptr<GradioWorkerThread> gradioWorkerThread;
     std::function<juce::String()> gradioUrlProvider;
@@ -141,6 +181,13 @@ private:
     void onGradioComplete(juce::Result result, juce::Array<juce::File> outputFiles);
     
     void timerCallback() override;
+    void handleAsyncUpdate() override; // For immediate onset detection updates from audio thread
+    
+    // Helper method to draw custom toggle buttons (similar to TransportControls)
+    void drawCustomToggleButton(juce::Graphics& g, juce::ToggleButton& button, 
+                                const juce::String& letter, juce::Rectangle<int> bounds,
+                                juce::Colour onColor, juce::Colour offColor,
+                                bool showMidiIndicator = false);
     
     // Variation management
     void switchToVariation(int variationIndex);

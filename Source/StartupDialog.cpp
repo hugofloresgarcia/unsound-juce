@@ -60,7 +60,7 @@ StartupDialog::StartupDialog(juce::AudioDeviceManager& deviceManager)
     okButton.addListener(this);
     addAndMakeVisible(okButton);
     
-    setSize(600, 600);
+    setSize(600, 750);
 }
 
 void StartupDialog::resized()

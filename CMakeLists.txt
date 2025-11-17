@@ -89,6 +89,7 @@ target_sources(TapeLooper PRIVATE
     Source/Frontends/Shared/OutputSelector.cpp
     Source/Frontends/Shared/GradioUtilities.cpp
     Source/Frontends/Shared/MidiLearnManager.cpp
+    Source/Frontends/Shared/ConfigManager.cpp
     Source/Frontends/Shared/VariationSelector.cpp
 )
 
@@ -104,6 +105,7 @@ target_sources(TapeLooper PRIVATE
     Source/Frontends/Shared/GradioUtilities.h
     Source/Frontends/Shared/MidiLearnManager.h
     Source/Frontends/Shared/MidiLearnComponent.h
+    Source/Frontends/Shared/ConfigManager.h
     Source/Frontends/Shared/VariationSelector.h
 )
 

@@ -7,6 +7,7 @@
 #include "LooperReadHead.h"
 #include "OutputBus.h"
 #include <atomic>
+#include <functional>
 
 // LooperTrackEngine handles processing for a single looper track
 class LooperTrackEngine
@@ -60,6 +61,9 @@ public:
     // Access to track state
     TrackState& getTrackState() { return trackState; }
     const TrackState& getTrackState() const { return trackState; }
+    
+    // Set callback for audio samples (for onset detection, etc.)
+    void setAudioSampleCallback(std::function<void(float)> callback) { audioSampleCallback = callback; }
 
 protected:
     // Helper methods factored out for reuse by VampNetTrackEngine
@@ -76,5 +80,6 @@ private:
     static constexpr double maxBufferDurationSeconds = 10.0;
     
     juce::AudioFormatManager formatManager;
+    std::function<void(float)> audioSampleCallback; // Callback for audio samples (for onset detection)
 };
 
