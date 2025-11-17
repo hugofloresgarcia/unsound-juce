@@ -51,14 +51,14 @@ void QuadPanner::processBlock(const float* const* inputChannelData,
     float* blOut = outputChannelData[2];
     float* brOut = outputChannelData[3];
     
-    // Process samples
+    // Process samples (accumulate for multi-track mixing)
     for (int sample = 0; sample < numSamples; ++sample)
     {
         float inputSample = input[sample];
-        flOut[sample] = inputSample * gains[0]; // FL
-        frOut[sample] = inputSample * gains[1]; // FR
-        blOut[sample] = inputSample * gains[2]; // BL
-        brOut[sample] = inputSample * gains[3]; // BR
+        flOut[sample] += inputSample * gains[0]; // FL
+        frOut[sample] += inputSample * gains[1]; // FR
+        blOut[sample] += inputSample * gains[2]; // BL
+        brOut[sample] += inputSample * gains[3]; // BR
     }
 }
 

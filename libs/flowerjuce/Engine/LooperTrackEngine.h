@@ -6,6 +6,7 @@
 #include "LooperWriteHead.h"
 #include "LooperReadHead.h"
 #include "OutputBus.h"
+#include <flowerjuce/Panners/Panner.h>
 #include <atomic>
 #include <functional>
 
@@ -19,6 +20,7 @@ public:
         LooperWriteHead writeHead;
         LooperReadHead readHead;
         OutputBus outputBus;
+        Panner* panner{nullptr}; // Panner for spatial audio distribution
         
         // UI state (these could eventually be moved to the UI layer)
         std::atomic<bool> isPlaying{false};
@@ -64,6 +66,9 @@ public:
     
     // Set callback for audio samples (for onset detection, etc.)
     void setAudioSampleCallback(std::function<void(float)> callback) { audioSampleCallback = callback; }
+    
+    // Set panner for spatial audio distribution
+    void setPanner(Panner* panner) { trackState.panner = panner; }
 
 protected:
     // Helper methods factored out for reuse by VampNetTrackEngine

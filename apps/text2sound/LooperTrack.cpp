@@ -132,7 +132,6 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
       parameterKnobs(midiManager, "track" + juce::String(index)),
       levelControl(engine, index, midiManager, "track" + juce::String(index)),
       inputSelector(),
-      outputSelector(),
       trackLabel("Track", "track " + juce::String(index + 1)),
       resetButton("x"),
       generateButton("generate"),
@@ -366,16 +365,9 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     };
     addAndMakeVisible(inputSelector);
     
-    // Setup output selector
-    outputSelector.onChannelChange = [this](int channel) {
-        looperEngine.getTrack(trackIndex).readHead.set_output_channel(channel);
-    };
-    addAndMakeVisible(outputSelector);
-    
-    // Initialize channel selectors (will show "all" if device not ready yet)
-    // They will be updated again after device is initialized via updateChannelSelectors()
+    // Initialize channel selector (will show "all" if device not ready yet)
+    // It will be updated again after device is initialized via updateChannelSelectors()
     inputSelector.updateChannels(looperEngine.getAudioDeviceManager());
-    outputSelector.updateChannels(looperEngine.getAudioDeviceManager());
     
     // Setup panner based on type
     auto pannerTypeLower = pannerType.toLowerCase();
@@ -437,6 +429,12 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
         
         // Initialize onset triggering now that panner2DComponent is created (for cleat)
         panner2DComponent->setOnsetTriggeringEnabled(true);
+    }
+    
+    // Connect panner to engine for audio processing
+    if (panner != nullptr)
+    {
+        looperEngine.getTrackEngine(trackIndex).setPanner(panner.get());
     }
     
     // Setup path generation buttons and knobs for any 2D panner (quad or cleat)
@@ -561,22 +559,6 @@ void LooperTrack::paint(juce::Graphics& g)
         g.fillEllipse(buttonBounds.getRight() - 8.0f, buttonBounds.getY() + 2.0f, 6.0f, 6.0f);
     }
     
-    // Draw arrow between input and output selectors
-    const int componentMargin = 5;
-    const int trackLabelHeight = 20;
-    const int spacingSmall = 5;
-    const int channelSelectorHeight = 30;
-    
-    auto bounds = getLocalBounds().reduced(componentMargin);
-    bounds.removeFromTop(trackLabelHeight + spacingSmall);
-    auto channelSelectorArea = bounds.removeFromTop(channelSelectorHeight);
-    const int selectorWidth = (channelSelectorArea.getWidth() - 40) / 2;
-    channelSelectorArea.removeFromLeft(selectorWidth + spacingSmall);
-    auto arrowArea = channelSelectorArea.removeFromLeft(40);
-    
-    g.setColour(juce::Colours::grey);
-    g.setFont(juce::Font(juce::FontOptions().withHeight(14.0f)));
-    g.drawText("-->", arrowArea, juce::Justification::centred);
     
     // Draw custom toggle buttons for trajectory and onset
     if (panner2DComponent != nullptr && panner2DComponent->isVisible())
@@ -681,18 +663,9 @@ void LooperTrack::resized()
     trackLabel.setBounds(trackLabelArea);
     bounds.removeFromTop(spacingSmall);
     
-    // Channel selectors: [input] --> [output]
+    // Input selector
     auto channelSelectorArea = bounds.removeFromTop(channelSelectorHeight);
-    const int selectorWidth = (channelSelectorArea.getWidth() - 40) / 2; // Leave space for arrow
-    const int arrowWidth = 40;
-    
-    inputSelector.setBounds(channelSelectorArea.removeFromLeft(selectorWidth));
-    channelSelectorArea.removeFromLeft(spacingSmall);
-    
-    // Draw arrow in the middle
-    auto arrowArea = channelSelectorArea.removeFromLeft(arrowWidth);
-    
-    outputSelector.setBounds(channelSelectorArea.removeFromLeft(selectorWidth));
+    inputSelector.setBounds(channelSelectorArea);
     bounds.removeFromTop(spacingSmall);
     
     // Reserve space for controls at bottom (reduced to make waveform taller)
@@ -1163,9 +1136,6 @@ void LooperTrack::resetButtonClicked()
     track.readHead.set_muted(false);
     transportControls.setMuteState(false);
     
-    // Reset output channel to all
-    outputSelector.setSelectedChannel(1, juce::dontSendNotification);
-    track.readHead.set_output_channel(-1);
     
     // Clear text prompt
     textPromptEditor.clear();
@@ -1469,9 +1439,8 @@ void LooperTrack::handleAsyncUpdate()
 
 void LooperTrack::updateChannelSelectors()
 {
-    // Update channel selectors based on current audio device
+    // Update channel selector based on current audio device
     inputSelector.updateChannels(looperEngine.getAudioDeviceManager());
-    outputSelector.updateChannels(looperEngine.getAudioDeviceManager());
 }
 
 void LooperTrack::loadVariationFromFile(int variationIndex, const juce::File& audioFile)

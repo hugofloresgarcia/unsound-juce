@@ -235,8 +235,14 @@ bool LooperTrackEngine::processBlock(const float* const* inputChannelData,
         // Update read head state
         track.readHead.set_playing(true);
 
+        // Allocate temporary mono buffer for playback samples
+        juce::HeapBlock<float> monoBuffer(numSamples);
+        const float* monoInputChannelData[1] = { monoBuffer.getData() };
+
         if (isFirstCall)
             DBG_SEGFAULT("Entering sample loop, numSamples=" + juce::String(numSamples));
+        
+        // First pass: collect playback samples and handle recording
         for (int sample = 0; sample < numSamples; ++sample)
         {
             if (isFirstCall && sample == 0)
@@ -250,52 +256,13 @@ bool LooperTrackEngine::processBlock(const float* const* inputChannelData,
             // Playback (read head processes the sample)
             float sampleValue = processPlayback(track, isFirstCall && sample == 0);
             
+            // Store sample in mono buffer for panner processing
+            monoBuffer[sample] = sampleValue;
+            
             // Feed audio sample to callback if set (for onset detection, etc.)
             if (audioSampleCallback)
             {
                 audioSampleCallback(sampleValue);
-            }
-
-            // Configure output bus from read head's channel setting
-            int outputChannel = track.readHead.get_output_channel();
-            if (isFirstCall && sample == 0)
-            {
-                DBG("[LooperTrackEngine] Output routing:");
-                DBG("  ReadHead outputChannel: " << outputChannel);
-                DBG("  numOutputChannels: " << numOutputChannels);
-                DBG("  sampleValue: " << sampleValue);
-            }
-                track.outputBus.set_output_channel(outputChannel);
-            
-            if (isFirstCall && sample == 0)
-            {
-                DBG("[LooperTrackEngine] OutputBus outputChannel after set: " << track.outputBus.get_output_channel());
-            }
-
-            // Route to selected output channel(s)
-            if (isFirstCall && sample == 0)
-                DBG_SEGFAULT("Calling outputBus.processSample");
-            // Note: activeChannels check is done in MultiTrackLooperEngine, so we pass nullptr here
-            // The active channels are verified at the callback level
-            track.outputBus.process_sample(outputChannelData, numOutputChannels, sample, sampleValue, nullptr);
-            if (isFirstCall && sample == 0)
-            {
-                DBG_SEGFAULT("outputBus.processSample completed");
-                // Verify output was written
-                if (outputChannel >= 0 && outputChannel < numOutputChannels && outputChannelData[outputChannel] != nullptr)
-                {
-                    DBG("[LooperTrackEngine] Verified output written to channel " << outputChannel 
-                        << ", value: " << outputChannelData[outputChannel][sample]);
-                }
-                else if (outputChannel == -1)
-                {
-                    DBG("[LooperTrackEngine] Verified output written to all channels");
-                    for (int ch = 0; ch < juce::jmin(3, numOutputChannels); ++ch)
-                    {
-                        if (outputChannelData[ch] != nullptr)
-                            DBG("  Channel " << ch << " value: " << outputChannelData[ch][sample]);
-                    }
-                }
             }
 
             // Advance read head by one sample
@@ -310,6 +277,39 @@ bool LooperTrackEngine::processBlock(const float* const* inputChannelData,
                 juce::Logger::writeToLog("~~~ WRAPPED! Finalized recording");
             }
         }
+        
+        // Second pass: apply panner to distribute audio to all output channels
+        if (track.panner != nullptr)
+        {
+            // Use panner to distribute mono audio to all output channels with proper gains
+            track.panner->processBlock(monoInputChannelData, 1, outputChannelData, numOutputChannels, numSamples);
+            
+            if (isFirstCall && shouldDebug)
+            {
+                DBG("[LooperTrackEngine] Panner applied - routing to all " << numOutputChannels << " channels");
+            }
+        }
+        else
+        {
+            // Fallback: route to all channels at unity gain (when panner not set)
+            for (int sample = 0; sample < numSamples; ++sample)
+            {
+                float sampleValue = monoBuffer[sample];
+                for (int channel = 0; channel < numOutputChannels; ++channel)
+                {
+                    if (outputChannelData[channel] != nullptr)
+                    {
+                        outputChannelData[channel][sample] += sampleValue;
+                    }
+                }
+            }
+            
+            if (isFirstCall && shouldDebug)
+            {
+                DBG("[LooperTrackEngine] No panner set - routing to all channels at unity gain");
+            }
+        }
+        
         if (isFirstCall)
             DBG_SEGFAULT("Sample loop completed");
     }

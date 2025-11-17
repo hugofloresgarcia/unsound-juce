@@ -40,12 +40,12 @@ void StereoPanner::processBlock(const float* const* inputChannelData,
     float* leftOut = outputChannelData[0];
     float* rightOut = outputChannelData[1];
     
-    // Process samples
+    // Process samples (accumulate for multi-track mixing)
     for (int sample = 0; sample < numSamples; ++sample)
     {
         float inputSample = input[sample];
-        leftOut[sample] = inputSample * leftGain;
-        rightOut[sample] = inputSample * rightGain;
+        leftOut[sample] += inputSample * leftGain;
+        rightOut[sample] += inputSample * rightGain;
     }
 }
 

@@ -294,6 +294,10 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
         track.recordReadHead.set_playing(true);
         track.outputReadHead.set_playing(true);
 
+        // Allocate temporary mono buffer for playback samples
+        juce::HeapBlock<float> monoBuffer(numSamples);
+        const float* monoInputChannelData[1] = { monoBuffer.getData() };
+
         if (isFirstCall)
             DBG_SEGFAULT("Entering sample loop, numSamples=" + juce::String(numSamples));
         
@@ -373,14 +377,9 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
                 // Mix dry and wet based on dry/wet mix parameter
                 // dryWetMix: 0.0 = all dry (record buffer), 1.0 = all wet (output buffer)
                 float sampleValue = drySample * (1.0f - mix) + wetSample * mix;
-
-                // Configure output bus from record read head's channel setting
-                int output_channel = track.recordReadHead.get_output_channel();
-                track.outputBus.set_output_channel(output_channel);
-
-                // Route to selected output channel(s)
-                // Note: activeChannels check is done in MultiTrackLooperEngine, so we pass nullptr here
-                track.outputBus.process_sample(outputChannelData, numOutputChannels, sample, sampleValue, nullptr);
+                
+                // Store sample in mono buffer for panner processing
+                monoBuffer[sample] = sampleValue;
 
                 // Advance both read heads together (same playhead position)
                 bool wrappedRecord = track.recordReadHead.advance(wrapPos);
@@ -400,6 +399,38 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
                 }
             }
         } // Locks released here
+        
+        // Apply panner to distribute audio to all output channels
+        if (track.panner != nullptr)
+        {
+            // Use panner to distribute mono audio to all output channels with proper gains
+            track.panner->processBlock(monoInputChannelData, 1, outputChannelData, numOutputChannels, numSamples);
+            
+            if (isFirstCall && shouldDebug)
+            {
+                DBG("[VampNetTrackEngine] Panner applied - routing to all " << numOutputChannels << " channels");
+            }
+        }
+        else
+        {
+            // Fallback: route to all channels at unity gain (when panner not set)
+            for (int sample = 0; sample < numSamples; ++sample)
+            {
+                float sampleValue = monoBuffer[sample];
+                for (int channel = 0; channel < numOutputChannels; ++channel)
+                {
+                    if (outputChannelData[channel] != nullptr)
+                    {
+                        outputChannelData[channel][sample] += sampleValue;
+                    }
+                }
+            }
+            
+            if (isFirstCall && shouldDebug)
+            {
+                DBG("[VampNetTrackEngine] No panner set - routing to all channels at unity gain");
+            }
+        }
         
         // Process writes after releasing read locks to avoid deadlock
         // WriteHead locks internally, so we can safely call it now

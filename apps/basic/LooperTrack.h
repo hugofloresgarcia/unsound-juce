@@ -8,7 +8,6 @@
 #include <flowerjuce/Components/TransportControls.h>
 #include <flowerjuce/Components/ParameterKnobs.h>
 #include <flowerjuce/Components/LevelControl.h>
-#include <flowerjuce/Components/OutputSelector.h>
 #include <flowerjuce/Components/InputSelector.h>
 #include <flowerjuce/Components/MidiLearnManager.h>
 #include <flowerjuce/Panners/Panner.h>
@@ -46,7 +45,6 @@ private:
     Shared::ParameterKnobs parameterKnobs;
     Shared::LevelControl levelControl;
     Shared::InputSelector inputSelector;
-    Shared::OutputSelector outputSelector;
     
     // Track-specific UI
     juce::Label trackLabel;

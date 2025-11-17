@@ -6,6 +6,7 @@
 #include "LooperWriteHead.h"
 #include "LooperReadHead.h"
 #include "OutputBus.h"
+#include <flowerjuce/Panners/Panner.h>
 #include <atomic>
 
 // Forward declarations
@@ -24,6 +25,7 @@ public:
         LooperReadHead recordReadHead;  // reads from recordBuffer
         LooperReadHead outputReadHead;  // reads from outputBuffer
         OutputBus outputBus;
+        Panner* panner{nullptr}; // Panner for spatial audio distribution
         
         // UI state (these could eventually be moved to the UI layer)
         std::atomic<bool> isPlaying{false};
@@ -75,6 +77,9 @@ public:
     // Access to track state
     TrackState& getTrackState() { return trackState; }
     const TrackState& getTrackState() const { return trackState; }
+    
+    // Set panner for spatial audio distribution
+    void setPanner(Panner* panner) { trackState.panner = panner; }
 
 private:
     TrackState trackState;

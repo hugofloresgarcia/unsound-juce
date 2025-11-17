@@ -50,12 +50,12 @@ void CLEATPanner::processBlock(const float* const* inputChannelData,
     {
         float inputSample = input[sample];
         
-        // Apply gains to all 16 output channels
+        // Apply gains to all 16 output channels (accumulate for multi-track mixing)
         for (int channel = 0; channel < 16; ++channel)
         {
             if (outputChannelData[channel] != nullptr)
             {
-                outputChannelData[channel][sample] = inputSample * gains[channel];
+                outputChannelData[channel][sample] += inputSample * gains[channel];
             }
         }
     }
