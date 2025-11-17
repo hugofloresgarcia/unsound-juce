@@ -4,6 +4,7 @@ cmake-build-*/
 *.xcworkspace/
 .vscode/
 .idea/
+.vs/
 *.user
 *.suo
 *.sdf

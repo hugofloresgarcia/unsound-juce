@@ -153,8 +153,7 @@ target_sources(TapeLooper PRIVATE
 target_sources(TapeLooper PRIVATE
     Source/Frontends/WhAM/MainComponent.cpp
     Source/Frontends/WhAM/LooperTrack.cpp
-    Source/Frontends/WhAM/ClickSynth.cpp
-    Source/Frontends/WhAM/Sampler.cpp
+    Source/Frontends/WhAM/Synths.cpp
     Source/Frontends/WhAM/SessionConfig.cpp
     Source/Frontends/WhAM/TokenVisualizer.cpp
     Source/Frontends/WhAM/ModelParamsPopup.cpp
@@ -164,8 +163,7 @@ target_sources(TapeLooper PRIVATE
 target_sources(TapeLooper PRIVATE
     Source/Frontends/WhAM/MainComponent.h
     Source/Frontends/WhAM/LooperTrack.h
-    Source/Frontends/WhAM/ClickSynth.h
-    Source/Frontends/WhAM/Sampler.h
+    Source/Frontends/WhAM/Synths.h
     Source/Frontends/WhAM/SessionConfig.h
     Source/Frontends/WhAM/TokenVisualizer.h
     Source/Frontends/WhAM/ModelParamsPopup.h

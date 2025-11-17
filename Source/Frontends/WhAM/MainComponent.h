@@ -8,8 +8,7 @@
 #include "../VampNet/Sampler.h"
 #include "../../Engine/MultiTrackLooperEngine.h"
 #include "LooperTrack.h"
-#include "ClickSynth.h"
-#include "Sampler.h"
+#include "Synths.h"
 #include "TokenVisualizer.h"
 #include "../../CustomLookAndFeel.h"
 #include "../Shared/MidiLearnManager.h"
@@ -51,10 +50,8 @@ private:
     bool isRecordingHeld = false;  // True while 'r' key is held
     
     juce::TextButton syncButton;
-    juce::TextButton gradioSettingsButton;
-    juce::TextButton midiSettingsButton;
-    juce::TextButton clickSynthButton;
-    juce::TextButton samplerButton;
+    juce::TextButton settingsButton;
+    juce::TextButton synthsButton;
     juce::TextButton vizButton;
     juce::TextButton saveConfigButton;
     juce::TextButton loadConfigButton;
@@ -68,27 +65,21 @@ private:
     
     Shared::MidiLearnOverlay midiLearnOverlay;
     
-    // Click synth window
-    std::unique_ptr<ClickSynthWindow> clickSynthWindow;
-    
-    // Sampler window
-    std::unique_ptr<SamplerWindow> samplerWindow;
+    // Synths window (combines Click Synth and Sampler)
+    std::unique_ptr<SynthsWindow> synthsWindow;
     
     // Token visualizer window
     std::unique_ptr<TokenVisualizerWindow> vizWindow;
     Shared::GitInfo gitInfo;
 
     void syncButtonClicked();
-    void showClickSynthWindow();
-    void showSamplerWindow();
+    void showSynthsWindow();
     void showVizWindow();
-    void gradioSettingsButtonClicked();
+    void settingsButtonClicked();
     void updateAudioDeviceDebugInfo();
-    void showGradioSettings();
+    void showSettings();
     void setGradioUrl(const juce::String& newUrl);
     juce::String getGradioUrl() const;
-    void midiSettingsButtonClicked();
-    void showMidiSettings();
     void showOverflowMenu();
     void saveConfigButtonClicked();
     void loadConfigButtonClicked();

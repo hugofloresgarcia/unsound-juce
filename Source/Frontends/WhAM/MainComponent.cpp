@@ -24,10 +24,8 @@ using namespace WhAM;
 
 MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     : syncButton("sync all"),
-      gradioSettingsButton("gradio"),
-      midiSettingsButton("midi"),
-      clickSynthButton("click synth"),
-      samplerButton("sampler"),
+      settingsButton("settings"),
+      synthsButton("synths"),
       vizButton("viz"),
       overflowButton("..."),
       gitInfoButton("(i)"),
@@ -129,21 +127,13 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     syncButton.onClick = [this] { syncButtonClicked(); };
     addAndMakeVisible(syncButton);
 
-    // Setup Gradio settings button
-    gradioSettingsButton.onClick = [this] { gradioSettingsButtonClicked(); };
-    addAndMakeVisible(gradioSettingsButton);
+    // Setup settings button (combines Gradio and MIDI)
+    settingsButton.onClick = [this] { settingsButtonClicked(); };
+    addAndMakeVisible(settingsButton);
     
-    // Setup MIDI settings button
-    midiSettingsButton.onClick = [this] { midiSettingsButtonClicked(); };
-    addAndMakeVisible(midiSettingsButton);
-    
-    // Setup click synth button
-    clickSynthButton.onClick = [this] { showClickSynthWindow(); };
-    addAndMakeVisible(clickSynthButton);
-    
-    // Setup sampler button
-    samplerButton.onClick = [this] { showSamplerWindow(); };
-    addAndMakeVisible(samplerButton);
+    // Setup synths button (combines Click Synth and Sampler)
+    synthsButton.onClick = [this] { showSynthsWindow(); };
+    addAndMakeVisible(synthsButton);
     
     // Setup viz button
     vizButton.onClick = [this] { showVizWindow(); };
@@ -218,12 +208,10 @@ void MainComponent::resized()
     };
 
     std::vector<ButtonInfo> buttons = {
-        {&syncButton, 120},
-        {&gradioSettingsButton, 100},
-        {&midiSettingsButton, 80},
-        {&clickSynthButton, 120},
-        {&samplerButton, 120},
         {&vizButton, 70},
+        {&syncButton, 120},
+        {&settingsButton, 100},
+        {&synthsButton, 100},
         {&saveConfigButton, 130},
         {&loadConfigButton, 130}
     };
@@ -349,21 +337,46 @@ void MainComponent::updateAudioDeviceDebugInfo()
     }
 }
 
-void MainComponent::gradioSettingsButtonClicked()
+void MainComponent::settingsButtonClicked()
 {
-    showGradioSettings();
+    showSettings();
 }
 
-void MainComponent::showGradioSettings()
+void MainComponent::showSettings()
 {
-    juce::AlertWindow settingsWindow("gradio settings",
-                                     "enter the gradio space url for vampnet generation.",
+    juce::AlertWindow settingsWindow("settings",
+                                     "configure gradio url and view midi bindings.",
                                      juce::AlertWindow::NoIcon);
 
     settingsWindow.addTextEditor("gradioUrl", getGradioUrl(), "gradio url:");
+    
+    // List current MIDI bindings
+    auto mappings = midiLearnManager.getAllMappings();
+    
+    juce::String midiInfo;
+    if (mappings.empty())
+    {
+        midiInfo = "No MIDI bindings configured.";
+    }
+    else
+    {
+        midiInfo = "Current MIDI bindings:\n\n";
+        for (const auto& mapping : mappings)
+        {
+            if (!mapping.isValid())
+                continue;
+                
+            juce::String typeStr = mapping.type == Shared::MidiMapping::MessageType::CC ? "CC" : "Note";
+            juce::String modeStr = mapping.mode == Shared::MidiMapping::Mode::Toggle ? " (toggle)" : "";
+            midiInfo += mapping.parameterId + " -> " + typeStr + " " + juce::String(mapping.number) + modeStr + "\n";
+        }
+    }
+    
+    settingsWindow.addTextBlock(midiInfo);
+    
     settingsWindow.addButton("cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
     settingsWindow.addButton("save", 1, juce::KeyPress(juce::KeyPress::returnKey));
-    settingsWindow.centreAroundComponent(this, 450, 200);
+    settingsWindow.centreAroundComponent(this, 500, 300);
 
     if (settingsWindow.runModalLoop() == 1)
     {
@@ -405,11 +418,6 @@ juce::String MainComponent::getGradioUrl() const
     return gradioUrl;
 }
 
-void MainComponent::midiSettingsButtonClicked()
-{
-    showMidiSettings();
-}
-
 bool MainComponent::keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent)
 {
     // Handle 1-8 keys for track selection
@@ -428,23 +436,33 @@ bool MainComponent::keyPressed(const juce::KeyPress& key, juce::Component* origi
         return true;
     }
     
-    // Handle 'k' key for click synth or sampler
+    // Handle 'k' key for synths window (click synth or sampler)
     if (key.getKeyCode() == 'k' || key.getKeyCode() == 'K')
     {
-        // Check sampler first (if enabled)
-        if (samplerWindow != nullptr && samplerWindow->isEnabled())
+        if (synthsWindow != nullptr && synthsWindow->isEnabled())
         {
-            int selectedTrack = samplerWindow->getSelectedTrack();
+            int selectedTrack = synthsWindow->getSelectedTrack();
             
-            // Trigger sampler on selected track(s)
+            // Check if sampler has samples loaded first, then fall back to click synth
+            bool samplerUsed = false;
             if (selectedTrack >= 0 && selectedTrack < static_cast<int>(tracks.size()))
             {
-                // Single track selected
                 auto& trackEngine = looperEngine.getTrackEngine(selectedTrack);
                 if (trackEngine.getSampler().hasSample())
                 {
                     trackEngine.getSampler().trigger();
+                    samplerUsed = true;
                     
+                    auto& track = looperEngine.getTrack(selectedTrack);
+                    if (!track.writeHead.getRecordEnable())
+                    {
+                        track.writeHead.setRecordEnable(true);
+                        tracks[selectedTrack]->repaint();
+                    }
+                }
+                else
+                {
+                    trackEngine.getClickSynth().triggerClick();
                     auto& track = looperEngine.getTrack(selectedTrack);
                     if (!track.writeHead.getRecordEnable())
                     {
@@ -455,50 +473,19 @@ bool MainComponent::keyPressed(const juce::KeyPress& key, juce::Component* origi
             }
             else if (selectedTrack == -1)
             {
-                // All tracks - trigger sampler on all tracks
+                // All tracks - try sampler first, then click synth
                 for (size_t i = 0; i < tracks.size(); ++i)
                 {
                     auto& trackEngine = looperEngine.getTrackEngine(static_cast<int>(i));
                     if (trackEngine.getSampler().hasSample())
                     {
                         trackEngine.getSampler().trigger();
-                        
-                        auto& track = looperEngine.getTrack(static_cast<int>(i));
-                        if (!track.writeHead.getRecordEnable())
-                        {
-                            track.writeHead.setRecordEnable(true);
-                            tracks[i]->repaint();
-                        }
+                        samplerUsed = true;
                     }
-                }
-            }
-        }
-        // Check click synth if sampler is not enabled
-        else if (clickSynthWindow != nullptr && clickSynthWindow->isEnabled())
-        {
-            int selectedTrack = clickSynthWindow->getSelectedTrack();
-            
-            // Trigger click on selected track(s)
-            if (selectedTrack >= 0 && selectedTrack < static_cast<int>(tracks.size()))
-            {
-                // Single track selected
-                auto& trackEngine = looperEngine.getTrackEngine(selectedTrack);
-                trackEngine.getClickSynth().triggerClick();
-                
-                auto& track = looperEngine.getTrack(selectedTrack);
-                if (!track.writeHead.getRecordEnable())
-                {
-                    track.writeHead.setRecordEnable(true);
-                    tracks[selectedTrack]->repaint();
-                }
-            }
-            else if (selectedTrack == -1)
-            {
-                // All tracks - trigger click on all tracks
-                for (size_t i = 0; i < tracks.size(); ++i)
-                {
-                    auto& trackEngine = looperEngine.getTrackEngine(static_cast<int>(i));
-                    trackEngine.getClickSynth().triggerClick();
+                    else
+                    {
+                        trackEngine.getClickSynth().triggerClick();
+                    }
                     
                     auto& track = looperEngine.getTrack(static_cast<int>(i));
                     if (!track.writeHead.getRecordEnable())
@@ -575,28 +562,16 @@ bool MainComponent::keyStateChanged(bool isKeyDown, juce::Component* originating
     return false;
 }
 
-void MainComponent::showClickSynthWindow()
+void MainComponent::showSynthsWindow()
 {
-    if (clickSynthWindow == nullptr)
+    if (synthsWindow == nullptr)
     {
         int numTracks = static_cast<int>(tracks.size());
-        clickSynthWindow = std::make_unique<ClickSynthWindow>(looperEngine, numTracks, &midiLearnManager);
+        synthsWindow = std::make_unique<SynthsWindow>(looperEngine, numTracks, &midiLearnManager);
     }
     
-    clickSynthWindow->setVisible(true);
-    clickSynthWindow->toFront(true);
-}
-
-void MainComponent::showSamplerWindow()
-{
-    if (samplerWindow == nullptr)
-    {
-        int numTracks = static_cast<int>(tracks.size());
-        samplerWindow = std::make_unique<SamplerWindow>(looperEngine, numTracks, &midiLearnManager);
-    }
-    
-    samplerWindow->setVisible(true);
-    samplerWindow->toFront(true);
+    synthsWindow->setVisible(true);
+    synthsWindow->toFront(true);
 }
 
 void MainComponent::showVizWindow()
@@ -618,25 +593,6 @@ void MainComponent::showVizWindow()
     vizWindow->toFront(true);
 }
 
-void MainComponent::showMidiSettings()
-{
-    auto devices = midiLearnManager.getAvailableMidiDevices();
-    
-    juce::AlertWindow::showMessageBoxAsync(
-        juce::AlertWindow::InfoIcon,
-        "MIDI Learn",
-        "MIDI Learn is enabled!\n\n"
-        "How to use:\n"
-        "1. Right-click any control (transport, level, knobs, generate)\n"
-        "2. Select 'MIDI Learn...' from the menu\n"
-        "3. Move a MIDI controller to assign it\n"
-        "   (or click/press ESC to cancel)\n\n"
-        "Available MIDI devices:\n" + 
-        (devices.isEmpty() ? "  (none)" : "  " + devices.joinIntoString("\n  ")) + "\n\n"
-        "Current mappings: " + juce::String(midiLearnManager.getAllMappings().size()),
-        "OK"
-    );
-}
 
 void MainComponent::showOverflowMenu()
 {
@@ -656,14 +612,12 @@ void MainComponent::showOverflowMenu()
     };
     
     std::vector<ButtonMenuItem> allButtons = {
-        {&syncButton, "sync all", 1},
-        {&gradioSettingsButton, "gradio", 2},
-        {&midiSettingsButton, "midi", 3},
-        {&clickSynthButton, "click synth", 4},
-        {&samplerButton, "sampler", 5},
-        {&vizButton, "viz", 6},
-        {&saveConfigButton, "save config", 7},
-        {&loadConfigButton, "load config", 8}
+        {&vizButton, "viz", 1},
+        {&syncButton, "sync all", 2},
+        {&settingsButton, "settings", 3},
+        {&synthsButton, "synths", 4},
+        {&saveConfigButton, "save config", 5},
+        {&loadConfigButton, "load config", 6}
     };
     
     // Add buttons to menu if they're outside the visible control area
@@ -680,7 +634,7 @@ void MainComponent::showOverflowMenu()
     // Calculate visible button count (same logic as resized())
     int visibleButtonCount = 0;
     int usedWidth = 0;
-    std::vector<int> buttonWidths = {120, 100, 80, 120, 120, 70, 130, 130};
+    std::vector<int> buttonWidths = {70, 120, 100, 100, 130, 130};
     
     // First pass: how many fit without overflow
     for (size_t i = 0; i < buttonWidths.size(); ++i)
@@ -754,14 +708,12 @@ void MainComponent::showOverflowMenu()
                            // Handle menu selection
                            switch (result)
                            {
-                               case 1: syncButtonClicked(); break;
-                               case 2: gradioSettingsButtonClicked(); break;
-                               case 3: midiSettingsButtonClicked(); break;
-                               case 4: showClickSynthWindow(); break;
-                               case 5: showSamplerWindow(); break;
-                               case 6: showVizWindow(); break;
-                               case 7: saveConfigButtonClicked(); break;
-                               case 8: loadConfigButtonClicked(); break;
+                               case 1: showVizWindow(); break;
+                               case 2: syncButtonClicked(); break;
+                               case 3: settingsButtonClicked(); break;
+                               case 4: showSynthsWindow(); break;
+                               case 5: saveConfigButtonClicked(); break;
+                               case 6: loadConfigButtonClicked(); break;
                            }
                        });
 }
