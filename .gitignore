@@ -26,3 +26,5 @@ Makefile
 .DS_Store
 
 scratch/
+
+third_party/
