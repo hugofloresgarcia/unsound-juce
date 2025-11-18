@@ -29,13 +29,16 @@ private:
     CLEATPanner* cleatPanner; // nullptr if not using CLEAT panner
     const std::array<std::atomic<float>, 16>& channelLevels;
     
-    // Toggle for showing pink boxes (only relevant if cleatPanner is not nullptr)
+    // Toggle for showing advanced info (only relevant if cleatPanner is not nullptr)
     juce::ToggleButton showPinkBoxesToggle;
     bool showPinkBoxes{true}; // Default to true for backward compatibility
     
     // Channel level meters (peak detection with decay)
     // 0.89 per 50ms frame ≈ 0.7 second decay time constant (faster, more responsive)
     static constexpr float levelDecayFactor{0.89f};
+    
+    // Internal peak-hold levels with decay (separate from engine levels)
+    std::array<float, 16> peakLevels{};
     
     // Store meters area for paint()
     juce::Rectangle<int> metersArea;

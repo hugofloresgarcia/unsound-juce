@@ -393,11 +393,17 @@ void MainComponent::sinksButtonClicked()
         const auto& channelLevels = looperEngine.getChannelLevels();
         sinksComponent = std::make_unique<flowerjuce::SinksWindow>(channelLevels);
         
+        // Set LookAndFeel on sinks component before transferring ownership
+        sinksComponent->setLookAndFeel(&customLookAndFeel);
+        
         // Create dialog window
         sinksWindow = std::make_unique<SinksDialogWindow>(
             "Sinks",
             juce::Colours::black
         );
+        
+        // Set LookAndFeel on dialog window as well
+        sinksWindow->setLookAndFeel(&customLookAndFeel);
         
         // Transfer ownership to DialogWindow (release from unique_ptr)
         sinksWindow->setContentOwned(sinksComponent.release(), true);

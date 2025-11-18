@@ -11,8 +11,12 @@ SinksWindow::SinksWindow(CLEATPanner* panner, const std::array<std::atomic<float
     setSize(500, 500);
     startTimer(50); // Update every 50ms
     
+    // Initialize peak levels
+    for (auto& level : peakLevels)
+        level = 0.0f;
+    
     // Setup toggle button
-    showPinkBoxesToggle.setButtonText("Show Pink Boxes");
+    showPinkBoxesToggle.setButtonText("Show Advanced");
     showPinkBoxesToggle.setToggleState(showPinkBoxes, juce::dontSendNotification);
     showPinkBoxesToggle.onClick = [this] {
         showPinkBoxes = showPinkBoxesToggle.getToggleState();
@@ -27,8 +31,12 @@ SinksWindow::SinksWindow(const std::array<std::atomic<float>, 16>& levels)
     setSize(500, 500);
     startTimer(50); // Update every 50ms
     
+    // Initialize peak levels
+    for (auto& level : peakLevels)
+        level = 0.0f;
+    
     // Setup toggle button (disabled since no CLEAT panner available)
-    showPinkBoxesToggle.setButtonText("Show Pink Boxes");
+    showPinkBoxesToggle.setButtonText("Show Advanced");
     showPinkBoxesToggle.setToggleState(false, juce::dontSendNotification);
     showPinkBoxesToggle.setEnabled(false);
     addAndMakeVisible(showPinkBoxesToggle);
@@ -97,7 +105,8 @@ void SinksWindow::paint(juce::Graphics& g)
                 juce::Rectangle<int> meterRect(x, y, meterWidth, meterHeight);
                 if (channel >= 0 && channel < numChannels)
                 {
-                    float level = channelLevels[channel].load();
+                    // Use peak-hold level with decay (from timerCallback)
+                    float level = peakLevels[channel];
                     float gain = gains[channel];
                     drawChannelMeter(g, meterRect, channel, level, gain, panX, panY);
                 }
@@ -328,6 +337,28 @@ void SinksWindow::resized()
 
 void SinksWindow::timerCallback()
 {
+    // Update peak-hold levels with decay
+    for (int i = 0; i < 16; ++i)
+    {
+        float currentLevel = channelLevels[i].load();
+        float currentPeak = peakLevels[i];
+        
+        // If new level is higher, update peak
+        if (currentLevel > currentPeak)
+        {
+            peakLevels[i] = currentLevel;
+        }
+        else
+        {
+            // Apply decay
+            peakLevels[i] *= levelDecayFactor;
+            
+            // Clamp to zero if very small
+            if (peakLevels[i] < 0.0001f)
+                peakLevels[i] = 0.0f;
+        }
+    }
+    
     // Trigger repaint to update meters and phase information
     repaint();
 }

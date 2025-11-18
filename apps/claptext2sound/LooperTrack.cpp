@@ -1,151 +1,36 @@
 #include "LooperTrack.h"
-#include <flowerjuce/Components/GradioUtilities.h>
+#include "CLAP/CLAPSearchWorkerThread.h"
 #include <flowerjuce/Components/ConfigManager.h>
 #include <flowerjuce/Panners/PanningUtils.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 
-using namespace Text2Sound;
-
-// GradioWorkerThread implementation
-void GradioWorkerThread::run()
-{
-    // Step 1: Save buffer to file on background thread (if audio exists)
-    juce::File tempAudioFile;
-    juce::Result saveResult = juce::Result::ok();
-    
-    // Check if we have audio (audioFile is not empty and not a sentinel)
-    bool isSentinel = audioFile.getFileName() == "has_audio";
-    
-    if (isSentinel)
-    {
-        // Notify status update: saving to file
-        DBG("GradioWorkerThread: Status update - Saving to file...");
-        juce::MessageManager::callAsync([this]()
-        {
-            if (onStatusUpdate)
-                onStatusUpdate("Saving to file...");
-        });
-        
-        // Actually save the buffer to file
-        DBG("GradioWorkerThread: Saving input audio to file: " + tempAudioFile.getFullPathName());
-        saveResult = saveBufferToFile(trackIndex, tempAudioFile);
-        DBG("GradioWorkerThread: Save input audio result: " + saveResult.getErrorMessage());
-
-        
-        if (saveResult.failed())
-        {
-            DBG("GradioWorkerThread: Save input audio failed: " + saveResult.getErrorMessage());
-            // Notify save failure on message thread
-            juce::MessageManager::callAsync([this, saveResult]()
-            {
-                if (onComplete)
-                    onComplete(saveResult, juce::Array<juce::File>(), trackIndex);
-            });
-            return;
-        }
-    }
-    else
-    {
-        // No audio - tempAudioFile remains empty, will be treated as null
-        tempAudioFile = juce::File();
-    }
-
-    // Step 2: Set up Gradio space info
-    GradioClient::SpaceInfo spaceInfo;
-    const juce::String defaultUrl = "https://opensound-ezaudio-controlnet.hf.space/";
-    juce::String configuredUrl = defaultUrl;
-
-    if (gradioUrlProvider)
-    {
-        juce::String providedUrl = gradioUrlProvider();
-        if (providedUrl.isNotEmpty())
-            configuredUrl = providedUrl;
-    }
-
-    spaceInfo.gradio = configuredUrl;
-    gradioClient.setSpaceInfo(spaceInfo);
-
-    // Step 3: Upload file (if we have audio)
-    if (isSentinel && tempAudioFile.existsAsFile())
-    {
-        // Notify status update: uploading
-        DBG("GradioWorkerThread: Status update - Uploading...");
-        juce::MessageManager::callAsync([this]()
-        {
-            if (onStatusUpdate)
-                onStatusUpdate("Uploading...");
-        });
-    }
-
-    // Step 4: Process request on background thread (get all variations)
-    // Ensure we have valid params (use defaults if customParams is invalid)
-    juce::var paramsToUse = customParams.isObject() ? customParams : Text2Sound::LooperTrack::getDefaultText2SoundParams();
-    
-    juce::Array<juce::File> outputFiles;
-    
-    // Notify status update: processing
-    DBG("GradioWorkerThread: Status update - Processing...");
-    juce::MessageManager::callAsync([this]()
-    {
-        if (onStatusUpdate)
-            onStatusUpdate("Processing...");
-    });
-    
-    auto result = gradioClient.processRequestMultiple(tempAudioFile, textPrompt, outputFiles, paramsToUse);
-
-    // Step 5: Download variations (if successful)
-    if (!result.failed() && outputFiles.size() > 0)
-    {
-        // Notify status update: downloading
-        juce::MessageManager::callAsync([this, outputFiles]()
-        {
-            if (onStatusUpdate)
-            {
-                juce::String statusText = "Downloading variations...";
-                if (outputFiles.size() > 1)
-                    statusText += " (" + juce::String(outputFiles.size()) + " files)";
-                DBG("GradioWorkerThread: Status update - " + statusText);
-                onStatusUpdate(statusText);
-            }
-        });
-    }
-
-    // Notify completion on message thread
-    juce::MessageManager::callAsync([this, result, outputFiles]()
-    {
-        if (onComplete)
-            onComplete(result, outputFiles, trackIndex);
-    });
-}
-
-juce::Result GradioWorkerThread::saveBufferToFile(int trackIndex, juce::File& outputFile)
-{
-    return Shared::saveTrackBufferToWavFile(looperEngine, trackIndex, outputFile, "gradio_input");
-}
+using namespace CLAPText2Sound;
 
 // LooperTrack implementation
-LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::function<juce::String()> gradioUrlGetter, Shared::MidiLearnManager* midiManager, const juce::String& pannerType)
+LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::function<juce::String()> soundPalettePathGetter, Shared::MidiLearnManager* midiManager, const juce::String& pannerType, ONNXModelManager* sharedModelManager)
     : looperEngine(engine), 
       trackIndex(index),
       waveformDisplay(engine, index),
       transportControls(midiManager, "track" + juce::String(index)),
       parameterKnobs(midiManager, "track" + juce::String(index)),
       levelControl(engine, index, midiManager, "track" + juce::String(index)),
+      inputSelector(),
       trackLabel("Track", "track " + juce::String(index + 1)),
       resetButton("x"),
       generateButton("generate"),
       textPromptLabel("TextPrompt", "query"),
       autogenToggle("autogen"),
-      gradioUrlProvider(std::move(gradioUrlGetter)),
+      soundPalettePathProvider(std::move(soundPalettePathGetter)),
       midiLearnManager(midiManager),
       trackIdPrefix("track" + juce::String(index)),
       pannerType(pannerType),
+      m_sharedModelManager(sharedModelManager),
       stereoPanSlider(juce::Slider::LinearHorizontal, juce::Slider::NoTextBox),
       panLabel("pan", "pan"),
       panCoordLabel("coord", "0.50, 0.50")
 {
     // Initialize custom params with defaults (will be updated by MainComponent)
-    customText2SoundParams = getDefaultText2SoundParams();
+    // No custom params needed for CLAP version
     
     // Initialize variations (allocate TapeLoops for each variation)
     auto& track = looperEngine.get_track(trackIndex);
@@ -268,7 +153,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     // Setup text prompt editor
     textPromptEditor.setMultiLine(false);
     textPromptEditor.setReturnKeyStartsNewLine(false);
-    textPromptEditor.setTextToShowWhenEmpty("enter text query...", juce::Colours::grey);
+    textPromptEditor.setTextToShowWhenEmpty("enter text prompt...", juce::Colours::grey);
     textPromptEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colours::black);
     textPromptEditor.onReturnKey = [this]() {
         // Pressing Enter triggers generate
@@ -317,11 +202,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
             }
             
             // Update duration parameter for gradio endpoint
-            auto* obj = customText2SoundParams.getDynamicObject();
-            if (obj != nullptr)
-            {
-                obj->setProperty("duration", juce::var(value));
-            }
+            // Duration parameter removed for CLAP version
         },
         ""  // parameterId - will be auto-generated
     });
@@ -339,12 +220,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
             track_init.m_write_head.set_wrap_pos(wrap_pos);
         }
         
-        // Update duration parameter for gradio endpoint
-        auto* obj = customText2SoundParams.getDynamicObject();
-        if (obj != nullptr)
-        {
-            obj->setProperty("duration", juce::var(5.0));
-        }
+        // Duration parameter removed for CLAP version
     }
     
     addAndMakeVisible(parameterKnobs);
@@ -374,6 +250,16 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     autogenToggle.setButtonText("autogen");
     autogenToggle.setToggleState(false, juce::dontSendNotification);
     addAndMakeVisible(autogenToggle);
+    
+    // Setup input selector
+    inputSelector.onChannelChange = [this](int channel) {
+        looperEngine.get_track(trackIndex).m_write_head.set_input_channel(channel);
+    };
+    addAndMakeVisible(inputSelector);
+    
+    // Initialize channel selector (will show "all" if device not ready yet)
+    // It will be updated again after device is initialized via updateChannelSelectors()
+    inputSelector.updateChannels(looperEngine.get_audio_device_manager());
     
     // Setup panner based on type
     auto pannerTypeLower = pannerType.toLowerCase();
@@ -674,10 +560,9 @@ void LooperTrack::resized()
     const int textPromptHeight = 30;
     const int buttonHeight = 30;
     const int generateButtonHeight = 30;
-    const int knobAreaHeight = 210; // Increased to fit 3 knobs (speed, duration, cutoff)
-    const int controlsHeight = 230; // Increased to accommodate level control + 3 knobs + autogen toggle
-    const int cutoffKnobSize = 50; // Smaller to match path control knobs
-    const int cutoffLabelHeight = 12;
+    const int channelSelectorHeight = 30;
+    const int knobAreaHeight = 140;
+    const int controlsHeight = 160;
     
     const int labelHeight = 15;
     const int textPromptLabelHeight = 15;
@@ -685,14 +570,16 @@ void LooperTrack::resized()
     const int pannerHeight = 150; // 2D panner height
     const int totalBottomHeight = textPromptLabelHeight + spacingSmall +
                                   textPromptHeight + spacingSmall +
+                                  channelSelectorHeight + spacingSmall +
+                                  knobAreaHeight + spacingSmall + 
                                   controlsHeight + spacingSmall +
                                   generateButtonHeight + spacingSmall +
                                   buttonHeight + spacingSmall +
                                   labelHeight + spacingSmall +
                                   pannerHeight;
     
-    // Maximum waveform height - prevents waveform from growing too large
-    const int maxWaveformHeight = 50;
+    // Increase waveform display height by reducing bottom area
+    const int waveformExtraHeight = 50;  // Make waveform taller
     
     auto bounds = getLocalBounds().reduced(componentMargin);
     
@@ -703,27 +590,17 @@ void LooperTrack::resized()
     trackLabel.setBounds(trackLabelArea);
     bounds.removeFromTop(spacingSmall);
     
+    // Input selector
+    auto channelSelectorArea = bounds.removeFromTop(channelSelectorHeight);
+    inputSelector.setBounds(channelSelectorArea);
+    bounds.removeFromTop(spacingSmall);
     
-    // Calculate extra space available (beyond minimum required)
-    const int minRequiredHeight = totalBottomHeight + maxWaveformHeight + variationSelectorHeight + spacingSmall;
-    const int availableHeight = bounds.getHeight();
-    const int extraHeight = juce::jmax(0, availableHeight - minRequiredHeight);
+    // Reserve space for controls at bottom (reduced to make waveform taller)
+    auto bottomArea = bounds.removeFromBottom(totalBottomHeight - waveformExtraHeight);
     
-    // Add extra space to panner height
-    const int actualPannerHeight = pannerHeight + extraHeight;
-    const int actualTotalBottomHeight = totalBottomHeight - pannerHeight + actualPannerHeight;
-    
-    // Reserve space for controls at bottom (with extra space for panner)
-    auto bottomArea = bounds.removeFromBottom(actualTotalBottomHeight);
-    
-    // Waveform area - limit maximum height so panner gets priority when window grows
+    // Waveform area - remove space for variation selector below it
     auto waveformArea = bounds.removeFromBottom(variationSelectorHeight + spacingSmall);
     variationSelector.setBounds(waveformArea.removeFromBottom(variationSelectorHeight));
-    // Limit waveform height to maxWaveformHeight
-    if (bounds.getHeight() > maxWaveformHeight)
-    {
-        bounds.setHeight(maxWaveformHeight);
-    }
     waveformDisplay.setBounds(bounds);
     
     // Text prompt at top of bottom area (label above editor)
@@ -735,27 +612,30 @@ void LooperTrack::resized()
     // Level control and VU meter with knobs and autogen toggle
     auto controlsArea = bottomArea.removeFromTop(controlsHeight);
     
-    // Left column: level control
+    // Left column: cutoff knob above level control (stacked vertically)
+    const int cutoffKnobSize = 60;
+    const int cutoffLabelHeight = 15;
     const int leftColumnWidth = 115; // Match level control width
     auto leftColumn = controlsArea.removeFromLeft(leftColumnWidth);
+    
+    // Cutoff knob at top
+    auto cutoffArea = leftColumn.removeFromTop(cutoffKnobSize + cutoffLabelHeight);
+    cutoffKnob.setBounds(cutoffArea.removeFromTop(cutoffKnobSize));
+    cutoffLabel.setBounds(cutoffArea);
+    leftColumn.removeFromTop(spacingSmall);
+    
+    // Level control below cutoff knob (uses remaining height)
     levelControl.setBounds(leftColumn);
     controlsArea.removeFromLeft(spacingSmall);
     
-    // Right side: parameter knobs + cutoff knob + autogen toggle
+    // Right side: parameter knobs in same height container as level control, autogen toggle below
     auto rightSide = controlsArea;
-    auto knobsArea = rightSide.removeFromTop(knobAreaHeight);
+    auto sharedHeightArea = rightSide.removeFromTop(knobAreaHeight);
     
-    // Parameter knobs (speed, duration) in top part of knobs area
-    auto parameterKnobsArea = knobsArea.removeFromTop(knobAreaHeight - cutoffKnobSize - cutoffLabelHeight - spacingSmall);
-    parameterKnobs.setBounds(parameterKnobsArea);
+    // Parameter knobs (speed, duration) in shared height area
+    parameterKnobs.setBounds(sharedHeightArea);
     
-    // Cutoff knob below parameter knobs (in same column, aligned with parameter knobs)
-    knobsArea.removeFromTop(spacingSmall);
-    auto cutoffKnobArea = knobsArea; // Use full width to match parameter knobs alignment
-    cutoffKnob.setBounds(cutoffKnobArea.removeFromTop(cutoffKnobSize));
-    cutoffLabel.setBounds(cutoffKnobArea); // Label below knob
-    
-    // Autogen toggle below knobs
+    // Autogen toggle below
     rightSide.removeFromTop(spacingSmall);
     autogenToggle.setBounds(rightSide.removeFromTop(30)); // Toggle button height
     bottomArea.removeFromTop(spacingSmall);
@@ -808,10 +688,7 @@ void LooperTrack::resized()
             saveTrajectoryButton.setBounds(0, 0, 0, 0);
         }
         
-        // Limit panner height to its width (keep it square)
-        const int pannerMaxHeight = bottomArea.getWidth();
-        const int finalPannerHeight = juce::jmin(actualPannerHeight, pannerMaxHeight);
-        auto pannerArea = bottomArea.removeFromTop(finalPannerHeight);
+        auto pannerArea = bottomArea.removeFromTop(pannerHeight);
         if (pannerType.toLowerCase() == "stereo" && stereoPanSlider.isVisible())
         {
             stereoPanSlider.setBounds(pannerArea);
@@ -820,8 +697,8 @@ void LooperTrack::resized()
         {
             panner2DComponent->setBounds(pannerArea);
             
-            // Path buttons below panner (two rows)
-            const int pathButtonHeight = 54; // Height for two rows (25 + 4 spacing + 25)
+            // Path buttons below panner
+            const int pathButtonHeight = 25;
             auto pathButtonArea = bottomArea.removeFromTop(pathButtonHeight);
             if (pathGeneratorButtons != nullptr)
             {
@@ -923,51 +800,54 @@ void LooperTrack::generateButtonClicked()
     DBG("LooperTrack: Starting generation with text prompt: " + textPrompt);
 
     // Stop any existing worker thread
-    if (gradioWorkerThread != nullptr)
+    if (clapSearchWorkerThread != nullptr)
     {
-        gradioWorkerThread->stopThread(1000);
-        gradioWorkerThread.reset();
+        clapSearchWorkerThread->stopThread(1000);
+        clapSearchWorkerThread.reset();
     }
 
     // Disable generate button during processing
     generateButton.setEnabled(false);
-    generateButton.setButtonText("generating...");
+    generateButton.setButtonText("searching...");
     
     // Reset status text
-    gradioStatusText = "";
+    clapStatusText = "";
 
-    // Always pass empty File (null) to gradio - audio is never sent
-    juce::File audioFile; // Always empty - audio is always null
-    DBG("LooperTrack: Always passing empty file (null audio) to gradio");
+    // Get sound palette path
+    juce::String palettePath = soundPalettePathProvider ? soundPalettePathProvider() : juce::String();
+    if (palettePath.isEmpty())
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                              "No Sound Palette",
+                                              "Please select a sound palette in the startup dialog.");
+        generateButton.setEnabled(true);
+        generateButton.setButtonText("generate");
+        return;
+    }
 
     // Create and start background worker thread
-    gradioWorkerThread = std::make_unique<GradioWorkerThread>(looperEngine,
-                                                              trackIndex,
-                                                              audioFile,
-                                                              textPrompt,
-                                                              customText2SoundParams,
-                                                              gradioUrlProvider);
-    gradioWorkerThread->onComplete = [this](juce::Result result, juce::Array<juce::File> outputFiles, int trackIdx)
+    clapSearchWorkerThread = std::make_unique<CLAPSearchWorkerThread>(looperEngine,
+                                                                     trackIndex,
+                                                                     textPrompt,
+                                                                     juce::File(palettePath),
+                                                                     m_sharedModelManager);
+    clapSearchWorkerThread->onComplete = [this](juce::Result result, juce::Array<juce::File> outputFiles, int trackIdx)
     {
-        onGradioComplete(result, outputFiles);
+        onCLAPSearchComplete(result, outputFiles);
     };
     
-    gradioWorkerThread->onStatusUpdate = [this](const juce::String& statusText)
+    clapSearchWorkerThread->onStatusUpdate = [this](const juce::String& statusText)
     {
         DBG("LooperTrack: Received status update - " + statusText);
-        gradioStatusText = statusText;
+        clapStatusText = statusText;
         generateButton.setButtonText(statusText);
         repaint();
     };
     
-    gradioWorkerThread->startThread();
+    clapSearchWorkerThread->startThread();
 }
 
-void LooperTrack::updateModelParams(const juce::var& newParams)
-{
-    customText2SoundParams = newParams;
-    DBG("LooperTrack: Model parameters updated for track " + juce::String(trackIndex));
-}
+// No model params for CLAP version
 
 void LooperTrack::setPannerSmoothingTime(double smoothingTime)
 {
@@ -1018,6 +898,8 @@ bool LooperTrack::getPanPosition(float& x, float& y) const
 }
 
 
+// Removed getDefaultText2SoundParams - not needed for CLAP version
+#if 0
 juce::var LooperTrack::getDefaultText2SoundParams()
 {
     // Create default parameters object (excluding text prompt and audio which are in UI)
@@ -1045,21 +927,22 @@ juce::var LooperTrack::getDefaultText2SoundParams()
     
     return juce::var(params);
 }
+#endif
 
-void LooperTrack::onGradioComplete(juce::Result result, juce::Array<juce::File> outputFiles)
+void LooperTrack::onCLAPSearchComplete(juce::Result result, juce::Array<juce::File> outputFiles)
 {
     // Reset status text
-    gradioStatusText = "";
+    clapStatusText = "";
     
     // Re-enable button
     generateButton.setEnabled(true);
     generateButton.setButtonText("generate");
 
     // Clean up worker thread
-    if (gradioWorkerThread != nullptr)
+    if (clapSearchWorkerThread != nullptr)
     {
-        gradioWorkerThread->stopThread(1000);
-        gradioWorkerThread.reset();
+        clapSearchWorkerThread->stopThread(1000);
+        clapSearchWorkerThread.reset();
     }
 
     if (result.failed())
@@ -1198,10 +1081,10 @@ void LooperTrack::resetButtonClicked()
     auto& track = looperEngine.get_track(trackIndex);
     
     // Stop any ongoing generation
-    if (gradioWorkerThread != nullptr)
+    if (clapSearchWorkerThread != nullptr)
     {
-        gradioWorkerThread->stopThread(1000);
-        gradioWorkerThread.reset();
+        clapSearchWorkerThread->stopThread(1000);
+        clapSearchWorkerThread.reset();
     }
     generateButton.setEnabled(true);
     generateButton.setButtonText("generate");
@@ -1226,11 +1109,7 @@ void LooperTrack::resetButtonClicked()
     
     parameterKnobs.setKnobValue(1, 5.0, juce::dontSendNotification); // duration (default 5.0)
     // Reset duration parameter and WrapPos
-    auto* obj = customText2SoundParams.getDynamicObject();
-    if (obj != nullptr)
-    {
-        obj->setProperty("duration", juce::var(5.0));
-    }
+    // Duration parameter removed for CLAP version
     double sample_rate = track.m_write_head.get_sample_rate();
     if (sample_rate > 0.0)
     {
@@ -1283,10 +1162,10 @@ LooperTrack::~LooperTrack()
     }
     
     // Stop and wait for background thread to finish
-    if (gradioWorkerThread != nullptr)
+    if (clapSearchWorkerThread != nullptr)
     {
-        gradioWorkerThread->stopThread(5000); // Wait up to 5 seconds
-        gradioWorkerThread.reset();
+        clapSearchWorkerThread->stopThread(5000); // Wait up to 5 seconds
+        clapSearchWorkerThread.reset();
     }
 }
 
@@ -1461,13 +1340,13 @@ void LooperTrack::feedAudioSample(float sample)
                 {
                     peak = juce::jmax(peak, std::abs(onsetProcessingBuffer[i]));
                 }
-                // DBG("LooperTrack[" + juce::String(trackIndex) + "]: Audio levels - RMS=" + juce::String(rms, 4) + 
-                    // " Peak=" + juce::String(peak, 4) + " Threshold=" + juce::String(onsetDetector.getThreshold(), 4));
+                DBG("LooperTrack[" + juce::String(trackIndex) + "]: Audio levels - RMS=" + juce::String(rms, 4) + 
+                    " Peak=" + juce::String(peak, 4) + " Threshold=" + juce::String(onsetDetector.getThreshold(), 4));
             }
             
             if (detected)
             {
-                // DBG("LooperTrack[" + juce::String(trackIndex) + "]: Onset detected! (audio thread) - advancing trajectory");
+                DBG("LooperTrack[" + juce::String(trackIndex) + "]: Onset detected! (audio thread) - advancing trajectory");
                 
                 // Update atomic flags for UI thread
                 onsetDetected.store(true);
@@ -1589,12 +1468,12 @@ void LooperTrack::handleAsyncUpdate()
         if (panner2DComponent != nullptr)
         {
             bool wasPlaying = panner2DComponent->is_playing();
-            DBG("LooperTrack[" + juce::String(trackIndex) + "]: panner2DComponent->is_playing()=" + (wasPlaying ? "true" : "false"));
+            // DBG("LooperTrack[" + juce::String(trackIndex) + "]: panner2DComponent->is_playing()=" + (wasPlaying ? "true" : "false"));
             panner2DComponent->advance_trajectory_onset();
         }
         else
         {
-            DBG("LooperTrack[" + juce::String(trackIndex) + "]: ERROR - panner2DComponent is null!");
+            // DBG("LooperTrack[" + juce::String(trackIndex) + "]: ERROR - panner2DComponent is null!");
         }
     }
     
@@ -1602,6 +1481,11 @@ void LooperTrack::handleAsyncUpdate()
     repaint();
 }
 
+void LooperTrack::updateChannelSelectors()
+{
+    // Update channel selector based on current audio device
+    inputSelector.updateChannels(looperEngine.get_audio_device_manager());
+}
 
 void LooperTrack::loadVariationFromFile(int variationIndex, const juce::File& audioFile)
 {
@@ -1617,6 +1501,9 @@ void LooperTrack::loadVariationFromFile(int variationIndex, const juce::File& au
     auto& variation = variations[variationIndex];
     auto& track = looperEngine.get_track(trackIndex);
     auto& trackEngine = looperEngine.get_track_engine(trackIndex);
+    
+    // Get duration from parameter knobs (index 1 is duration)
+    double durationSeconds = parameterKnobs.getKnobValue(1);
     
     // Use the track engine's format manager to read the file
     juce::AudioFormatManager formatManager;
@@ -1641,19 +1528,30 @@ void LooperTrack::loadVariationFromFile(int variationIndex, const juce::File& au
     // Clear the buffer first
     variation->clear_buffer();
     
-    // Determine how many samples to read
-    juce::int64 numSamplesToRead = juce::jmin(reader->lengthInSamples, static_cast<juce::int64>(buffer.size()));
+    // Calculate how many samples we need for the desired duration
+    double sampleRate = reader->sampleRate;
+    if (sampleRate <= 0.0)
+        sampleRate = 44100.0; // Default fallback
+    
+    juce::int64 durationSamples = static_cast<juce::int64>(durationSeconds * sampleRate);
+    juce::int64 fileLengthSamples = reader->lengthInSamples;
+    
+    // Determine how many samples to read (limited by buffer size and file length)
+    juce::int64 numSamplesToRead = juce::jmin(durationSamples, static_cast<juce::int64>(buffer.size()), fileLengthSamples);
     
     if (numSamplesToRead <= 0)
     {
-        DBG("Variation file has no samples");
+        DBG("Variation file has no samples or duration too small");
         return;
     }
     
-    // Read audio data
+    // Always start at the beginning of the chunk file (no random crop)
+    juce::int64 startSample = 0;
+    
+    // Read audio data from the beginning
     juce::AudioBuffer<float> tempBuffer(static_cast<int>(reader->numChannels), static_cast<int>(numSamplesToRead));
     
-    if (!reader->read(&tempBuffer, 0, static_cast<int>(numSamplesToRead), 0, true, true))
+    if (!reader->read(&tempBuffer, 0, static_cast<int>(numSamplesToRead), startSample, true, true))
     {
         DBG("Failed to read variation audio data");
         return;
@@ -1686,7 +1584,9 @@ void LooperTrack::loadVariationFromFile(int variationIndex, const juce::File& au
     variation->m_recorded_length.store(loadedLength);
     variation->m_has_recorded.store(true);
     
-    DBG("Loaded variation " + juce::String(variationIndex + 1) + " from file: " + audioFile.getFileName());
+    DBG("Loaded variation " + juce::String(variationIndex + 1) + " from file: " + audioFile.getFileName() + 
+        " (samples: " + juce::String(startSample) + " to " + juce::String(startSample + numSamplesToRead) + 
+        ", duration: " + juce::String(durationSeconds) + "s)");
 }
 
 void LooperTrack::applyVariationsFromFiles(const juce::Array<juce::File>& outputFiles)
@@ -1750,6 +1650,13 @@ void LooperTrack::switchToVariation(int variationIndex)
     auto& track = looperEngine.get_track(trackIndex);
     auto& trackEngine = looperEngine.get_track_engine(trackIndex);
     
+    // Get duration from parameter knobs (index 1 is duration) to set wrapPos
+    double durationSeconds = parameterKnobs.getKnobValue(1);
+    double sampleRate = track.m_write_head.get_sample_rate();
+    if (sampleRate <= 0.0)
+        sampleRate = 44100.0;
+    size_t durationSamples = static_cast<size_t>(durationSeconds * sampleRate);
+    
     // Copy variation buffer to active track buffer
     {
         const juce::ScopedLock slVar(variation->m_lock);
@@ -1776,9 +1683,10 @@ void LooperTrack::switchToVariation(int variationIndex)
         track.m_tape_loop.m_recorded_length.store(copy_length);
         track.m_tape_loop.m_has_recorded.store(true);
         
-        // Update wrapPos
-        track.m_write_head.set_wrap_pos(copy_length);
-        track.m_write_head.set_pos(copy_length);
+        // Update wrapPos based on duration knob (limit to actual loaded length)
+        size_t wrapPos = juce::jmin(durationSamples, copy_length, track_buffer.size());
+        track.m_write_head.set_wrap_pos(wrapPos);
+        track.m_write_head.set_pos(wrapPos);
     }
     
     // Reset read head to start
@@ -1798,11 +1706,6 @@ void LooperTrack::cycleToNextVariation()
     if (!autoCycleVariations || variations.empty())
         return;
     
-    // Use VariationSelector's method to get next enabled variation
-    int nextIndex = variationSelector.getNextEnabledVariation(currentVariationIndex);
-    if (nextIndex >= 0)
-    {
-        switchToVariation(nextIndex);
-    }
-    // If no enabled variation found, don't cycle (stay on current)
+    int nextIndex = (currentVariationIndex + 1) % static_cast<int>(variations.size());
+    switchToVariation(nextIndex);
 }
