@@ -58,10 +58,12 @@ class OnsetDetector
 {
 public:
     OnsetDetector()
-        : threshold(0.01f), lowerThreshold(0.005f), useRMS(true), wasAboveThreshold(false)
+        : threshold(0.01f), lowerThreshold(0.005f), useRMS(true), wasAboveThreshold(false),
+          lastOnsetTimeMs(0.0), minTimeBetweenOnsetsMs(80.0)
     {
         // Lower thresholds: 0.01 (1%) for detection, 0.005 (0.5%) for reset
         // This makes onset detection more sensitive to transients
+        // Rate limiting: max 1 onset per 80ms
     }
     
     ~OnsetDetector() = default;
@@ -93,14 +95,28 @@ public:
         
         bool detected = OnsetDetection::detectOnset(loudness, threshold, lowerThreshold, wasAboveThreshold);
         
+        // Rate limiting: only allow one onset per 80ms
         if (detected)
         {
-            DBG("OnsetDetector: Onset detected! Loudness=" + juce::String(loudness, 4) 
-                + " Threshold=" + juce::String(threshold, 4)
-                + " RMS=" + juce::String(useRMS ? "yes" : "no"));
+            double currentTimeMs = juce::Time::getMillisecondCounterHiRes();
+            double timeSinceLastOnsetMs = currentTimeMs - lastOnsetTimeMs;
+            
+            if (timeSinceLastOnsetMs >= minTimeBetweenOnsetsMs)
+            {
+                lastOnsetTimeMs = currentTimeMs;
+                DBG("OnsetDetector: Onset detected! Loudness=" + juce::String(loudness, 4) 
+                    + " Threshold=" + juce::String(threshold, 4)
+                    + " RMS=" + juce::String(useRMS ? "yes" : "no"));
+                return true;
+            }
+            else
+            {
+                // Onset detected but rate limited - suppress it
+                return false;
+            }
         }
         
-        return detected;
+        return false;
     }
     
     // Set threshold for onset detection
@@ -119,6 +135,7 @@ public:
     void reset()
     {
         wasAboveThreshold = false;
+        lastOnsetTimeMs = 0.0;
     }
     
 private:
@@ -131,4 +148,8 @@ private:
     // Sample rate and block size
     double sampleRate{44100.0};
     int blockSize{0};
+    
+    // Rate limiting: track last onset time to enforce minimum interval
+    double lastOnsetTimeMs;
+    const double minTimeBetweenOnsetsMs; // 80ms minimum between onsets
 };

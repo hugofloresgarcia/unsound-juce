@@ -167,7 +167,7 @@ namespace CLAPText2Sound
             progressCallback("Saving palette data...");
         DBG("SoundPaletteCreator: Saving palette data...");
         
-        if (!savePaletteData(paletteDir, allChunks, sourceFiles, embeddings))
+        if (!savePaletteData(paletteDir, allChunks, sourceFiles, embeddings, featureType))
         {
             DBG("SoundPaletteCreator: Failed to save palette data");
             m_isCreating = false;
@@ -547,7 +547,8 @@ namespace CLAPText2Sound
         const juce::File& paletteDir,
         const juce::Array<juce::File>& chunkFiles,
         const juce::Array<juce::File>& sourceFiles,
-        const std::vector<std::vector<float>>& embeddings) const
+        const std::vector<std::vector<float>>& embeddings,
+        FeatureType featureType) const
     {
         if (chunkFiles.size() != embeddings.size())
         {
@@ -599,6 +600,7 @@ namespace CLAPText2Sound
         
         metadata.getDynamicObject()->setProperty("numChunks", static_cast<int>(chunkFiles.size()));
         metadata.getDynamicObject()->setProperty("embeddingSize", embeddings.empty() ? 0 : static_cast<int>(embeddings[0].size()));
+        metadata.getDynamicObject()->setProperty("embeddingType", featureType == FeatureType::CLAP ? juce::String("CLAP") : juce::String("STFT"));
         metadata.getDynamicObject()->setProperty("chunks", juce::var(chunksArray));
         
         // Add t-SNE coordinates and cluster assignments if provided

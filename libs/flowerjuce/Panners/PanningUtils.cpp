@@ -277,7 +277,7 @@ namespace PanningUtils
         static std::random_device rd;
         static std::mt19937 gen(rd());
         std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-        std::uniform_int_distribution<int> point_dist(50, 100);
+        std::uniform_int_distribution<int> point_dist(200, 300);
         
         // Generate random number of points if not specified
         if (num_points <= 0)
@@ -415,7 +415,7 @@ namespace PanningUtils
         return coords;
     }
     
-    std::vector<std::pair<float, float>> generate_bounce_path()
+    std::vector<std::pair<float, float>> generate_bounce_path(int num_points)
     {
         std::vector<std::pair<float, float>> coords;
         
@@ -423,6 +423,15 @@ namespace PanningUtils
         static std::random_device rd;
         static std::mt19937 gen(rd());
         std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+        std::uniform_int_distribution<int> point_dist(200, 300);
+        
+        // Generate random number of points if not specified
+        if (num_points <= 0)
+            num_points = point_dist(gen);
+        
+        // Ensure minimum points
+        if (num_points < 2)
+            num_points = 2;
         
         // Define quadrants
         struct Quadrant {
@@ -468,8 +477,17 @@ namespace PanningUtils
         x2 = juce::jlimit(0.0f, 1.0f, x2);
         y2 = juce::jlimit(0.0f, 1.0f, y2);
         
-        coords.push_back({x1, y1});
-        coords.push_back({x2, y2});
+        // Generate intermediate points between the two bounce points
+        for (int i = 0; i < num_points; ++i)
+        {
+            float t = static_cast<float>(i) / static_cast<float>(num_points - 1);
+            // Use smooth interpolation (ease-in-out) for more natural bounce motion
+            float smooth_t = t * t * (3.0f - 2.0f * t); // Smoothstep
+            float x = x1 + (x2 - x1) * smooth_t;
+            float y = y1 + (y2 - y1) * smooth_t;
+            
+            coords.push_back({x, y});
+        }
         
         return coords;
     }
@@ -531,7 +549,7 @@ namespace PanningUtils
         static std::random_device rd;
         static std::mt19937 gen(rd());
         std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-        std::uniform_int_distribution<int> point_dist(50, 100);
+        std::uniform_int_distribution<int> point_dist(200, 300);
         std::uniform_int_distribution<int> dir_dist(0, 1);
         
         // Generate random number of points if not specified
@@ -571,7 +589,7 @@ namespace PanningUtils
         static std::random_device rd;
         static std::mt19937 gen(rd());
         std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-        std::uniform_int_distribution<int> point_dist(50, 100);
+        std::uniform_int_distribution<int> point_dist(200, 300);
         std::uniform_int_distribution<int> dir_dist(0, 1);
         
         // Generate random number of points if not specified

@@ -167,6 +167,7 @@ namespace CLAPText2Sound
         inputStream.read(&numEmbeddings, sizeof(int32_t));
         inputStream.read(&embeddingSize, sizeof(int32_t));
         
+        // Check size match
         if (embeddingSize != static_cast<int32_t>(textEmbedding.size()))
         {
             DBG("CLAPSearchWorkerThread: Embedding size mismatch: expected " + juce::String(embeddingSize) + ", got " + juce::String(textEmbedding.size()));

@@ -497,6 +497,7 @@ namespace CLAPText2Sound
         
         metadata.getDynamicObject()->setProperty("numChunks", static_cast<int>(chunkFiles.size()));
         metadata.getDynamicObject()->setProperty("embeddingSize", embeddings.empty() ? 0 : static_cast<int>(embeddings[0].size()));
+        metadata.getDynamicObject()->setProperty("embeddingType", juce::String("CLAP")); // Mark as CLAP embeddings
         metadata.getDynamicObject()->setProperty("chunks", juce::var(chunksArray));
         
         // Write metadata JSON

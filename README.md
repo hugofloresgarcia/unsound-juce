@@ -31,21 +31,32 @@ A JUCE-based multitrack audio looper application with support for AI-powered sou
   - Windows: Visual Studio 2019+
   - Linux: GCC 9+ or Clang 10+
 - **JUCE Framework** (included as submodule)
+- **Git LFS** (for large asset files)
+  - macOS: `brew install git-lfs`
+  - Windows: Download from [git-lfs.github.io](https://git-lfs.github.io/)
+  - Linux: `sudo apt install git-lfs` or `sudo yum install git-lfs`
 
 #### Setup
 
-1. **Clone the repository**
+1. **Install and initialize Git LFS** (if not already done)
+```bash
+git lfs install
+```
+
+2. **Clone the repository**
 ```bash
 git clone https://github.com/hugofloresgarcia/unsound-juce.git
 cd unsound-juce
 ```
 
-2. **Initialize JUCE submodule**
+**Note**: This repository uses Git LFS to store large model files. Make sure Git LFS is installed and initialized before cloning, or run `git lfs pull` after cloning to download the LFS-tracked files.
+
+3. **Initialize JUCE submodule**
 ```bash
 git submodule update --init --recursive
 ```
 
-3. **Build the project**
+4. **Build the project**
 
 **macOS/Linux:**
 ```bash

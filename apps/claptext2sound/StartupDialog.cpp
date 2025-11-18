@@ -139,7 +139,20 @@ void StartupDialog::buttonClicked(juce::Button* button)
         int selectedId = paletteCombo.getSelectedId();
         if (selectedId > 0 && selectedId <= static_cast<int>(discoveredPalettes.size()))
         {
-            selectedPalettePath = discoveredPalettes[selectedId - 1].path.getFullPathName();
+            juce::File selectedPalette = discoveredPalettes[selectedId - 1].path;
+            
+            // Safety check: ensure palette is valid and contains CLAP embeddings (not STFT)
+            if (!paletteManager.isValidPalette(selectedPalette))
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                      "Invalid Palette",
+                                                      "The selected palette is not compatible with CLAPText2Sound.\n\n"
+                                                      "CLAPText2Sound only works with palettes containing CLAP embeddings.\n"
+                                                      "Palettes with STFT features are not supported.");
+                return; // Don't close the dialog
+            }
+            
+            selectedPalettePath = selectedPalette.getFullPathName();
         }
         
         DBG("[StartupDialog] numTracks=" << numTracks << ", panner=" << selectedPanner);

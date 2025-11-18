@@ -1,4 +1,5 @@
 #include "SoundPaletteManager.h"
+#include <juce_data_structures/juce_data_structures.h>
 #include <algorithm>
 
 namespace CLAPText2Sound
@@ -70,7 +71,23 @@ namespace CLAPText2Sound
         auto faissFile = paletteDir.getChildFile("embeddings.faiss");
         auto metadataFile = paletteDir.getChildFile("metadata.json");
         
-        return metadataFile.existsAsFile() && (binFile.existsAsFile() || faissFile.existsAsFile());
+        if (!metadataFile.existsAsFile() || (!binFile.existsAsFile() && !faissFile.existsAsFile()))
+            return false;
+        
+        // CLAPText2Sound only works with CLAP embeddings, not STFT features
+        // Check embedding type from metadata
+        juce::var metadata = juce::JSON::parse(metadataFile);
+        if (metadata.isObject())
+        {
+            juce::String embeddingType = metadata.getProperty("embeddingType", juce::String("CLAP")).toString();
+            if (embeddingType == "STFT")
+            {
+                DBG("SoundPaletteManager: Rejecting palette with STFT features: " + paletteDir.getFileName());
+                return false;
+            }
+        }
+        
+        return true;
     }
     
     std::vector<juce::File> SoundPaletteManager::getDefaultSearchLocations() const

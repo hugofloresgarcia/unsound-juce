@@ -64,7 +64,7 @@ namespace PanningUtils
     std::vector<std::pair<float, float>> generate_swirls_path(int num_points = 0);
     
     // Generate bounce path (two points in different quadrants)
-    std::vector<std::pair<float, float>> generate_bounce_path();
+    std::vector<std::pair<float, float>> generate_bounce_path(int num_points = 0);
     
     // Generate spiral path (from center outward)
     std::vector<std::pair<float, float>> generate_spiral_path(int num_points = 0);

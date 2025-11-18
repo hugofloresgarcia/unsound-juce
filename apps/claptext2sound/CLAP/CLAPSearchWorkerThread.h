@@ -37,6 +37,7 @@ namespace CLAPText2Sound
         ONNXModelManager* m_sharedModelManager;  // Optional shared model manager
         
         // Search FAISS index for top-K matches
+        // Note: CLAPText2Sound only works with CLAP embeddings, not STFT features
         juce::Array<juce::File> searchPalette(
             const juce::File& palettePath,
             const std::vector<float>& textEmbedding,

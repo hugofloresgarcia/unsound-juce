@@ -27,3 +27,7 @@ Makefile
 
 scratch/
 third_party/
+
+# Environment files with sensitive credentials
+.env
+.env.local

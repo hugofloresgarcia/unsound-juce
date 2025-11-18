@@ -71,7 +71,8 @@ namespace CLAPText2Sound
             const juce::File& paletteDir,
             const juce::Array<juce::File>& chunkFiles,
             const juce::Array<juce::File>& sourceFiles,
-            const std::vector<std::vector<float>>& embeddings
+            const std::vector<std::vector<float>>& embeddings,
+            FeatureType featureType = FeatureType::CLAP
         ) const;
     };
 }

@@ -145,6 +145,17 @@ namespace CLAPText2Sound
             return results;
         }
         
+        // Check embedding type from metadata (default to "CLAP" for backward compatibility)
+        juce::String embeddingType = metadata.getProperty("embeddingType", juce::String("CLAP")).toString();
+        DBG("CLAPSearchWorkerThread: Palette embedding type: " + embeddingType);
+        
+        // CLAPText2Sound only works with CLAP embeddings, not STFT features
+        if (embeddingType == "STFT")
+        {
+            DBG("CLAPSearchWorkerThread: Palette contains STFT features. CLAPText2Sound only supports CLAP embeddings. Please use a palette created with CLAP embeddings.");
+            return results;
+        }
+        
         // Load embeddings
         juce::File embeddingsFile = palettePath.getChildFile("embeddings.bin");
         if (!embeddingsFile.existsAsFile())
@@ -167,6 +178,7 @@ namespace CLAPText2Sound
         inputStream.read(&numEmbeddings, sizeof(int32_t));
         inputStream.read(&embeddingSize, sizeof(int32_t));
         
+        // For CLAP embeddings, check size match
         if (embeddingSize != static_cast<int32_t>(textEmbedding.size()))
         {
             DBG("CLAPSearchWorkerThread: Embedding size mismatch: expected " + juce::String(embeddingSize) + ", got " + juce::String(textEmbedding.size()));
