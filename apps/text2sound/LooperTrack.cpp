@@ -686,11 +686,10 @@ void LooperTrack::resized()
     const int buttonHeight = 30;
     const int generateButtonHeight = 30;
     const int channelSelectorHeight = 30;
-    const int knobAreaHeight = 140;
-    const int controlsHeight = 160; // Level control and parameter knobs
-    const int cutoffKnobSize = 60;
-    const int cutoffLabelHeight = 15;
-    const int cutoffRowHeight = cutoffKnobSize + cutoffLabelHeight + spacingSmall; // Cutoff knob row
+    const int knobAreaHeight = 210; // Increased to fit 3 knobs (speed, duration, cutoff)
+    const int controlsHeight = 230; // Increased to accommodate level control + 3 knobs + autogen toggle
+    const int cutoffKnobSize = 50; // Smaller to match path control knobs
+    const int cutoffLabelHeight = 12;
     
     const int labelHeight = 15;
     const int textPromptLabelHeight = 15;
@@ -699,15 +698,14 @@ void LooperTrack::resized()
     const int totalBottomHeight = textPromptLabelHeight + spacingSmall +
                                   textPromptHeight + spacingSmall +
                                   channelSelectorHeight + spacingSmall +
-                                  cutoffRowHeight + spacingSmall + // Cutoff knob row
                                   controlsHeight + spacingSmall +
                                   generateButtonHeight + spacingSmall +
                                   buttonHeight + spacingSmall +
                                   labelHeight + spacingSmall +
                                   pannerHeight;
     
-    // Increase waveform display height by reducing bottom area
-    const int waveformExtraHeight = 50;  // Make waveform taller
+    // Maximum waveform height - prevents waveform from growing too large
+    const int maxWaveformHeight = 50;
     
     auto bounds = getLocalBounds().reduced(componentMargin);
     
@@ -723,25 +721,32 @@ void LooperTrack::resized()
     inputSelector.setBounds(channelSelectorArea);
     bounds.removeFromTop(spacingSmall);
     
-    // Reserve space for controls at bottom (reduced to make waveform taller)
-    auto bottomArea = bounds.removeFromBottom(totalBottomHeight - waveformExtraHeight);
+    // Calculate extra space available (beyond minimum required)
+    const int minRequiredHeight = totalBottomHeight + maxWaveformHeight + variationSelectorHeight + spacingSmall;
+    const int availableHeight = bounds.getHeight();
+    const int extraHeight = juce::jmax(0, availableHeight - minRequiredHeight);
     
-    // Waveform area - remove space for variation selector below it
+    // Add extra space to panner height
+    const int actualPannerHeight = pannerHeight + extraHeight;
+    const int actualTotalBottomHeight = totalBottomHeight - pannerHeight + actualPannerHeight;
+    
+    // Reserve space for controls at bottom (with extra space for panner)
+    auto bottomArea = bounds.removeFromBottom(actualTotalBottomHeight);
+    
+    // Waveform area - limit maximum height so panner gets priority when window grows
     auto waveformArea = bounds.removeFromBottom(variationSelectorHeight + spacingSmall);
     variationSelector.setBounds(waveformArea.removeFromBottom(variationSelectorHeight));
+    // Limit waveform height to maxWaveformHeight
+    if (bounds.getHeight() > maxWaveformHeight)
+    {
+        bounds.setHeight(maxWaveformHeight);
+    }
     waveformDisplay.setBounds(bounds);
     
     // Text prompt at top of bottom area (label above editor)
     textPromptLabel.setBounds(bottomArea.removeFromTop(textPromptLabelHeight));
     bottomArea.removeFromTop(spacingSmall);
     textPromptEditor.setBounds(bottomArea.removeFromTop(textPromptHeight));
-    bottomArea.removeFromTop(spacingSmall);
-    
-    // Cutoff knob row (above controls area)
-    auto cutoffRowArea = bottomArea.removeFromTop(cutoffRowHeight);
-    auto cutoffKnobArea = cutoffRowArea.removeFromRight(cutoffKnobSize);
-    cutoffKnob.setBounds(cutoffKnobArea.removeFromTop(cutoffKnobSize));
-    cutoffLabel.setBounds(cutoffKnobArea); // Label below knob
     bottomArea.removeFromTop(spacingSmall);
     
     // Level control and VU meter with knobs and autogen toggle
@@ -753,14 +758,21 @@ void LooperTrack::resized()
     levelControl.setBounds(leftColumn);
     controlsArea.removeFromLeft(spacingSmall);
     
-    // Right side: parameter knobs in same height container as level control, autogen toggle below
+    // Right side: parameter knobs + cutoff knob + autogen toggle
     auto rightSide = controlsArea;
-    auto sharedHeightArea = rightSide.removeFromTop(knobAreaHeight);
+    auto knobsArea = rightSide.removeFromTop(knobAreaHeight);
     
-    // Parameter knobs (speed, duration) in shared height area
-    parameterKnobs.setBounds(sharedHeightArea);
+    // Parameter knobs (speed, duration) in top part of knobs area
+    auto parameterKnobsArea = knobsArea.removeFromTop(knobAreaHeight - cutoffKnobSize - cutoffLabelHeight - spacingSmall);
+    parameterKnobs.setBounds(parameterKnobsArea);
     
-    // Autogen toggle below
+    // Cutoff knob below parameter knobs (in same column, aligned with parameter knobs)
+    knobsArea.removeFromTop(spacingSmall);
+    auto cutoffKnobArea = knobsArea; // Use full width to match parameter knobs alignment
+    cutoffKnob.setBounds(cutoffKnobArea.removeFromTop(cutoffKnobSize));
+    cutoffLabel.setBounds(cutoffKnobArea); // Label below knob
+    
+    // Autogen toggle below knobs
     rightSide.removeFromTop(spacingSmall);
     autogenToggle.setBounds(rightSide.removeFromTop(30)); // Toggle button height
     bottomArea.removeFromTop(spacingSmall);
@@ -813,7 +825,10 @@ void LooperTrack::resized()
             saveTrajectoryButton.setBounds(0, 0, 0, 0);
         }
         
-        auto pannerArea = bottomArea.removeFromTop(pannerHeight);
+        // Limit panner height to its width (keep it square)
+        const int pannerMaxHeight = bottomArea.getWidth();
+        const int finalPannerHeight = juce::jmin(actualPannerHeight, pannerMaxHeight);
+        auto pannerArea = bottomArea.removeFromTop(finalPannerHeight);
         if (pannerType.toLowerCase() == "stereo" && stereoPanSlider.isVisible())
         {
             stereoPanSlider.setBounds(pannerArea);
@@ -822,8 +837,8 @@ void LooperTrack::resized()
         {
             panner2DComponent->setBounds(pannerArea);
             
-            // Path buttons below panner
-            const int pathButtonHeight = 25;
+            // Path buttons below panner (two rows)
+            const int pathButtonHeight = 54; // Height for two rows (25 + 4 spacing + 25)
             auto pathButtonArea = bottomArea.removeFromTop(pathButtonHeight);
             if (pathGeneratorButtons != nullptr)
             {

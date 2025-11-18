@@ -145,24 +145,28 @@ void PathGeneratorButtons::resized()
     const int pathButtonHeight = 25;
     const int pathButtonSpacing = 4;
     const int buttonWidth = 24;
+    const int rowSpacing = 4;
     
-    auto pathButtonArea = bounds.removeFromTop(pathButtonHeight);
+    // First row: c, r, w, s (4 single-width buttons)
+    auto firstRow = bounds.removeFromTop(pathButtonHeight);
+    circlePathButton.setBounds(firstRow.removeFromLeft(buttonWidth));
+    firstRow.removeFromLeft(pathButtonSpacing);
+    randomPathButton.setBounds(firstRow.removeFromLeft(buttonWidth));
+    firstRow.removeFromLeft(pathButtonSpacing);
+    wanderPathButton.setBounds(firstRow.removeFromLeft(buttonWidth));
+    firstRow.removeFromLeft(pathButtonSpacing);
+    swirlsPathButton.setBounds(firstRow.removeFromLeft(buttonWidth));
     
-    circlePathButton.setBounds(pathButtonArea.removeFromLeft(buttonWidth));
-    pathButtonArea.removeFromLeft(pathButtonSpacing);
-    randomPathButton.setBounds(pathButtonArea.removeFromLeft(buttonWidth));
-    pathButtonArea.removeFromLeft(pathButtonSpacing);
-    wanderPathButton.setBounds(pathButtonArea.removeFromLeft(buttonWidth));
-    pathButtonArea.removeFromLeft(pathButtonSpacing);
-    swirlsPathButton.setBounds(pathButtonArea.removeFromLeft(buttonWidth));
-    pathButtonArea.removeFromLeft(pathButtonSpacing);
-    bouncePathButton.setBounds(pathButtonArea.removeFromLeft(buttonWidth));
-    pathButtonArea.removeFromLeft(pathButtonSpacing);
-    spiralPathButton.setBounds(pathButtonArea.removeFromLeft(buttonWidth * 2)); // Wider for "sp"
-    pathButtonArea.removeFromLeft(pathButtonSpacing);
-    horizontalLinePathButton.setBounds(pathButtonArea.removeFromLeft(buttonWidth * 2)); // Wider for "hl"
-    pathButtonArea.removeFromLeft(pathButtonSpacing);
-    verticalLinePathButton.setBounds(pathButtonArea.removeFromLeft(buttonWidth * 2)); // Wider for "vl"
+    // Second row: b, sp, hl, vl (1 single-width + 3 double-width buttons)
+    bounds.removeFromTop(rowSpacing);
+    auto secondRow = bounds.removeFromTop(pathButtonHeight);
+    bouncePathButton.setBounds(secondRow.removeFromLeft(buttonWidth));
+    secondRow.removeFromLeft(pathButtonSpacing);
+    spiralPathButton.setBounds(secondRow.removeFromLeft(buttonWidth * 2)); // Wider for "sp"
+    secondRow.removeFromLeft(pathButtonSpacing);
+    horizontalLinePathButton.setBounds(secondRow.removeFromLeft(buttonWidth * 2)); // Wider for "hl"
+    secondRow.removeFromLeft(pathButtonSpacing);
+    verticalLinePathButton.setBounds(secondRow.removeFromLeft(buttonWidth * 2)); // Wider for "vl"
 }
 
 void PathGeneratorButtons::drawCustomPathButton(juce::Graphics& g, juce::ToggleButton& button, 
