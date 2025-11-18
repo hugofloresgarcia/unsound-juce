@@ -430,7 +430,7 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     
     parameterKnobs.addKnob({
         "periodic prompt",
-        1.0, 23.0, 8.0, 1.0,
+        0.0, 127.0, 3.0, 1.0,
         "",
         [this](double value) {
             // Value is stored in the knob, retrieved when generating
@@ -830,20 +830,20 @@ juce::var LooperTrack::getDefaultVampNetParams()
     // Create default parameters object (excluding periodic_prompt which is in UI)
     juce::DynamicObject::Ptr params = new juce::DynamicObject();
     
-    params->setProperty("sample_temperature", juce::var(1.0));
-    params->setProperty("top_p", juce::var(0));
-    params->setProperty("mask_dropout", juce::var(0));
+    params->setProperty("sample_temperature", juce::var(0.6));
+    params->setProperty("top_p", juce::var(0.0));
+    params->setProperty("mask_dropout", juce::var(0.9));
     params->setProperty("time_stretch_factor", juce::var(1));
-    params->setProperty("onset_mask_width", juce::var(0));
-    params->setProperty("typical_filtering", juce::var(true));
-    params->setProperty("typical_mass", juce::var(0.15));
+    params->setProperty("onset_mask_width", juce::var(1));
+    params->setProperty("typical_filtering", juce::var(false));
+    params->setProperty("typical_mass", juce::var(0.14));
     params->setProperty("typical_min_tokens", juce::var(64));
     params->setProperty("seed", juce::var(0));
     params->setProperty("model_choice", juce::var("default"));
-    params->setProperty("compression_prompt", juce::var(3));
+    params->setProperty("compression_prompt", juce::var(1));
     params->setProperty("pitch_shift_amount", juce::var(0));
     params->setProperty("sample_cutoff", juce::var(0.9));
-    params->setProperty("sampling_steps", juce::var(12));
+    params->setProperty("sampling_steps", juce::var(24));
     params->setProperty("beat_mask_width", juce::var(0));
     params->setProperty("feedback_steps", juce::var(1));
     
@@ -947,7 +947,7 @@ void LooperTrack::resetButtonClicked()
     parameterKnobs.setKnobValue(1, 0.5, juce::dontSendNotification); // overdub
     track.writeHead.setOverdubMix(0.5f);
     
-    parameterKnobs.setKnobValue(2, 8.0, juce::dontSendNotification); // periodic prompt
+    parameterKnobs.setKnobValue(2, 3.0, juce::dontSendNotification); // periodic prompt
     
     parameterKnobs.setKnobValue(3, 0.5, juce::dontSendNotification); // dry/wet
     track.dryWetMix.store(0.5f);
@@ -1159,21 +1159,21 @@ void LooperTrack::initializeModelParameterKnobs()
     modelChoiceKnobId.clear();
     refreshModelChoiceOptions();
     
-    addModelParameterKnob("sample_temperature", "temperature", 0.1, 2.0, 0.01, 1.0, ModelParamType::Float);
-    addModelParameterKnob("top_p", "top-p", 0.0, 1.0, 0.01, 0.0, ModelParamType::Float);
-    addModelParameterKnob("mask_dropout", "mask dropout", 0.0, 1.0, 0.01, 0.0, ModelParamType::Float);
+    addModelParameterKnob("sample_temperature", "temperature", 0.0, 2.0, 0.1, 0.6, ModelParamType::Float);
+    addModelParameterKnob("top_p", "top-p", 0.0, 1.0, 0.1, 0.0, ModelParamType::Float);
+    addModelParameterKnob("mask_dropout", "mask dropout", 0.0, 1.0, 0.1, 0.9, ModelParamType::Float);
     addModelParameterKnob("time_stretch_factor", "stretch", 0.25, 4.0, 0.01, 1.0, ModelParamType::Float);
-    addModelParameterKnob("onset_mask_width", "onset width", 0.0, 1.0, 0.01, 0.0, ModelParamType::Float);
-    addModelParameterKnob("typical_filtering", "typical filter", 0.0, 1.0, 1.0, 1.0, ModelParamType::Boolean);
-    addModelParameterKnob("typical_mass", "typical mass", 0.0, 1.0, 0.01, 0.15, ModelParamType::Float);
+    addModelParameterKnob("onset_mask_width", "onset width", 1.0, 127.0, 1.0, 1.0, ModelParamType::Integer);
+    addModelParameterKnob("typical_filtering", "typical filter", 0.0, 1.0, 1.0, 0.0, ModelParamType::Boolean);
+    addModelParameterKnob("typical_mass", "typical mass", 0.0, 1.0, 0.1, 0.14, ModelParamType::Float);
     addModelParameterKnob("typical_min_tokens", "min tokens", 1.0, 512.0, 1.0, 64.0, ModelParamType::Integer);
     addModelParameterKnob("seed", "seed", 0.0, 100000.0, 1.0, 0.0, ModelParamType::Integer);
-    addModelParameterKnob("compression_prompt", "compression", 0.0, 10.0, 1.0, 3.0, ModelParamType::Integer);
+    addModelParameterKnob("compression_prompt", "compression", 1.0, 14.0, 1.0, 1.0, ModelParamType::Integer);
     addModelParameterKnob("pitch_shift_amount", "pitch shift", -12.0, 12.0, 1.0, 0.0, ModelParamType::Integer);
-    addModelParameterKnob("sample_cutoff", "sample cutoff", 0.0, 1.0, 0.01, 0.9, ModelParamType::Float);
-    addModelParameterKnob("sampling_steps", "steps", 1.0, 24.0, 1.0, 12.0, ModelParamType::Integer);
+    addModelParameterKnob("sample_cutoff", "sample cutoff", 0.0, 1.0, 0.1, 0.9, ModelParamType::Float);
+    addModelParameterKnob("sampling_steps", "steps", 8.0, 64.0, 1.0, 24.0, ModelParamType::Integer);
     addModelParameterKnob("beat_mask_width", "beat mask", 0.0, 1.0, 0.01, 0.0, ModelParamType::Float);
-    addModelParameterKnob("feedback_steps", "feedback", 1.0, 8.0, 1.0, 1.0, ModelParamType::Integer);
+    addModelParameterKnob("feedback_steps", "feedback", 1.0, 32.0, 1.0, 1.0, ModelParamType::Integer);
     
     modelChoiceKnobId = trackIdPrefix + "_model_choice";
     juce::String currentChoice = "default";
