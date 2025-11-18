@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Build, notarize, and create release package for CLAPText2Sound
+# Build, notarize, and create release package for Unsound4All
 # 
 # Prerequisites:
 # - Apple Developer account with signing certificate
@@ -9,7 +9,7 @@
 # - CMake and build tools installed
 #
 # Usage:
-#   ./scripts/build_and_release_claptext2sound.sh [--skip-notarize] [--skip-dmg]
+#   ./scripts/build_and_release_unsound4all.sh [--skip-notarize] [--skip-dmg]
 
 set -e  # Exit on error
 
@@ -17,8 +17,8 @@ set -e  # Exit on error
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUILD_DIR="${PROJECT_ROOT}/build"
-APP_NAME="CLAPText2Sound Tape Looper"
-BUNDLE_ID="com.unsound.claptext2sound"
+APP_NAME="Unsound4All Tape Looper"
+BUNDLE_ID="com.unsound.unsound4all"
 VERSION="1.0.0"
 
 # Build configuration
@@ -131,9 +131,9 @@ build_app() {
                  -DCMAKE_OSX_ARCHITECTURES="${ARCHITECTURE}"
     fi
     
-    # Build only the CLAPText2SoundApp target
-    log_info "Building CLAPText2SoundApp..."
-    cmake --build . --config "${BUILD_TYPE}" --target CLAPText2SoundApp -j$(sysctl -n hw.ncpu)
+    # Build only the Unsound4AllApp target
+    log_info "Building Unsound4AllApp..."
+    cmake --build . --config "${BUILD_TYPE}" --target Unsound4AllApp -j$(sysctl -n hw.ncpu)
     
     log_info "Build completed successfully."
 }
@@ -144,9 +144,9 @@ find_app_bundle() {
     
     # Try common locations
     local possible_paths=(
-        "${BUILD_DIR}/apps/claptext2sound/${APP_NAME}.app"
-        "${BUILD_DIR}/apps/claptext2sound/CLAPText2SoundApp_artefacts/${BUILD_TYPE}/${APP_NAME}.app"
-        "${BUILD_DIR}/apps/claptext2sound/${BUILD_TYPE}/${APP_NAME}.app"
+        "${BUILD_DIR}/apps/unsound4all/${APP_NAME}.app"
+        "${BUILD_DIR}/apps/unsound4all/Unsound4AllApp_artefacts/${BUILD_TYPE}/${APP_NAME}.app"
+        "${BUILD_DIR}/apps/unsound4all/${BUILD_TYPE}/${APP_NAME}.app"
     )
     
     for path in "${possible_paths[@]}"; do

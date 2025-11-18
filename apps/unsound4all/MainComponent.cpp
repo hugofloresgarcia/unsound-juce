@@ -9,13 +9,13 @@ namespace Shared
     class SettingsDialog;
 }
 
-using namespace CLAPText2Sound;
+using namespace Unsound4All;
 
 MainComponent::MainComponent(int numTracks, const juce::String& pannerType, const juce::String& soundPalettePath)
     : syncButton("sync all"),
       settingsButton("settings"),
       sinksButton("sinks"),
-      titleLabel("Title", "claptext2sound tape looper"),
+      titleLabel("Title", "unsound4all tape looper"),
       audioDeviceDebugLabel("AudioDebug", ""),
       midiLearnOverlay(midiLearnManager),
       soundPalettePath(soundPalettePath)
@@ -24,7 +24,7 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType, cons
     DBG("Sound palette path: " + soundPalettePath);
     
     // Initialize cached ONNX model manager (shared across all tracks for performance)
-    cachedModelManager = std::make_unique<CLAPText2Sound::ONNXModelManager>();
+    cachedModelManager = std::make_unique<Unsound4All::ONNXModelManager>();
     
     // Find ONNX models in app bundle Resources (macOS) or executable directory (other platforms)
     auto executableFile = juce::File::getSpecialLocation(juce::File::currentExecutableFile);
@@ -84,7 +84,7 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType, cons
     // Load MIDI mappings AFTER tracks are created (so parameters are registered)
     auto appDataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
                         .getChildFile("TapeLooper");
-    auto midiMappingsFile = appDataDir.getChildFile("midi_mappings_claptext2sound.xml");
+    auto midiMappingsFile = appDataDir.getChildFile("midi_mappings_unsound4all.xml");
     if (midiMappingsFile.existsAsFile())
         midiLearnManager.loadMappings(midiMappingsFile);
     
@@ -93,7 +93,7 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType, cons
                                     .getChildFile("unsound-objects")
                                     .getChildFile("trajectories")
                                     .getFullPathName();
-    trajectoryDir = Shared::ConfigManager::loadStringValue("claptext2sound", "trajectoryDir", defaultTrajectoryDir);
+    trajectoryDir = Shared::ConfigManager::loadStringValue("unsound4all", "trajectoryDir", defaultTrajectoryDir);
     DBG("MainComponent: Loaded trajectory directory from config: " + trajectoryDir);
     
     // Set size based on number of tracks
@@ -138,7 +138,7 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType, cons
         trajectoryDir,
         [this](const juce::String& newDir) {
             trajectoryDir = newDir;
-            Shared::ConfigManager::saveStringValue("claptext2sound", "trajectoryDir", newDir);
+            Shared::ConfigManager::saveStringValue("unsound4all", "trajectoryDir", newDir);
             DBG("MainComponent: Saved trajectory directory to config: " + newDir);
         },
         cleatGainPower,
@@ -184,11 +184,11 @@ MainComponent::~MainComponent()
     auto appDataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
                         .getChildFile("TapeLooper");
     appDataDir.createDirectory();
-    auto midiMappingsFile = appDataDir.getChildFile("midi_mappings_claptext2sound.xml");
+    auto midiMappingsFile = appDataDir.getChildFile("midi_mappings_unsound4all.xml");
     midiLearnManager.saveMappings(midiMappingsFile);
     
     // Save trajectory directory to config
-    Shared::ConfigManager::saveStringValue("claptext2sound", "trajectoryDir", trajectoryDir);
+    Shared::ConfigManager::saveStringValue("unsound4all", "trajectoryDir", trajectoryDir);
     DBG("MainComponent: Saved trajectory directory to config: " + trajectoryDir);
     
     // Clear LookAndFeel references

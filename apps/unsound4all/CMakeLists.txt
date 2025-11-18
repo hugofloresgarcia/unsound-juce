@@ -1,23 +1,23 @@
-# CLAPText2Sound app
+# Unsound4All app
 
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../Resources/icon.png)
-    juce_add_gui_app(CLAPText2SoundApp
+    juce_add_gui_app(Unsound4AllApp
         COMPANY_NAME "Unsound"
-        PRODUCT_NAME "CLAPText2Sound Tape Looper"
+        PRODUCT_NAME "Unsound4All Tape Looper"
         VERSION 1.0.0
         ICON_BIG ${CMAKE_CURRENT_SOURCE_DIR}/../Resources/icon.png
         ICON_SMALL ${CMAKE_CURRENT_SOURCE_DIR}/../Resources/icon.png
     )
 else()
-    juce_add_gui_app(CLAPText2SoundApp
+    juce_add_gui_app(Unsound4AllApp
         COMPANY_NAME "Unsound"
-        PRODUCT_NAME "CLAPText2Sound Tape Looper"
+        PRODUCT_NAME "Unsound4All Tape Looper"
         VERSION 1.0.0
     )
 endif()
 
 # App source files
-target_sources(CLAPText2SoundApp PRIVATE
+target_sources(Unsound4AllApp PRIVATE
     Main.cpp
     StartupDialog.cpp
     StartupDialog.h
@@ -40,12 +40,12 @@ target_sources(CLAPText2SoundApp PRIVATE
 )
 
 # Link flowerjuce library
-target_link_libraries(CLAPText2SoundApp PRIVATE
+target_link_libraries(Unsound4AllApp PRIVATE
     flowerjuce
 )
 
 # Link JUCE modules
-target_link_libraries(CLAPText2SoundApp PRIVATE
+target_link_libraries(Unsound4AllApp PRIVATE
     juce::juce_audio_basics
     juce::juce_audio_devices
     juce::juce_audio_formats
@@ -215,16 +215,16 @@ if(ONNXRUNTIME_FOUND)
     
     if(ONNXRUNTIME_LIB)
         message(STATUS "Found ONNX Runtime library: ${ONNXRUNTIME_LIB}")
-        target_include_directories(CLAPText2SoundApp PRIVATE ${ONNXRUNTIME_INCLUDE_DIR})
-        target_link_libraries(CLAPText2SoundApp PRIVATE ${ONNXRUNTIME_LIB})
-        target_compile_definitions(CLAPText2SoundApp PRIVATE HAVE_ONNXRUNTIME=1)
+        target_include_directories(Unsound4AllApp PRIVATE ${ONNXRUNTIME_INCLUDE_DIR})
+        target_link_libraries(Unsound4AllApp PRIVATE ${ONNXRUNTIME_LIB})
+        target_compile_definitions(Unsound4AllApp PRIVATE HAVE_ONNXRUNTIME=1)
         
         # On macOS, copy dylib to app bundle
         if(APPLE)
-            add_custom_command(TARGET CLAPText2SoundApp POST_BUILD
+            add_custom_command(TARGET Unsound4AllApp POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "${ONNXRUNTIME_LIB_DIR}/libonnxruntime.dylib"
-                    "$<TARGET_BUNDLE_DIR:CLAPText2SoundApp>/Contents/MacOS/"
+                    "$<TARGET_BUNDLE_DIR:Unsound4AllApp>/Contents/MacOS/"
                 COMMENT "Copying ONNX Runtime library to app bundle"
             )
         endif()
@@ -234,9 +234,9 @@ if(ONNXRUNTIME_FOUND)
         if(EXISTS "${ONNX_MODEL_DIR}/clap_audio_encoder.onnx" AND EXISTS "${ONNX_MODEL_DIR}/clap_text_encoder.onnx")
             if(APPLE)
                 # On macOS, copy to Resources folder in app bundle
-                add_custom_command(TARGET CLAPText2SoundApp POST_BUILD
+                add_custom_command(TARGET Unsound4AllApp POST_BUILD
                     COMMAND ${CMAKE_COMMAND} -E make_directory
-                        "$<TARGET_BUNDLE_DIR:CLAPText2SoundApp>/Contents/Resources"
+                        "$<TARGET_BUNDLE_DIR:Unsound4AllApp>/Contents/Resources"
                     COMMAND ${CMAKE_COMMAND} -E copy_if_different
                         "${ONNX_MODEL_DIR}/clap_audio_encoder.onnx"
                         "${ONNX_MODEL_DIR}/clap_text_encoder.onnx"
@@ -245,12 +245,12 @@ if(ONNXRUNTIME_FOUND)
                         "${ONNX_MODEL_DIR}/roberta_vocab.json"
                         "${ONNX_MODEL_DIR}/roberta_merges.json"
                         "${ONNX_MODEL_DIR}/roberta_special_tokens.json"
-                        "$<TARGET_BUNDLE_DIR:CLAPText2SoundApp>/Contents/Resources/"
+                        "$<TARGET_BUNDLE_DIR:Unsound4AllApp>/Contents/Resources/"
                     COMMENT "Copying ONNX model files, data files, and tokenizer files to app bundle"
                 )
             else()
                 # On other platforms, copy to executable directory
-                add_custom_command(TARGET CLAPText2SoundApp POST_BUILD
+                add_custom_command(TARGET Unsound4AllApp POST_BUILD
                     COMMAND ${CMAKE_COMMAND} -E copy_if_different
                         "${ONNX_MODEL_DIR}/clap_audio_encoder.onnx"
                         "${ONNX_MODEL_DIR}/clap_text_encoder.onnx"
@@ -259,7 +259,7 @@ if(ONNXRUNTIME_FOUND)
                         "${ONNX_MODEL_DIR}/roberta_vocab.json"
                         "${ONNX_MODEL_DIR}/roberta_merges.json"
                         "${ONNX_MODEL_DIR}/roberta_special_tokens.json"
-                        "$<TARGET_FILE_DIR:CLAPText2SoundApp>/"
+                        "$<TARGET_FILE_DIR:Unsound4AllApp>/"
                     COMMENT "Copying ONNX model files, data files, and tokenizer files to executable directory"
                 )
             endif()
@@ -268,7 +268,7 @@ if(ONNXRUNTIME_FOUND)
         endif()
     else()
         message(WARNING "ONNX Runtime include found but library not found")
-        target_compile_definitions(CLAPText2SoundApp PRIVATE HAVE_ONNXRUNTIME=0)
+        target_compile_definitions(Unsound4AllApp PRIVATE HAVE_ONNXRUNTIME=0)
     endif()
 else()
     # Fallback: try system installation
@@ -290,16 +290,16 @@ else()
     
     if(ONNXRUNTIME_INCLUDE_DIR AND ONNXRUNTIME_LIB)
         message(STATUS "Found ONNX Runtime in system: ${ONNXRUNTIME_INCLUDE_DIR}")
-        target_include_directories(CLAPText2SoundApp PRIVATE ${ONNXRUNTIME_INCLUDE_DIR})
-        target_link_libraries(CLAPText2SoundApp PRIVATE ${ONNXRUNTIME_LIB})
-        target_compile_definitions(CLAPText2SoundApp PRIVATE HAVE_ONNXRUNTIME=1)
+        target_include_directories(Unsound4AllApp PRIVATE ${ONNXRUNTIME_INCLUDE_DIR})
+        target_link_libraries(Unsound4AllApp PRIVATE ${ONNXRUNTIME_LIB})
+        target_compile_definitions(Unsound4AllApp PRIVATE HAVE_ONNXRUNTIME=1)
     else()
         message(WARNING "ONNX Runtime not found. CLAP functionality will be disabled.")
         message(STATUS "To enable ONNX Runtime:")
         message(STATUS "  1. Download from: https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/${ONNXRUNTIME_ARCHIVE_NAME}")
         message(STATUS "  2. Place in: ${CMAKE_SOURCE_DIR}/third_party/")
         message(STATUS "  3. Or set ONNXRUNTIME_INCLUDE_DIR and ONNXRUNTIME_LIB_DIR environment variables")
-        target_compile_definitions(CLAPText2SoundApp PRIVATE HAVE_ONNXRUNTIME=0)
+        target_compile_definitions(Unsound4AllApp PRIVATE HAVE_ONNXRUNTIME=0)
     endif()
 endif()
 
@@ -325,12 +325,12 @@ find_library(FAISS_LIB
 
 if(FAISS_INCLUDE_DIR AND FAISS_LIB)
     message(STATUS "Found FAISS: ${FAISS_INCLUDE_DIR}")
-    target_include_directories(CLAPText2SoundApp PRIVATE ${FAISS_INCLUDE_DIR})
-    target_link_libraries(CLAPText2SoundApp PRIVATE ${FAISS_LIB})
-    target_compile_definitions(CLAPText2SoundApp PRIVATE HAVE_FAISS=1)
+    target_include_directories(Unsound4AllApp PRIVATE ${FAISS_INCLUDE_DIR})
+    target_link_libraries(Unsound4AllApp PRIVATE ${FAISS_LIB})
+    target_compile_definitions(Unsound4AllApp PRIVATE HAVE_FAISS=1)
 else()
     message(WARNING "FAISS not found. Vector search will use simple linear search.")
-    target_compile_definitions(CLAPText2SoundApp PRIVATE HAVE_FAISS=0)
+    target_compile_definitions(Unsound4AllApp PRIVATE HAVE_FAISS=0)
 endif()
 
 # Embed binary resources
@@ -341,9 +341,9 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../Resources/icon.png)
 endif()
 
 if(BINARY_DATA_SOURCES)
-    juce_add_binary_data(CLAPText2SoundAppBinaryData
+    juce_add_binary_data(Unsound4AllAppBinaryData
         SOURCES ${BINARY_DATA_SOURCES}
     )
-    target_link_libraries(CLAPText2SoundApp PRIVATE CLAPText2SoundAppBinaryData)
+    target_link_libraries(Unsound4AllApp PRIVATE Unsound4AllAppBinaryData)
 endif()
 

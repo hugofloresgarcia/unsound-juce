@@ -3,7 +3,7 @@
 #include <juce_core/juce_core.h>
 #include <vector>
 
-namespace CLAPText2Sound
+namespace Unsound4All
 {
     struct SoundPaletteInfo
     {
@@ -32,7 +32,7 @@ namespace CLAPText2Sound
         // Get default search locations (user documents, app data, etc.)
         std::vector<juce::File> getDefaultSearchLocations() const;
         
-        // Get the base directory where all palettes are stored (~/Documents/claptext2sound/)
+        // Get the base directory where all palettes are stored (~/Documents/unsound4all/)
         juce::File getPaletteBaseDirectory() const;
         
     private:

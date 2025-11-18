@@ -7,7 +7,7 @@
 
 StartupDialog::StartupDialog(juce::AudioDeviceManager& deviceManager)
     : audioDeviceManager(deviceManager),
-      titleLabel("Title", "claptext2sound tape looper setup"),
+      titleLabel("Title", "unsound4all tape looper setup"),
       numTracksLabel("Tracks", "number of tracks"),
       numTracksSlider(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight),
       pannerLabel("Panner", "panner type"),
@@ -146,8 +146,8 @@ void StartupDialog::buttonClicked(juce::Button* button)
             {
                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                       "Invalid Palette",
-                                                      "The selected palette is not compatible with CLAPText2Sound.\n\n"
-                                                      "CLAPText2Sound only works with palettes containing CLAP embeddings.\n"
+                                                      "The selected palette is not compatible with Unsound4All.\n\n"
+                                                      "Unsound4All only works with palettes containing CLAP embeddings.\n"
                                                       "Palettes with STFT features are not supported.");
                 return; // Don't close the dialog
             }
@@ -254,14 +254,14 @@ void StartupDialog::createNewPalette()
         bool creationComplete = false;
         bool creationCancelled = false;
         
-        CLAPText2Sound::PaletteCreationProgressWindow::showModal(this,
+        Unsound4All::PaletteCreationProgressWindow::showModal(this,
             [&creationCancelled]()
             {
                 creationCancelled = true;
             });
         
         // Create worker thread
-        auto workerThread = std::make_unique<CLAPText2Sound::PaletteCreationWorkerThread>(selectedFolder, chunkSize);
+        auto workerThread = std::make_unique<Unsound4All::PaletteCreationWorkerThread>(selectedFolder, chunkSize);
         
         // Start thread
         workerThread->startThread();
@@ -296,7 +296,7 @@ void StartupDialog::createNewPalette()
         workerThread.reset();
         
         // Close progress window
-        if (auto* progressWindow = CLAPText2Sound::PaletteCreationProgressWindow::getInstance())
+        if (auto* progressWindow = Unsound4All::PaletteCreationProgressWindow::getInstance())
         {
             progressWindow->closeWindow();
         }
@@ -310,7 +310,7 @@ void StartupDialog::createNewPalette()
         }
         else if (resultPaletteDir.exists())
         {
-            // Refresh palette list (all palettes are in ~/Documents/claptext2sound/)
+            // Refresh palette list (all palettes are in ~/Documents/unsound4all/)
             refreshPaletteList();
             
             // Find and select the newly created palette

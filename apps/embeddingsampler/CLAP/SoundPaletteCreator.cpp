@@ -4,7 +4,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_data_structures/juce_data_structures.h>
 
-namespace CLAPText2Sound
+namespace Unsound4All
 {
     SoundPaletteCreator::SoundPaletteCreator()
     {
@@ -42,9 +42,9 @@ namespace CLAPText2Sound
         if (progressCallback)
             progressCallback("Found " + juce::String(audioFiles.size()) + " audio files");
         
-        // Create output directory in ~/Documents/claptext2sound/
+        // Create output directory in ~/Documents/unsound4all/
         auto docsDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
-        auto paletteBaseDir = docsDir.getChildFile("claptext2sound");
+        auto paletteBaseDir = docsDir.getChildFile("unsound4all");
         
         // Create base directory if it doesn't exist
         if (!paletteBaseDir.exists())

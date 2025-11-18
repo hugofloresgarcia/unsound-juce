@@ -18,7 +18,7 @@ namespace Shared
     class SettingsDialog;
 }
 
-namespace CLAPText2Sound
+namespace Unsound4All
 {
     // Custom DialogWindow that properly handles close button
     class SinksDialogWindow : public juce::DialogWindow
@@ -55,7 +55,7 @@ private:
     // MIDI learn support - must be declared before tracks so it's destroyed after them
     Shared::MidiLearnManager midiLearnManager;
     
-    std::vector<std::shared_ptr<CLAPText2Sound::LooperTrack>> tracks;
+    std::vector<std::shared_ptr<Unsound4All::LooperTrack>> tracks;
     
     juce::TextButton syncButton;
     juce::TextButton settingsButton;
@@ -71,7 +71,7 @@ private:
     juce::String trajectoryDir;
     
     // Cached ONNX model manager (shared across all tracks for performance)
-    std::unique_ptr<CLAPText2Sound::ONNXModelManager> cachedModelManager;
+    std::unique_ptr<Unsound4All::ONNXModelManager> cachedModelManager;
     
     // Shared settings
     double pannerSmoothingTime{0.0}; // Smoothing time in seconds for panner trajectories
@@ -96,5 +96,5 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };
 
-} // namespace CLAPText2Sound
+} // namespace Unsound4All
 

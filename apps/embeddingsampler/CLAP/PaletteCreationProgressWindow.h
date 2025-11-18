@@ -3,7 +3,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
-namespace CLAPText2Sound
+namespace Unsound4All
 {
     class PaletteCreationProgressWindow : public juce::Component,
                                           public juce::Timer

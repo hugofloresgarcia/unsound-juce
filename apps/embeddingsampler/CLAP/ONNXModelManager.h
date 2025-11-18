@@ -8,7 +8,7 @@
 #include <onnxruntime_cxx_api.h>
 #endif
 
-namespace CLAPText2Sound
+namespace Unsound4All
 {
     // Forward declaration
     class RobertaTokenizer;

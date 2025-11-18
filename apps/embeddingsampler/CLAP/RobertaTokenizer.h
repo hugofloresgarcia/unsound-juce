@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <string>
 
-namespace CLAPText2Sound
+namespace Unsound4All
 {
     /**
      * RoBERTa BPE Tokenizer implementation.

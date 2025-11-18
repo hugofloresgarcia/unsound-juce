@@ -6,12 +6,12 @@
 #include "MainComponent.h"
 #include <flowerjuce/CustomLookAndFeel.h>
 
-class CLAPText2SoundApplication : public juce::JUCEApplication
+class Unsound4AllApplication : public juce::JUCEApplication
 {
 public:
-    CLAPText2SoundApplication() {}
+    Unsound4AllApplication() {}
 
-    const juce::String getApplicationName() override { return "CLAPText2Sound Tape Looper"; }
+    const juce::String getApplicationName() override { return "Unsound4All Tape Looper"; }
     const juce::String getApplicationVersion() override { return "1.0.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
@@ -36,7 +36,7 @@ public:
             
             juce::DialogWindow::LaunchOptions dialogOptions;
             dialogOptions.content.setNonOwned(startupDialog.release()); // Don't auto-delete, we'll manage it
-            dialogOptions.dialogTitle = "CLAPText2Sound Tape Looper Setup";
+            dialogOptions.dialogTitle = "Unsound4All Tape Looper Setup";
             dialogOptions.dialogBackgroundColour = juce::Colours::black;
             dialogOptions.escapeKeyTriggersCloseButton = false;
             dialogOptions.useNativeTitleBar = false;
@@ -138,12 +138,12 @@ public:
             
             setUsingNativeTitleBar(true);
             
-            // Create CLAPText2Sound frontend component
-            DBG("[MainWindow] Creating CLAPText2Sound frontend...");
-            auto* clapText2SoundComponent = new CLAPText2Sound::MainComponent(numTracks, pannerType, soundPalettePath);
+            // Create Unsound4All frontend component
+            DBG("[MainWindow] Creating Unsound4All frontend...");
+            auto* unsound4AllComponent = new Unsound4All::MainComponent(numTracks, pannerType, soundPalettePath);
             
-            DBG("[MainWindow] Setting device setup on CLAPText2Sound looper engine...");
-            auto& deviceManager = clapText2SoundComponent->getLooperEngine().get_audio_device_manager();
+            DBG("[MainWindow] Setting device setup on Unsound4All looper engine...");
+            auto& deviceManager = unsound4AllComponent->getLooperEngine().get_audio_device_manager();
             
             // CRITICAL: Set device type first, otherwise setAudioDeviceSetup will fail silently
             juce::String deviceType;
@@ -184,15 +184,15 @@ public:
             }
             
             DBG("[MainWindow] Starting audio...");
-            clapText2SoundComponent->getLooperEngine().start_audio();
+            unsound4AllComponent->getLooperEngine().start_audio();
             
-            setContentOwned(clapText2SoundComponent, true);
+            setContentOwned(unsound4AllComponent, true);
 
             #if JUCE_IOS || JUCE_ANDROID
             setFullScreen(true);
             #else
             setResizable(false, false); // Fixed window size
-            centreWithSize(clapText2SoundComponent->getWidth(), clapText2SoundComponent->getHeight());
+            centreWithSize(unsound4AllComponent->getWidth(), unsound4AllComponent->getHeight());
             #endif
 
             setVisible(true);
@@ -211,5 +211,5 @@ private:
     std::unique_ptr<MainWindow> mainWindow;
 };
 
-START_JUCE_APPLICATION(CLAPText2SoundApplication)
+START_JUCE_APPLICATION(Unsound4AllApplication)
 

@@ -28,7 +28,7 @@
 #include <functional>
 #include <array>
 
-namespace CLAPText2Sound
+namespace Unsound4All
 {
 
 class LooperTrack : public juce::Component, public juce::Timer, public juce::AsyncUpdater
@@ -72,7 +72,7 @@ private:
     Shared::InputSelector inputSelector;
     Shared::VariationSelector variationSelector;
     
-    // CLAPText2Sound-specific UI
+    // Unsound4All-specific UI
     juce::Label trackLabel;
     juce::TextButton resetButton;
     juce::TextButton generateButton;
@@ -190,5 +190,5 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LooperTrack)
 };
 
-} // namespace CLAPText2Sound
+} // namespace Unsound4All
 

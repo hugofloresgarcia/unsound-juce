@@ -2,7 +2,7 @@
 #include <juce_data_structures/juce_data_structures.h>
 #include <algorithm>
 
-namespace CLAPText2Sound
+namespace Unsound4All
 {
     SoundPaletteManager::SoundPaletteManager()
     {
@@ -16,7 +16,7 @@ namespace CLAPText2Sound
     {
         std::vector<SoundPaletteInfo> palettes;
         
-        // Always use the dedicated palette directory: ~/Documents/claptext2sound/
+        // Always use the dedicated palette directory: ~/Documents/unsound4all/
         juce::File paletteBaseDir = getPaletteBaseDirectory();
         
         // Create directory if it doesn't exist
@@ -74,7 +74,7 @@ namespace CLAPText2Sound
         if (!metadataFile.existsAsFile() || (!binFile.existsAsFile() && !faissFile.existsAsFile()))
             return false;
         
-        // CLAPText2Sound only works with CLAP embeddings, not STFT features
+        // Unsound4All only works with CLAP embeddings, not STFT features
         // Check embedding type from metadata
         juce::var metadata = juce::JSON::parse(metadataFile);
         if (metadata.isObject())
@@ -100,9 +100,9 @@ namespace CLAPText2Sound
     
     juce::File SoundPaletteManager::getPaletteBaseDirectory() const
     {
-        // All palettes stored in ~/Documents/claptext2sound/
+        // All palettes stored in ~/Documents/unsound4all/
         auto docsDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
-        return docsDir.getChildFile("claptext2sound");
+        return docsDir.getChildFile("unsound4all");
     }
     
     bool SoundPaletteManager::loadPaletteMetadata(const juce::File& paletteDir, SoundPaletteInfo& info) const

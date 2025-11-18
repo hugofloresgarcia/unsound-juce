@@ -7,7 +7,7 @@
 #include "SoundPaletteManager.h"
 #include <functional>
 
-namespace CLAPText2Sound
+namespace Unsound4All
 {
     // Background thread for CLAP-based sound search
     class CLAPSearchWorkerThread : public juce::Thread
@@ -37,7 +37,7 @@ namespace CLAPText2Sound
         ONNXModelManager* m_sharedModelManager;  // Optional shared model manager
         
         // Search FAISS index for top-K matches
-        // Note: CLAPText2Sound only works with CLAP embeddings, not STFT features
+        // Note: Unsound4All only works with CLAP embeddings, not STFT features
         juce::Array<juce::File> searchPalette(
             const juce::File& palettePath,
             const std::vector<float>& textEmbedding,

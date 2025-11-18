@@ -1,7 +1,7 @@
 #include "PaletteCreationProgressWindow.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 
-namespace CLAPText2Sound
+namespace Unsound4All
 {
     PaletteCreationProgressWindow* PaletteCreationProgressWindow::s_instance = nullptr;
     

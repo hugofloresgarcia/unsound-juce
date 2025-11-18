@@ -253,11 +253,11 @@ void StartupDialog::createNewPalette()
         int chunkSize = static_cast<int>(chunkSizeSlider.getValue());
         
         // Get selected feature type
-        CLAPText2Sound::FeatureType featureType = CLAPText2Sound::FeatureType::CLAP;
+        Unsound4All::FeatureType featureType = Unsound4All::FeatureType::CLAP;
         int featureTypeId = featureTypeCombo.getSelectedId();
         if (featureTypeId == 2) // STFT Features
         {
-            featureType = CLAPText2Sound::FeatureType::STFT;
+            featureType = Unsound4All::FeatureType::STFT;
         }
         
         // Show progress window
@@ -265,14 +265,14 @@ void StartupDialog::createNewPalette()
         bool creationComplete = false;
         bool creationCancelled = false;
         
-        CLAPText2Sound::PaletteCreationProgressWindow::showModal(this,
+        Unsound4All::PaletteCreationProgressWindow::showModal(this,
             [&creationCancelled]()
             {
                 creationCancelled = true;
             });
         
         // Create worker thread with selected feature type
-        auto workerThread = std::make_unique<CLAPText2Sound::PaletteCreationWorkerThread>(selectedFolder, chunkSize, featureType);
+        auto workerThread = std::make_unique<Unsound4All::PaletteCreationWorkerThread>(selectedFolder, chunkSize, featureType);
         
         // Start thread
         workerThread->startThread();
@@ -307,7 +307,7 @@ void StartupDialog::createNewPalette()
         workerThread.reset();
         
         // Close progress window
-        if (auto* progressWindow = CLAPText2Sound::PaletteCreationProgressWindow::getInstance())
+        if (auto* progressWindow = Unsound4All::PaletteCreationProgressWindow::getInstance())
         {
             progressWindow->closeWindow();
         }
@@ -321,7 +321,7 @@ void StartupDialog::createNewPalette()
         }
         else if (resultPaletteDir.exists())
         {
-            // Refresh palette list (all palettes are in ~/Documents/claptext2sound/)
+            // Refresh palette list (all palettes are in ~/Documents/unsound4all/)
             refreshPaletteList();
             
             // Find and select the newly created palette

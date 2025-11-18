@@ -4,7 +4,7 @@
 #include <sstream>
 #include <cctype>
 
-namespace CLAPText2Sound
+namespace Unsound4All
 {
     RobertaTokenizer::RobertaTokenizer()
     {

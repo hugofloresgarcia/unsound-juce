@@ -1,6 +1,6 @@
-# Building and Releasing CLAPText2Sound for macOS
+# Building and Releasing Unsound4All for macOS
 
-This guide explains how to build, sign, notarize, and create a release package for the CLAPText2Sound application.
+This guide explains how to build, sign, notarize, and create a release package for the Unsound4All application.
 
 ## Prerequisites
 
@@ -68,7 +68,7 @@ source .env
 ### Basic Build and Release
 
 ```bash
-./scripts/build_and_release_claptext2sound.sh
+./scripts/build_and_release_unsound4all.sh
 ```
 
 This will:
@@ -83,7 +83,7 @@ This will:
 If you want to build and sign but skip notarization (faster for testing):
 
 ```bash
-./scripts/build_and_release_claptext2sound.sh --skip-notarize
+./scripts/build_and_release_unsound4all.sh --skip-notarize
 ```
 
 ### Skip DMG Creation
@@ -91,7 +91,7 @@ If you want to build and sign but skip notarization (faster for testing):
 If you only want the signed app bundle:
 
 ```bash
-./scripts/build_and_release_claptext2sound.sh --skip-dmg
+./scripts/build_and_release_unsound4all.sh --skip-dmg
 ```
 
 ### Build for Different Architectures
@@ -107,9 +107,9 @@ Or modify the script to accept architecture as a parameter.
 
 After successful completion, you'll find:
 
-- **App Bundle**: `build/apps/claptext2sound/CLAPText2SoundApp_artefacts/Release/CLAPText2Sound Tape Looper.app`
-- **DMG**: `build/CLAPText2Sound_Tape_Looper-1.0.0-macOS-arm64.dmg`
-- **ZIP**: `build/CLAPText2Sound_Tape_Looper-1.0.0-macOS-arm64.zip`
+- **App Bundle**: `build/apps/unsound4all/Unsound4AllApp_artefacts/Release/Unsound4All Tape Looper.app`
+- **DMG**: `build/Unsound4All_Tape_Looper-1.0.0-macOS-arm64.dmg`
+- **ZIP**: `build/Unsound4All_Tape_Looper-1.0.0-macOS-arm64.zip`
 
 ## Troubleshooting
 
@@ -147,33 +147,33 @@ If you prefer to do things manually:
 ```bash
 cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64
-cmake --build . --config Release --target CLAPText2SoundApp
+cmake --build . --config Release --target Unsound4AllApp
 ```
 
 ### 2. Sign Dylibs
 ```bash
 codesign --force --sign "Developer ID Application: Your Name (TEAM_ID)" \
   --timestamp --options runtime \
-  "CLAPText2Sound Tape Looper.app/Contents/MacOS/libonnxruntime.dylib"
+  "Unsound4All Tape Looper.app/Contents/MacOS/libonnxruntime.dylib"
 ```
 
 ### 3. Sign App Bundle
 ```bash
 codesign --force --deep --sign "Developer ID Application: Your Name (TEAM_ID)" \
   --timestamp --options runtime \
-  "CLAPText2Sound Tape Looper.app"
+  "Unsound4All Tape Looper.app"
 ```
 
 ### 4. Verify Signature
 ```bash
-codesign --verify --verbose "CLAPText2Sound Tape Looper.app"
-spctl --assess --verbose "CLAPText2Sound Tape Looper.app"
+codesign --verify --verbose "Unsound4All Tape Looper.app"
+spctl --assess --verbose "Unsound4All Tape Looper.app"
 ```
 
 ### 5. Notarize
 ```bash
 # Create zip
-ditto -c -k --keepParent "CLAPText2Sound Tape Looper.app" notarize.zip
+ditto -c -k --keepParent "Unsound4All Tape Looper.app" notarize.zip
 
 # Submit
 xcrun notarytool submit notarize.zip \
@@ -183,16 +183,16 @@ xcrun notarytool submit notarize.zip \
   --wait
 
 # Staple
-xcrun stapler staple "CLAPText2Sound Tape Looper.app"
+xcrun stapler staple "Unsound4All Tape Looper.app"
 ```
 
 ### 6. Create DMG
 ```bash
-hdiutil create -volname "CLAPText2Sound Tape Looper" \
-  -srcfolder "CLAPText2Sound Tape Looper.app" \
+hdiutil create -volname "Unsound4All Tape Looper" \
+  -srcfolder "Unsound4All Tape Looper.app" \
   -ov -format UDZO \
   -fs HFS+ \
-  CLAPText2Sound_Tape_Looper-1.0.0.dmg
+  Unsound4All_Tape_Looper-1.0.0.dmg
 ```
 
 ## Distribution

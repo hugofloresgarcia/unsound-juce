@@ -5,11 +5,11 @@
 #include <cmath>
 #include <algorithm>
 
-namespace CLAPText2Sound
+namespace Unsound4All
 {
     ONNXModelManager::ONNXModelManager()
 #if defined(HAVE_ONNXRUNTIME) && HAVE_ONNXRUNTIME == 1
-        : m_env(ORT_LOGGING_LEVEL_WARNING, "CLAPText2Sound")
+        : m_env(ORT_LOGGING_LEVEL_WARNING, "Unsound4All")
 #endif
     {
     }

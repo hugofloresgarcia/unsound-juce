@@ -1,7 +1,7 @@
 #include "SoundPaletteManager.h"
 #include <algorithm>
 
-namespace CLAPText2Sound
+namespace Unsound4All
 {
     SoundPaletteManager::SoundPaletteManager()
     {
@@ -15,7 +15,7 @@ namespace CLAPText2Sound
     {
         std::vector<SoundPaletteInfo> palettes;
         
-        // Always use the dedicated palette directory: ~/Documents/claptext2sound/
+        // Always use the dedicated palette directory: ~/Documents/unsound4all/
         juce::File paletteBaseDir = getPaletteBaseDirectory();
         
         // Create directory if it doesn't exist
@@ -83,9 +83,9 @@ namespace CLAPText2Sound
     
     juce::File SoundPaletteManager::getPaletteBaseDirectory() const
     {
-        // All palettes stored in ~/Documents/claptext2sound/
+        // All palettes stored in ~/Documents/unsound4all/
         auto docsDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
-        return docsDir.getChildFile("claptext2sound");
+        return docsDir.getChildFile("unsound4all");
     }
     
     bool SoundPaletteManager::loadPaletteMetadata(const juce::File& paletteDir, SoundPaletteInfo& info) const

@@ -7,7 +7,7 @@
 #include "SoundPaletteManager.h"
 #include <functional>
 
-namespace CLAPText2Sound
+namespace Unsound4All
 {
     // Background thread for CLAP-based sound search
     class CLAPSearchWorkerThread : public juce::Thread

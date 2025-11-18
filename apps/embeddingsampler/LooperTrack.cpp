@@ -4,7 +4,7 @@
 #include <flowerjuce/Panners/PanningUtils.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 
-using namespace CLAPText2Sound;
+using namespace Unsound4All;
 
 // LooperTrack implementation
 LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::function<juce::String()> soundPalettePathGetter, Shared::MidiLearnManager* midiManager, const juce::String& pannerType, ONNXModelManager* sharedModelManager)

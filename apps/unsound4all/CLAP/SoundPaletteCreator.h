@@ -5,7 +5,7 @@
 #include "ONNXModelManager.h"
 #include <functional>
 
-namespace CLAPText2Sound
+namespace Unsound4All
 {
     class SoundPaletteCreator
     {

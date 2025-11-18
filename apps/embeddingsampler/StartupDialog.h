@@ -51,8 +51,8 @@ private:
     juce::AudioDeviceSelectorComponent audioDeviceSelector;
     juce::TextButton okButton;
     
-    CLAPText2Sound::SoundPaletteManager paletteManager;
-    std::vector<CLAPText2Sound::SoundPaletteInfo> discoveredPalettes;
+    Unsound4All::SoundPaletteManager paletteManager;
+    std::vector<Unsound4All::SoundPaletteInfo> discoveredPalettes;
     
     void refreshPaletteList();
     void createNewPalette();

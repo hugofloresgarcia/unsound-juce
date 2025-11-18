@@ -3,7 +3,7 @@
 #include <juce_core/juce_core.h>
 #include "SoundPaletteCreator.h"
 
-namespace CLAPText2Sound
+namespace Unsound4All
 {
     class PaletteCreationWorkerThread : public juce::Thread
     {
