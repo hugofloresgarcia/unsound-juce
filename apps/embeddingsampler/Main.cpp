@@ -19,7 +19,7 @@ public:
     {
         // Show startup dialog before creating main window
         int numTracks = 8; // Default value, will be updated from dialog
-        juce::String selectedPanner = "Stereo"; // Default panner
+        juce::String selectedPanner = "CLEAT"; // Default panner (CLEAT for each track)
         juce::String soundPalettePath; // Sound palette path
         juce::AudioDeviceManager::AudioDeviceSetup deviceSetup;
         

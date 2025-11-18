@@ -81,12 +81,13 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType, cons
         midiLearnManager.loadMappings(midiMappingsFile);
     
     // Set size - embedding view takes most space, tracks below
+    // Smaller sizes to accommodate CLEAT panners and improved UI
     const int embedding_height = 600;
-    const int track_height = 150;
-    const int track_width = 200;
-    const int track_spacing = 5;
-    const int margin = 20;
-    const int controls_height = 60;
+    const int track_height = 140; // Smaller to fit improved layout
+    const int track_width = 180; // Smaller track width
+    const int track_spacing = 4;
+    const int margin = 10;
+    const int controls_height = 50; // Smaller controls area
     
     int window_width = juce::jmax(800, (track_width + track_spacing) * actualNumTracks - track_spacing + margin * 2);
     int window_height = controls_height + embedding_height + track_height + margin * 2;
@@ -214,29 +215,30 @@ void MainComponent::paint(juce::Graphics& g)
 
 void MainComponent::resized()
 {
+    // Layout constants - smaller sizes to fit embedding space window
     const int margin = 10;
-    const int controls_height = 60;
+    const int controls_height = 50;
     const int embedding_height = 600;
-    const int track_height = 150;
-    const int track_width = 200;
-    const int track_spacing = 5;
+    const int track_height = 140; // Smaller to fit improved layout
+    const int track_width = 180; // Smaller track width
+    const int track_spacing = 4;
     
     auto bounds = getLocalBounds().reduced(margin);
     
     // Title at top
-    titleLabel.setBounds(bounds.removeFromTop(30));
-    bounds.removeFromTop(10);
+    titleLabel.setBounds(bounds.removeFromTop(25));
+    bounds.removeFromTop(8);
     
     // Control buttons
-    auto control_area = bounds.removeFromTop(30);
-    settingsButton.setBounds(control_area.removeFromLeft(120));
-    control_area.removeFromLeft(10);
-    sinksButton.setBounds(control_area.removeFromLeft(120));
-    bounds.removeFromTop(10);
+    auto control_area = bounds.removeFromTop(25);
+    settingsButton.setBounds(control_area.removeFromLeft(100));
+    control_area.removeFromLeft(8);
+    sinksButton.setBounds(control_area.removeFromLeft(100));
+    bounds.removeFromTop(8);
     
     // Embedding view takes most space
     embedding_view.setBounds(bounds.removeFromTop(embedding_height));
-    bounds.removeFromTop(10);
+    bounds.removeFromTop(8);
     
     // Tracks arranged horizontally below embedding view
     if (!tracks.empty())
@@ -264,7 +266,7 @@ void MainComponent::resized()
     midiLearnOverlay.setBounds(getLocalBounds());
     
     // Audio device debug label in top right corner
-    auto debug_bounds = getLocalBounds().removeFromTop(60).removeFromRight(300);
+    auto debug_bounds = getLocalBounds().removeFromTop(50).removeFromRight(300);
     audioDeviceDebugLabel.setBounds(debug_bounds.reduced(10, 5));
 }
 

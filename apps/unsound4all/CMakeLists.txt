@@ -4,7 +4,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../Resources/icon.png)
     juce_add_gui_app(Unsound4AllApp
         COMPANY_NAME "Unsound"
         PRODUCT_NAME "Unsound4All Tape Looper"
-        VERSION 1.0.0
+        VERSION ${PROJECT_VERSION}
         ICON_BIG ${CMAKE_CURRENT_SOURCE_DIR}/../Resources/icon.png
         ICON_SMALL ${CMAKE_CURRENT_SOURCE_DIR}/../Resources/icon.png
     )
@@ -12,7 +12,7 @@ else()
     juce_add_gui_app(Unsound4AllApp
         COMPANY_NAME "Unsound"
         PRODUCT_NAME "Unsound4All Tape Looper"
-        VERSION 1.0.0
+        VERSION ${PROJECT_VERSION}
     )
 endif()
 

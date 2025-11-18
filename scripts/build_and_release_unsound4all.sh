@@ -20,7 +20,15 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUILD_DIR="${PROJECT_ROOT}/build"
 APP_NAME="Unsound4All Tape Looper"
 BUNDLE_ID="com.unsound.unsound4all"
-VERSION="1.0.0"
+
+# Extract version from CMakeLists.txt (single source of truth)
+# Looks for: project(TapeLooper VERSION X.Y.Z)
+VERSION=$(grep -E "^project\(.*VERSION" "${PROJECT_ROOT}/CMakeLists.txt" | sed -E 's/.*VERSION[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+if [[ -z "$VERSION" ]]; then
+    echo "ERROR: Could not extract version from CMakeLists.txt"
+    echo "Make sure CMakeLists.txt contains: project(TapeLooper VERSION X.Y.Z)"
+    exit 1
+fi
 
 # Build configuration
 BUILD_TYPE="Release"

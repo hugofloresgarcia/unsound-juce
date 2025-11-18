@@ -57,10 +57,30 @@ SamplerTrack::SamplerTrack(MultiTrackLooperEngine& engine, int track_index, Shar
     else if (panner_type == "Quad")
     {
         panner = std::make_unique<QuadPanner>();
+        panner2DComponent = std::make_unique<Panner2DComponent>();
+        panner2DComponent->set_pan_position(0.5f, 0.5f); // Center
+        panner2DComponent->m_on_pan_change = [this](float x, float y) {
+            if (auto* quad_panner = dynamic_cast<QuadPanner*>(panner.get()))
+            {
+                quad_panner->set_pan(x, y);
+                pan_coord_label.setText(juce::String::formatted("%.2f, %.2f", x, y), juce::dontSendNotification);
+            }
+        };
+        addAndMakeVisible(panner2DComponent.get());
     }
     else if (panner_type == "CLEAT")
     {
         panner = std::make_unique<CLEATPanner>();
+        panner2DComponent = std::make_unique<Panner2DComponent>();
+        panner2DComponent->set_pan_position(0.5f, 0.5f); // Center
+        panner2DComponent->m_on_pan_change = [this](float x, float y) {
+            if (auto* cleat_panner = dynamic_cast<CLEATPanner*>(panner.get()))
+            {
+                cleat_panner->set_pan(x, y);
+                pan_coord_label.setText(juce::String::formatted("%.2f, %.2f", x, y), juce::dontSendNotification);
+            }
+        };
+        addAndMakeVisible(panner2DComponent.get());
     }
     
     if (panner != nullptr)
@@ -77,13 +97,19 @@ SamplerTrack::SamplerTrack(MultiTrackLooperEngine& engine, int track_index, Shar
         }
     }
     
-    // Setup stereo pan slider (for Stereo panner)
+    // Setup stereo pan slider (for Stereo panner only)
     if (panner_type == "Stereo")
     {
         stereo_pan_slider.setRange(-1.0, 1.0, 0.01);
         stereo_pan_slider.setValue(0.0);
         stereo_pan_slider.onValueChange = [this]() { pan_slider_value_changed(); };
         addAndMakeVisible(stereo_pan_slider);
+        addAndMakeVisible(pan_label);
+        addAndMakeVisible(pan_coord_label);
+    }
+    else
+    {
+        // For Quad and CLEAT, show pan label and coord label
         addAndMakeVisible(pan_label);
         addAndMakeVisible(pan_coord_label);
     }
@@ -110,44 +136,62 @@ void SamplerTrack::paint(juce::Graphics& g)
 
 void SamplerTrack::resized()
 {
-    const int margin = 5;
-    const int label_height = 20;
-    const int knob_size = 60;
-    const int slider_height = 20;
-    const int button_size = 30;
+    // Layout constants - smaller sizes to fit embedding space window
+    const int componentMargin = 5;
+    const int trackLabelHeight = 18;
+    const int resetButtonSize = 18;
+    const int spacingSmall = 4;
+    const int knobSize = 50; // Smaller knob
+    const int labelHeight = 12; // Smaller labels
+    const int buttonSize = 24; // Smaller button
+    const int pannerHeight = 100; // Smaller panner to fit
+    const int levelControlWidth = 70; // Appropriate size for level control
     
-    auto bounds = getLocalBounds().reduced(margin);
+    auto bounds = getLocalBounds().reduced(componentMargin);
     
-    // Track label at top left
-    track_label.setBounds(bounds.removeFromTop(label_height).removeFromLeft(80));
-    bounds.removeFromTop(5);
+    // Track label at top with mute button
+    auto trackLabelArea = bounds.removeFromTop(trackLabelHeight);
+    mute_button.setBounds(trackLabelArea.removeFromRight(buttonSize));
+    trackLabelArea.removeFromRight(spacingSmall);
+    track_label.setBounds(trackLabelArea);
+    bounds.removeFromTop(spacingSmall);
     
-    // Mute button next to label
-    auto top_row = bounds.removeFromTop(button_size);
-    mute_button.setBounds(top_row.removeFromLeft(button_size));
-    top_row.removeFromLeft(10);
+    // Reserve space for panner at bottom
+    auto bottomArea = bounds.removeFromBottom(pannerHeight + labelHeight + spacingSmall * 2);
     
-    // Level control on the right
-    auto level_bounds = bounds.removeFromRight(80);
-    level_control.setBounds(level_bounds);
+    // Main controls area
+    auto controlsArea = bounds;
     
-    // Speed slider
-    auto speed_bounds = bounds.removeFromLeft(knob_size + 10);
-    speed_label.setBounds(speed_bounds.removeFromTop(label_height));
-    speed_bounds.removeFromTop(5);
-    speed_slider.setBounds(speed_bounds.removeFromTop(knob_size));
+    // Left column: level control (properly sized)
+    const int leftColumnWidth = levelControlWidth;
+    auto leftColumn = controlsArea.removeFromLeft(leftColumnWidth);
+    level_control.setBounds(leftColumn);
+    controlsArea.removeFromLeft(spacingSmall);
     
-    bounds.removeFromLeft(10);
+    // Right side: speed slider
+    auto speedArea = controlsArea;
+    speed_label.setBounds(speedArea.removeFromTop(labelHeight));
+    speedArea.removeFromTop(spacingSmall);
+    speed_slider.setBounds(speedArea.removeFromTop(knobSize));
     
-    // Pan controls (if Stereo panner)
+    // Panner area at bottom
+    auto panLabelArea = bottomArea.removeFromTop(labelHeight);
+    pan_label.setBounds(panLabelArea.removeFromLeft(40));
+    pan_coord_label.setBounds(panLabelArea); // Coordinates on right
+    bottomArea.removeFromTop(spacingSmall);
+    
+    // Panner component or slider
     if (panner_type == "Stereo" && stereo_pan_slider.isVisible())
     {
-        auto pan_bounds = bounds.removeFromLeft(150);
-        pan_label.setBounds(pan_bounds.removeFromTop(label_height));
-        pan_bounds.removeFromTop(5);
-        stereo_pan_slider.setBounds(pan_bounds.removeFromTop(slider_height));
-        pan_bounds.removeFromTop(5);
-        pan_coord_label.setBounds(pan_bounds.removeFromTop(label_height));
+        stereo_pan_slider.setBounds(bottomArea);
+    }
+    else if (panner2DComponent != nullptr && panner2DComponent->isVisible())
+    {
+        // Limit panner height to its width (keep it square)
+        const int pannerMaxHeight = bottomArea.getWidth();
+        const int finalPannerHeight = juce::jmin(pannerHeight, pannerMaxHeight);
+        auto pannerArea = bottomArea.removeFromTop(finalPannerHeight);
+        panner2DComponent->setBounds(pannerArea);
     }
 }
 
@@ -232,12 +276,10 @@ void SamplerTrack::set_level(float level_value)
 
 void SamplerTrack::set_panner_smoothing_time(double smoothing_time)
 {
-    // Only CLEATPanner supports smoothing time
-    if (auto* cleat_panner = dynamic_cast<CLEATPanner*>(panner.get()))
+    // Set smoothing time on 2D panner component if available
+    if (panner2DComponent != nullptr)
     {
-        // CLEATPanner handles smoothing internally, no direct API for this
-        // Smoothing is handled by the SmoothedValue in CLEATPanner
-        // This is a no-op for now - could be extended if needed
+        panner2DComponent->set_smoothing_time(smoothing_time);
     }
 }
 
@@ -271,6 +313,13 @@ bool SamplerTrack::get_pan_position(float& x, float& y) const
             y = cleat_panner->get_smoothed_pan_y();
             return true;
         }
+    }
+    // If we have a 2D panner component, use its position
+    if (panner2DComponent != nullptr)
+    {
+        x = panner2DComponent->get_pan_x();
+        y = panner2DComponent->get_pan_y();
+        return true;
     }
     return false;
 }
@@ -355,8 +404,19 @@ void SamplerTrack::set_sample_rate(double sample_rate)
 
 void SamplerTrack::clear_look_and_feel()
 {
+    // Clear look and feel from all components
+    track_label.setLookAndFeel(nullptr);
+    mute_button.setLookAndFeel(nullptr);
+    speed_slider.setLookAndFeel(nullptr);
+    speed_label.setLookAndFeel(nullptr);
+    stereo_pan_slider.setLookAndFeel(nullptr);
+    pan_label.setLookAndFeel(nullptr);
+    pan_coord_label.setLookAndFeel(nullptr);
+    if (panner2DComponent != nullptr)
+    {
+        panner2DComponent->setLookAndFeel(nullptr);
+    }
     // LevelControl doesn't have clearLookAndFeel - it's a Component so it inherits from juce::Component
-    // No special cleanup needed
 }
 
 void SamplerTrack::speed_slider_value_changed()
@@ -391,7 +451,13 @@ void SamplerTrack::mute_button_toggled(bool muted)
 void SamplerTrack::timerCallback()
 {
     // Update pan coordinate label if panner position changed
-    if (panner != nullptr)
+    if (panner2DComponent != nullptr && panner2DComponent->isVisible())
+    {
+        float x = panner2DComponent->get_pan_x();
+        float y = panner2DComponent->get_pan_y();
+        pan_coord_label.setText(juce::String::formatted("%.2f, %.2f", x, y), juce::dontSendNotification);
+    }
+    else if (panner != nullptr)
     {
         float x, y;
         if (get_pan_position(x, y))

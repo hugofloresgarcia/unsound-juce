@@ -13,6 +13,7 @@
 #include <flowerjuce/Panners/StereoPanner.h>
 #include <flowerjuce/Panners/QuadPanner.h>
 #include <flowerjuce/Panners/CLEATPanner.h>
+#include <flowerjuce/Panners/Panner2DComponent.h>
 #include <memory>
 #include <atomic>
 
@@ -81,6 +82,7 @@ private:
     // Panner
     juce::String panner_type;
     std::unique_ptr<Panner> panner;
+    std::unique_ptr<Panner2DComponent> panner2DComponent;
     juce::Slider stereo_pan_slider;
     juce::Label pan_label;
     juce::Label pan_coord_label;
