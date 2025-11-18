@@ -17,7 +17,7 @@ add_subdirectory(libs)
 add_subdirectory(apps)
 
 # Add plugins
-add_subdirectory(plugins)
+# add_subdirectory(plugins)
 
 # Test runner executable
 juce_add_console_app(PannerTestsRunner

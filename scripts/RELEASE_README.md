@@ -11,12 +11,51 @@ This guide explains how to build, sign, notarize, and create a release package f
 ### 2. Code Signing Certificate
 You need a "Developer ID Application" certificate for distribution outside the App Store:
 
-1. Log in to [Apple Developer Portal](https://developer.apple.com/account/)
-2. Go to **Certificates, Identifiers & Profiles**
-3. Create a new certificate:
-   - Type: **Developer ID Application**
-   - Follow the instructions to create and download the certificate
-4. Install the certificate in Keychain Access
+#### Creating the Certificate Request
+
+1. **Generate a Certificate Signing Request (CSR) on your Mac:**
+   - Open **Keychain Access** (Applications > Utilities > Keychain Access)
+   - Go to **Keychain Access** menu > **Certificate Assistant** > **Request a Certificate From a Certificate Authority...**
+   - Enter your email address (use the one associated with your Apple Developer account)
+   - Enter a common name (e.g., "Your Name" or "Your Company")
+   - Select **Saved to disk** and click **Continue**
+   - Save the `.certSigningRequest` file to your Desktop
+
+#### Requesting the Certificate from Apple
+
+2. **Request the certificate from Apple Developer Portal:**
+   - Log in to [Apple Developer Portal](https://developer.apple.com/account/)
+   - Go to **Certificates, Identifiers & Profiles**
+   - Click the **+** button to create a new certificate
+   - Under **Software**, select **Developer ID Application** and click **Continue**
+   - Upload the `.certSigningRequest` file you just created
+   - Click **Continue** and then **Download** the certificate file (`.cer`)
+
+#### Installing the Certificate
+
+3. **Install the certificate in Keychain Access:**
+   - Double-click the downloaded `.cer` file
+   - Keychain Access will open automatically
+   - The certificate will be installed in your **login** keychain
+   - You should see it listed under **My Certificates** in Keychain Access
+   - Make sure it shows as **Valid** (not expired)
+
+4. **Verify the certificate is installed:**
+   ```bash
+   security find-identity -v -p codesigning
+   ```
+   You should see a line like:
+   ```
+   1) ABC123DEF4567890ABCDEF1234567890ABCDEF12 "Developer ID Application: Your Name (TEAM_ID)"
+   ```
+   Copy the full name (including quotes if present) for use in `APPLE_SIGNING_IDENTITY`.
+
+#### Troubleshooting Certificate Installation
+
+- **If the certificate doesn't appear:** Make sure you're looking in the **login** keychain (not System), and check the **My Certificates** category
+- **If it shows as expired:** You'll need to create a new certificate following the same process
+- **If you see "This certificate has an invalid issuer":** Make sure you downloaded the correct certificate type (Developer ID Application, not Development)
+- **If the private key is missing:** The certificate must be installed on the same Mac where you generated the CSR. If you're on a different Mac, you'll need to export/import the private key from the original Mac
 
 ### 3. App-Specific Password for Notarization
 1. Go to [Apple ID Account Page](https://appleid.apple.com/)
@@ -112,6 +151,44 @@ After successful completion, you'll find:
 - **ZIP**: `build/Unsound4All_Tape_Looper-1.0.0-macOS-arm64.zip`
 
 ## Troubleshooting
+
+### "The specified item could not be found in the keychain"
+
+This error occurs when `codesign` cannot find the signing identity in your keychain. To fix:
+
+1. **Verify your signing identity exists:**
+   ```bash
+   security find-identity -v -p codesigning
+   ```
+   Look for "Developer ID Application: Your Name (TEAM_ID)" and copy the exact name.
+
+2. **Check that your environment variable matches exactly:**
+   ```bash
+   echo "$APPLE_SIGNING_IDENTITY"
+   ```
+   The name must match exactly, including spaces and parentheses.
+
+3. **Unlock your keychain:**
+   ```bash
+   security unlock-keychain ~/Library/Keychains/login.keychain-db
+   ```
+   Or unlock the default keychain:
+   ```bash
+   security unlock-keychain
+   ```
+
+4. **Verify the certificate is installed:**
+   - Open Keychain Access app
+   - Search for "Developer ID Application"
+   - Make sure it's in the "login" keychain (not "System")
+   - If it's expired or missing, download a new one from Apple Developer Portal
+
+5. **If using a different keychain, specify it:**
+   ```bash
+   security unlock-keychain /path/to/your.keychain-db
+   ```
+
+The script now automatically verifies the signing identity exists before attempting to sign, which will help catch this issue early.
 
 ### "No signing identity found"
 

@@ -72,6 +72,35 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Verify signing identity exists in keychain
+verify_signing_identity() {
+    if [[ -z "$SIGNING_IDENTITY" ]]; then
+        return 0  # No signing identity set, skip verification
+    fi
+    
+    log_info "Verifying signing identity in keychain..."
+    
+    # Check if the identity exists
+    local identity_found
+    identity_found=$(security find-identity -v -p codesigning 2>&1 | grep -F "$SIGNING_IDENTITY" || true)
+    
+    if [[ -z "$identity_found" ]]; then
+        log_error "Signing identity not found in keychain: $SIGNING_IDENTITY"
+        log_error ""
+        log_error "Available signing identities:"
+        security find-identity -v -p codesigning 2>&1 | grep -E "^[[:space:]]*[0-9]+\)" || true
+        log_error ""
+        log_error "To fix this:"
+        log_error "1. Make sure your certificate is installed in Keychain Access"
+        log_error "2. Check the exact name with: security find-identity -v -p codesigning"
+        log_error "3. Set APPLE_SIGNING_IDENTITY to match the exact name (including quotes if needed)"
+        log_error "4. If the keychain is locked, unlock it: security unlock-keychain"
+        exit 1
+    fi
+    
+    log_info "✓ Signing identity found: $SIGNING_IDENTITY"
+}
+
 # Check prerequisites
 check_prerequisites() {
     log_info "Checking prerequisites..."
@@ -79,6 +108,11 @@ check_prerequisites() {
     if [[ -z "$SIGNING_IDENTITY" && "$SKIP_NOTARIZE" == false ]]; then
         log_error "SIGNING_IDENTITY not set. Set APPLE_SIGNING_IDENTITY environment variable or modify script."
         exit 1
+    fi
+    
+    # Verify signing identity exists in keychain if provided
+    if [[ -n "$SIGNING_IDENTITY" ]]; then
+        verify_signing_identity
     fi
     
     if [[ "$SKIP_NOTARIZE" == false ]]; then
@@ -188,7 +222,28 @@ sign_file() {
     
     sign_args+=("$file_path")
     
-    codesign "${sign_args[@]}"
+    # Capture codesign output and error
+    local codesign_output
+    local codesign_exit_code
+    
+    if ! codesign_output=$(codesign "${sign_args[@]}" 2>&1); then
+        codesign_exit_code=$?
+        log_error "codesign failed with exit code $codesign_exit_code"
+        echo "$codesign_output"
+        
+        # Check for specific keychain errors
+        if echo "$codesign_output" | grep -qi "keychain"; then
+            log_error ""
+            log_error "Keychain error detected. Possible solutions:"
+            log_error "1. Unlock your keychain: security unlock-keychain"
+            log_error "2. Verify the signing identity exists: security find-identity -v -p codesigning"
+            log_error "3. Make sure the certificate name matches exactly: $SIGNING_IDENTITY"
+            log_error "4. Try unlocking the login keychain specifically:"
+            log_error "   security unlock-keychain ~/Library/Keychains/login.keychain-db"
+        fi
+        
+        exit 1
+    fi
     
     # Verify signature
     if codesign --verify --verbose "$file_path" 2>&1 | grep -q "valid on disk"; then
