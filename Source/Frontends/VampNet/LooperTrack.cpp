@@ -1164,7 +1164,7 @@ void LooperTrack::initializeModelParameterKnobs()
     addModelParameterKnob("sample_temperature", "temperature", 0.0, 2.0, 0.1, 0.6, ModelParamType::Float);
     addModelParameterKnob("top_p", "top-p", 0.0, 1.0, 0.1, 0.0, ModelParamType::Float);
     addModelParameterKnob("mask_dropout", "mask dropout", 0.0, 1.0, 0.1, 0.9, ModelParamType::Float);
-    addModelParameterKnob("time_stretch_factor", "stretch", 0.25, 4.0, 0.01, 1.0, ModelParamType::Float);
+    addModelParameterKnob("time_stretch_factor", "stretch", 1.0, 4.0, 1.0, 1.0, ModelParamType::Integer);
     addModelParameterKnob("onset_mask_width", "onset width", 1.0, 127.0, 1.0, 1.0, ModelParamType::Integer);
     addModelParameterKnob("typical_filtering", "typical filter", 0.0, 1.0, 1.0, 0.0, ModelParamType::Boolean);
     addModelParameterKnob("typical_mass", "typical mass", 0.0, 1.0, 0.1, 0.14, ModelParamType::Float);
