@@ -32,10 +32,26 @@ bool LooperWriteHead::processSample(float inputSample, float currentPosition)
 
 void LooperWriteHead::finalizeRecording(float finalPosition)
 {
+    // Determine how much audio we actually recorded.
+    const size_t recordedLen = tapeLoop.recordedLength.load();
+
+    // If nothing was ever written, just turn off recording and leave loop bounds unchanged.
+    if (recordedLen == 0 || finalPosition <= 0.0f)
+    {
+        recordEnable.store(false); // Turn off record enable so UI reflects the change
+        juce::Logger::writeToLog("~~~ FinalizeRecording called with no recorded audio; ignoring loop bounds");
+        return;
+    }
+
+    // Clamp the final position to the range [1, recordedLen]
+    size_t finalPosSamples = static_cast<size_t>(finalPosition);
+    if (finalPosSamples == 0 || finalPosSamples > recordedLen)
+        finalPosSamples = recordedLen;
+
     tapeLoop.hasRecorded.store(true);
     recordEnable.store(false); // Turn off record enable so UI reflects the change
-    
-    setWrapPos(static_cast<size_t>(finalPosition));
+
+    setWrapPos(finalPosSamples);
     juce::Logger::writeToLog("~~~ Finalized recording");
 }
 

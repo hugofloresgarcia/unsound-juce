@@ -46,7 +46,10 @@ public:
         }
 
         midiText.setText(midiInfo, juce::dontSendNotification);
+
+        // Attach the text editor to the viewport and give it an initial size
         midiViewport.setViewedComponent(&midiText, false);
+        midiText.setSize(400, 200);
         addAndMakeVisible(midiViewport);
 
         addAndMakeVisible(cancelButton);
@@ -83,6 +86,8 @@ public:
         saveButton.setBounds(buttonArea.removeFromLeft(80));
 
         midiViewport.setBounds(bounds);
+        // Ensure the viewed component has a visible size inside the viewport
+        midiText.setSize(bounds.getWidth(), bounds.getHeight());
     }
 
     void setOnCancel(std::function<void()> cb) { onCancel = std::move(cb); }

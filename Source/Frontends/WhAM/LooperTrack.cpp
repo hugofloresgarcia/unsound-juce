@@ -1055,16 +1055,30 @@ void LooperTrack::setMicEnabled(bool enabled)
 void LooperTrack::updateMicButtonAvailability()
 {
     auto& track = looperEngine.getTrack(trackIndex);
+    bool hasInputInitialized = track.hasInputChannelsInitialized.load();
     bool hasInput = track.hasInputChannels.load();
+
+    // If we haven't seen any audio callbacks yet, don't guess — leave the mic state alone
+    // and keep the button enabled so the user can arm it in advance.
+    if (!hasInputInitialized)
+    {
+        transportControls.setMicEnabled(true);
+        return;
+    }
 
     if (!hasInput)
     {
         // No input channels: force mic off and disable the button so it appears "stuck off".
         track.micEnabled.store(false);
         transportControls.setMicState(false);
+        transportControls.setMicEnabled(false);
     }
-
-    transportControls.setMicEnabled(hasInput);
+    else
+    {
+        // We have input channels: enable the mic button, but don't force its state
+        // (the user may want to keep the mic off).
+        transportControls.setMicEnabled(true);
+    }
 }
 
 Shared::ParameterKnobs* LooperTrack::getModelParameterKnobComponent()

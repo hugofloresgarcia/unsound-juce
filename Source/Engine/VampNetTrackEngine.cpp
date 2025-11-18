@@ -208,6 +208,7 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
 
     // Track whether we have any actual input channels this callback
     track.hasInputChannels.store(numInputChannels > 0);
+    track.hasInputChannelsInitialized.store(true);
 
     // Safety check: if buffers are not allocated, return early
     {
@@ -275,7 +276,12 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
     }
 
     // Check if we just started recording (wasn't recording before, but are now)
-    bool thisBlockIsFirstTimeRecording = !wasRecording && track.writeHead.getRecordEnable() && !hasExistingAudio;
+    bool thisBlockIsFirstTimeRecording =
+        !wasRecording
+        && track.writeHead.getRecordEnable()
+        && !hasExistingAudio
+        && micEnabled
+        && hasInputChannelsFlag;
 
     // If we just stopped recording (record enable turned off), finalize the loop
     bool recordingFinalized = false;
@@ -312,10 +318,10 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
 
         if (isFirstCall)
             DBG_SEGFAULT("Entering sample loop, numSamples=" + juce::String(numSamples));
-        
+
         // OPTIMIZATION: Pre-cache values that don't change during the block
         float wrapPos = static_cast<float>(track.writeHead.getWrapPos());
-        bool isRecording = track.writeHead.getRecordEnable() && track.micEnabled.load() && numInputChannels > 0;
+        bool isRecording = track.writeHead.getRecordEnable() && micEnabled && hasInputChannelsFlag;
         int inputChannel = track.writeHead.getInputChannel();
         bool clickActive = clickSynth->isClickActive();
         bool samplerActive = sampler->isPlaying();

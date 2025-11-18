@@ -55,23 +55,23 @@ float LooperReadHead::processSample()
 }
 
 bool LooperReadHead::advance(float wrapPos)
-{   
+{
     static int callCount = 0;
     callCount++;
     bool isFirstCall = (callCount == 1);
-    
+
     if (isFirstCall)
         DBG_SEGFAULT("ENTRY: LooperReadHead::advance, wrapPos=" + juce::String(wrapPos));
-    
+
     // Safety check: if wrapPos is 0 or invalid, don't advance
-    if (wrapPos < 0.0f)
+    if (wrapPos <= 0.0f)
     {
         juce::Logger::writeToLog("WARNING: Wrap position is 0 or invalid in advance");
         if (isFirstCall)
             DBG_SEGFAULT("wrapPos is invalid, returning false");
         return false;
     }
-    
+
     if (isFirstCall)
         DBG_SEGFAULT("Loading position and speed");
     float currentPos = pos.load();

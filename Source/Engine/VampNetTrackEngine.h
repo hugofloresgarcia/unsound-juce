@@ -24,12 +24,13 @@ public:
         LooperReadHead recordReadHead;  // reads from recordBuffer
         LooperReadHead outputReadHead;  // reads from outputBuffer
         OutputBus outputBus;
-        
+
         // UI/interaction state (these could eventually be moved to the UI layer)
         std::atomic<bool> isPlaying{false};
         std::atomic<float> dryWetMix{0.5f};  // 0.0 = all dry (record buffer), 1.0 = all wet (output buffer)
         std::atomic<bool> micEnabled{true};   // New: mic button state (audio input on/off)
         std::atomic<bool> hasInputChannels{false}; // Updated each callback based on numInputChannels
+        std::atomic<bool> hasInputChannelsInitialized{false}; // True once we've seen at least one callback
 
         TrackState() : writeHead(recordBuffer), recordReadHead(recordBuffer), outputReadHead(outputBuffer) {}
 
