@@ -124,7 +124,7 @@ juce::Result GradioWorkerThread::saveBufferToFile(int trackIndex, juce::File& ou
 }
 
 // LooperTrack implementation
-LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::function<juce::String()> gradioUrlGetter, Shared::MidiLearnManager* midiManager, const juce::String& pannerType)
+LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::function<juce::String()> gradioUrlGetter, Shared::MidiLearnManager* midiManager, const juce::String& pannerTypeStr)
     : looperEngine(engine), 
       trackIndex(index),
       waveformDisplay(engine, index),
@@ -139,7 +139,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
       gradioUrlProvider(std::move(gradioUrlGetter)),
       midiLearnManager(midiManager),
       trackIdPrefix("track" + juce::String(index)),
-      pannerType(pannerType),
+      pannerType(stringToPannerType(pannerTypeStr)),
       stereoPanSlider(juce::Slider::LinearHorizontal, juce::Slider::NoTextBox),
       panLabel("pan", "pan"),
       panCoordLabel("coord", "0.50, 0.50")
@@ -176,6 +176,11 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     
     // Setup pan label
     panLabel.setJustificationType(juce::Justification::centredLeft);
+    // Set label text based on panner type
+    if (pannerType == PannerType::CLEAT)
+    {
+        panLabel.setText("cleatpan", juce::dontSendNotification);
+    }
     addAndMakeVisible(panLabel);
     
     // Setup pan coordinate label
@@ -376,8 +381,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     addAndMakeVisible(autogenToggle);
     
     // Setup panner based on type
-    auto pannerTypeLower = pannerType.toLowerCase();
-    if (pannerTypeLower == "stereo")
+    if (pannerType == PannerType::Stereo)
     {
         panner = std::make_unique<StereoPanner>();
         stereoPanSlider.setRange(0.0, 1.0, 0.01);
@@ -392,7 +396,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
         };
         addAndMakeVisible(stereoPanSlider);
     }
-    else if (pannerTypeLower == "quad")
+    else if (pannerType == PannerType::Quad)
     {
         panner = std::make_unique<QuadPanner>();
         panner2DComponent = std::make_unique<Panner2DComponent>();
@@ -414,7 +418,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
         // Initialize onset triggering now that panner2DComponent is created
         panner2DComponent->set_onset_triggering_enabled(true);
     }
-    else if (pannerTypeLower == "cleat")
+    else if (pannerType == PannerType::CLEAT)
     {
         panner = std::make_unique<CLEATPanner>();
         if (auto* cleatPanner = dynamic_cast<CLEATPanner*>(panner.get()))
@@ -812,7 +816,7 @@ void LooperTrack::resized()
         const int pannerMaxHeight = bottomArea.getWidth();
         const int finalPannerHeight = juce::jmin(actualPannerHeight, pannerMaxHeight);
         auto pannerArea = bottomArea.removeFromTop(finalPannerHeight);
-        if (pannerType.toLowerCase() == "stereo" && stereoPanSlider.isVisible())
+        if (pannerType == PannerType::Stereo && stereoPanSlider.isVisible())
         {
             stereoPanSlider.setBounds(pannerArea);
         }
@@ -980,7 +984,7 @@ void LooperTrack::setPannerSmoothingTime(double smoothingTime)
 
 void LooperTrack::setCLEATGainPower(float gainPower)
 {
-    if (panner != nullptr && pannerType == "cleat")
+    if (panner != nullptr && pannerType == PannerType::CLEAT)
     {
         if (auto* cleatPanner = dynamic_cast<CLEATPanner*>(panner.get()))
         {
@@ -999,7 +1003,7 @@ bool LooperTrack::getPanPosition(float& x, float& y) const
         y = panner2DComponent->get_pan_y();
         return true;
     }
-    else if (pannerType.toLowerCase() == "stereo" && panner != nullptr)
+    else if (pannerType == PannerType::Stereo && panner != nullptr)
     {
         // For stereo panner, get pan value and map to 2D
         if (auto* stereoPanner = dynamic_cast<const StereoPanner*>(panner.get()))
@@ -1254,7 +1258,7 @@ void LooperTrack::resetButtonClicked()
         panner2DComponent->stop_playback();
         panner2DComponent->set_pan_position(0.5f, 0.5f, juce::sendNotification);
     }
-    else if (pannerType.toLowerCase() == "stereo" && stereoPanSlider.isVisible())
+    else if (pannerType == PannerType::Stereo && stereoPanSlider.isVisible())
     {
         stereoPanSlider.setValue(0.5, juce::sendNotification);
     }

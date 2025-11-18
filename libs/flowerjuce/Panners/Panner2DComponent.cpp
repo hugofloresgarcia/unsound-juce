@@ -88,13 +88,26 @@ void Panner2DComponent::mouseDown(const juce::MouseEvent& e)
     if (e.mods.isLeftButtonDown())
     {
         m_is_dragging = true;
-        auto pan_pos = component_to_pan(e.position);
-        set_pan_position(pan_pos.x, pan_pos.y, juce::sendNotification);
         
-        // Start recording if trajectory recording is enabled
-        if (m_trajectory_recording_enabled && m_recording_state == Idle)
+        // If playing, start adjusting offset instead of setting pan position
+        if (m_recording_state == Playing)
         {
-            start_recording();
+            m_is_adjusting_offset = true;
+            m_drag_start_position = component_to_pan(e.position);
+            // Store current offset as starting point for relative adjustment
+            // The offset will be updated relative to this starting position
+        }
+        else
+        {
+            // Normal behavior: set pan position directly
+            auto pan_pos = component_to_pan(e.position);
+            set_pan_position(pan_pos.x, pan_pos.y, juce::sendNotification);
+            
+            // Start recording if trajectory recording is enabled
+            if (m_trajectory_recording_enabled && m_recording_state == Idle)
+            {
+                start_recording();
+            }
         }
     }
 }
@@ -103,25 +116,59 @@ void Panner2DComponent::mouseDrag(const juce::MouseEvent& e)
 {
     if (m_is_dragging && e.mods.isLeftButtonDown())
     {
-        auto pan_pos = component_to_pan(e.position);
-        set_pan_position(pan_pos.x, pan_pos.y, juce::sendNotification);
-        
-        // Record trajectory point if recording
-        if (m_recording_state == Recording)
+        // If playing and adjusting offset, update offset based on drag delta
+        if (m_recording_state == Playing && m_is_adjusting_offset)
         {
-            double current_time = juce::Time::getMillisecondCounterHiRes() / 1000.0;
-            double elapsed_time = current_time - m_recording_start_time;
+            auto current_pan_pos = component_to_pan(e.position);
             
-            // Record at 10fps (every 100ms)
-            if (current_time - m_last_record_time >= m_record_interval)
+            // Calculate delta from drag start position
+            float delta_x = current_pan_pos.x - m_drag_start_position.x;
+            float delta_y = current_pan_pos.y - m_drag_start_position.y;
+            
+            // Update offset (additive, so dragging accumulates)
+            m_trajectory_offset_x += delta_x;
+            m_trajectory_offset_y += delta_y;
+            
+            // Clamp offset to reasonable range (-1.0 to 1.0)
+            m_trajectory_offset_x = juce::jlimit(-1.0f, 1.0f, m_trajectory_offset_x);
+            m_trajectory_offset_y = juce::jlimit(-1.0f, 1.0f, m_trajectory_offset_y);
+            
+            // Update drag start position for next delta calculation
+            m_drag_start_position = current_pan_pos;
+            
+            // Immediately apply offset to current trajectory point and update pan position
+            if (m_current_playback_index < m_trajectory.size())
             {
-                TrajectoryPoint point;
-                point.x = pan_pos.x;
-                point.y = pan_pos.y;
-                point.time = elapsed_time;
-                m_trajectory.push_back(point);
-                m_original_trajectory.push_back(point);
-                m_last_record_time = current_time;
+                const auto& point = m_trajectory[m_current_playback_index];
+                float offset_x = point.x + m_trajectory_offset_x;
+                float offset_y = point.y + m_trajectory_offset_y;
+                clamp_pan(offset_x, offset_y);
+                update_pan_position_with_smoothing(offset_x, offset_y);
+            }
+        }
+        else
+        {
+            // Normal behavior: set pan position directly
+            auto pan_pos = component_to_pan(e.position);
+            set_pan_position(pan_pos.x, pan_pos.y, juce::sendNotification);
+            
+            // Record trajectory point if recording
+            if (m_recording_state == Recording)
+            {
+                double current_time = juce::Time::getMillisecondCounterHiRes() / 1000.0;
+                double elapsed_time = current_time - m_recording_start_time;
+                
+                // Record at 10fps (every 100ms)
+                if (current_time - m_last_record_time >= m_record_interval)
+                {
+                    TrajectoryPoint point;
+                    point.x = pan_pos.x;
+                    point.y = pan_pos.y;
+                    point.time = elapsed_time;
+                    m_trajectory.push_back(point);
+                    m_original_trajectory.push_back(point);
+                    m_last_record_time = current_time;
+                }
             }
         }
     }
@@ -132,6 +179,7 @@ void Panner2DComponent::mouseUp(const juce::MouseEvent& e)
     if (m_is_dragging)
     {
         m_is_dragging = false;
+        m_is_adjusting_offset = false;
         
         // Stop recording and start playback if we were recording
         if (m_recording_state == Recording && !m_trajectory.empty())
@@ -245,6 +293,10 @@ void Panner2DComponent::start_playback()
     m_current_playback_index = 0;
     m_playback_start_time = juce::Time::getMillisecondCounterHiRes() / 1000.0;
     m_last_playback_time = m_playback_start_time;
+    
+    // Reset offset when starting new playback
+    m_trajectory_offset_x = 0.0f;
+    m_trajectory_offset_y = 0.0f;
     
     // Initialize smoothed values to current position
     m_smoothed_pan_x.setCurrentAndTargetValue(m_pan_x);
@@ -379,9 +431,12 @@ void Panner2DComponent::advance_trajectory_onset()
         m_current_playback_index = 0;
     }
     
-    // Update pan position with smoothing
+    // Update pan position with smoothing, applying global offset
     const auto& point = m_trajectory[m_current_playback_index];
-    update_pan_position_with_smoothing(point.x, point.y);
+    float offset_x = point.x + m_trajectory_offset_x;
+    float offset_y = point.y + m_trajectory_offset_y;
+    clamp_pan(offset_x, offset_y);
+    update_pan_position_with_smoothing(offset_x, offset_y);
 }
 
 void Panner2DComponent::advance_trajectory_timer()
@@ -398,9 +453,12 @@ void Panner2DComponent::advance_trajectory_timer()
         m_current_playback_index = 0;
     }
     
-    // Update pan position with smoothing
+    // Update pan position with smoothing, applying global offset
     const auto& point = m_trajectory[m_current_playback_index];
-    update_pan_position_with_smoothing(point.x, point.y);
+    float offset_x = point.x + m_trajectory_offset_x;
+    float offset_y = point.y + m_trajectory_offset_y;
+    clamp_pan(offset_x, offset_y);
+    update_pan_position_with_smoothing(offset_x, offset_y);
 }
 
 void Panner2DComponent::timerCallback()

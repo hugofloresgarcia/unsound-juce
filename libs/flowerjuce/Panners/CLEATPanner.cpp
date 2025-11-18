@@ -52,8 +52,8 @@ float CLEATPanner::get_pan_y() const
 
 void CLEATPanner::set_gain_power(float power)
 {
-    // Clamp power to reasonable range (0.1 to 3.0)
-    power = juce::jlimit(0.1f, 3.0f, power);
+    // Clamp power to reasonable range (0.1 to 10.0)
+    power = juce::jlimit(0.1f, 10.0f, power);
     m_gain_power.store(power);
 }
 

@@ -119,6 +119,12 @@ private:
     
     // Counter for periodic repaints when onset triggering is enabled
     int m_repaint_counter{0};
+    
+    // Global offset for trajectory playback (applied to all trajectory points)
+    float m_trajectory_offset_x{0.0f};
+    float m_trajectory_offset_y{0.0f};
+    juce::Point<float> m_drag_start_position; // Initial mouse position when starting drag during playback
+    bool m_is_adjusting_offset{false}; // True when dragging to adjust offset during playback
 
     // Convert component-local coordinates to normalized pan coordinates
     juce::Point<float> component_to_pan(juce::Point<float> component_pos) const;

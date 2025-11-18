@@ -34,6 +34,27 @@ namespace Shared
 
 namespace Text2Sound
 {
+    // Panner type enumeration
+    enum class PannerType
+    {
+        Stereo,
+        Quad,
+        CLEAT
+    };
+    
+    // Helper function to convert string to PannerType enum
+    inline PannerType stringToPannerType(const juce::String& pannerTypeStr)
+    {
+        auto lower = pannerTypeStr.toLowerCase();
+        if (lower == "stereo")
+            return PannerType::Stereo;
+        else if (lower == "quad")
+            return PannerType::Quad;
+        else if (lower == "cleat")
+            return PannerType::CLEAT;
+        else
+            return PannerType::Stereo; // Default fallback
+    }
 
     // Background thread for Gradio API calls
 class GradioWorkerThread : public juce::Thread
@@ -75,7 +96,7 @@ private:
 class LooperTrack : public juce::Component, public juce::Timer, public juce::AsyncUpdater
 {
 public:
-    LooperTrack(MultiTrackLooperEngine& engine, int trackIndex, std::function<juce::String()> gradioUrlProvider, Shared::MidiLearnManager* midiManager = nullptr, const juce::String& pannerType = "Stereo");
+    LooperTrack(MultiTrackLooperEngine& engine, int trackIndex, std::function<juce::String()> gradioUrlProvider, Shared::MidiLearnManager* midiManager = nullptr, const juce::String& pannerTypeStr = "Stereo");
     ~LooperTrack() override;
 
     void paint(juce::Graphics& g) override;
@@ -128,7 +149,7 @@ private:
     juce::String gradioStatusText;
     
     // Panner
-    juce::String pannerType;
+    PannerType pannerType;
     std::unique_ptr<Panner> panner;
     std::unique_ptr<Panner2DComponent> panner2DComponent;
     juce::Slider stereoPanSlider; // For stereo panner

@@ -6,6 +6,7 @@
 #include "LooperTrack.h"
 #include <array>
 #include <vector>
+#include <atomic>
 
 namespace Text2Sound
 {
@@ -31,8 +32,16 @@ private:
     static constexpr int numTrackColors = 8;
     std::array<juce::Colour, numTrackColors> trackColors;
     
+    // Track level meters with decay (similar to MultiTrackLooperEngine channel levels)
+    static constexpr int maxTracks = 8;
+    std::array<std::atomic<float>, maxTracks> trackLevels{};
+    static constexpr float levelDecayFactor{0.975f}; // Decay factor per timer callback (50ms)
+    
     // Helper to draw multi-track panner view
     void drawMultiTrackPanner(juce::Graphics& g, juce::Rectangle<int> area);
+    
+    // Helper to convert linear level to dB (matching SinksWindow implementation)
+    float linearToDb(float linear) const;
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VizWindow)
 };

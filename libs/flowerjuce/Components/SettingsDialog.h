@@ -152,7 +152,7 @@ private:
                 cleatGainPowerLabel.setJustificationType(juce::Justification::centredLeft);
                 addAndMakeVisible(cleatGainPowerLabel);
                 
-                cleatGainPowerSlider.setRange(0.1, 3.0, 0.1);
+                cleatGainPowerSlider.setRange(0.1, 10.0, 0.1);
                 cleatGainPowerSlider.setValue(currentCLEATGainPower);
                 cleatGainPowerSlider.onValueChange = [this] {
                     if (onCLEATGainPowerChangedCallback)
