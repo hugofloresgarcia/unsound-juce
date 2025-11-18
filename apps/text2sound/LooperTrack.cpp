@@ -687,7 +687,10 @@ void LooperTrack::resized()
     const int generateButtonHeight = 30;
     const int channelSelectorHeight = 30;
     const int knobAreaHeight = 140;
-    const int controlsHeight = 160;
+    const int controlsHeight = 160; // Level control and parameter knobs
+    const int cutoffKnobSize = 60;
+    const int cutoffLabelHeight = 15;
+    const int cutoffRowHeight = cutoffKnobSize + cutoffLabelHeight + spacingSmall; // Cutoff knob row
     
     const int labelHeight = 15;
     const int textPromptLabelHeight = 15;
@@ -696,7 +699,7 @@ void LooperTrack::resized()
     const int totalBottomHeight = textPromptLabelHeight + spacingSmall +
                                   textPromptHeight + spacingSmall +
                                   channelSelectorHeight + spacingSmall +
-                                  knobAreaHeight + spacingSmall + 
+                                  cutoffRowHeight + spacingSmall + // Cutoff knob row
                                   controlsHeight + spacingSmall +
                                   generateButtonHeight + spacingSmall +
                                   buttonHeight + spacingSmall +
@@ -734,22 +737,19 @@ void LooperTrack::resized()
     textPromptEditor.setBounds(bottomArea.removeFromTop(textPromptHeight));
     bottomArea.removeFromTop(spacingSmall);
     
+    // Cutoff knob row (above controls area)
+    auto cutoffRowArea = bottomArea.removeFromTop(cutoffRowHeight);
+    auto cutoffKnobArea = cutoffRowArea.removeFromRight(cutoffKnobSize);
+    cutoffKnob.setBounds(cutoffKnobArea.removeFromTop(cutoffKnobSize));
+    cutoffLabel.setBounds(cutoffKnobArea); // Label below knob
+    bottomArea.removeFromTop(spacingSmall);
+    
     // Level control and VU meter with knobs and autogen toggle
     auto controlsArea = bottomArea.removeFromTop(controlsHeight);
     
-    // Left column: cutoff knob above level control (stacked vertically)
-    const int cutoffKnobSize = 60;
-    const int cutoffLabelHeight = 15;
+    // Left column: level control
     const int leftColumnWidth = 115; // Match level control width
     auto leftColumn = controlsArea.removeFromLeft(leftColumnWidth);
-    
-    // Cutoff knob at top
-    auto cutoffArea = leftColumn.removeFromTop(cutoffKnobSize + cutoffLabelHeight);
-    cutoffKnob.setBounds(cutoffArea.removeFromTop(cutoffKnobSize));
-    cutoffLabel.setBounds(cutoffArea);
-    leftColumn.removeFromTop(spacingSmall);
-    
-    // Level control below cutoff knob (uses remaining height)
     levelControl.setBounds(leftColumn);
     controlsArea.removeFromLeft(spacingSmall);
     
