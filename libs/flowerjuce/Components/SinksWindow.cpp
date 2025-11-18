@@ -337,29 +337,31 @@ void SinksWindow::resized()
 
 void SinksWindow::timerCallback()
 {
-    // Update peak-hold levels with decay
-    for (int i = 0; i < 16; ++i)
+    // Decay channel levels (working version approach)
+    // Always apply decay first, then update peak if current level is higher
+    for (size_t i = 0; i < channelLevels.size(); ++i)
     {
-        float currentLevel = channelLevels[i].load();
+        float current = channelLevels[i].load();
         float currentPeak = peakLevels[i];
         
-        // If new level is higher, update peak
-        if (currentLevel > currentPeak)
+        // Always apply decay to the peak
+        if (currentPeak > 0.001f)
         {
-            peakLevels[i] = currentLevel;
+            peakLevels[i] = currentPeak * levelDecayFactor;
         }
         else
         {
-            // Apply decay
-            peakLevels[i] *= levelDecayFactor;
-            
-            // Clamp to zero if very small
-            if (peakLevels[i] < 0.0001f)
-                peakLevels[i] = 0.0f;
+            peakLevels[i] = 0.0f;
+        }
+        
+        // If current level is higher than decayed peak, update peak
+        if (current > peakLevels[i])
+        {
+            peakLevels[i] = current;
         }
     }
     
-    // Trigger repaint to update meters and phase information
+    // Trigger repaint to update meters and panner view
     repaint();
 }
 
