@@ -60,11 +60,11 @@ private:
     juce::Label titleLabel;
     juce::Label audioDeviceDebugLabel;
     CustomLookAndFeel customLookAndFeel;
-    juce::String gradioUrl { "https://hugggof-vampnet-music.hf.space/" };
+    juce::String gradioUrl { "http://127.0.0.1:7860/" };
     mutable juce::CriticalSection gradioSettingsLock;
-    
+
     Shared::MidiLearnOverlay midiLearnOverlay;
-    
+
     // Synths window (combines Click Synth and Sampler)
     std::unique_ptr<SynthsWindow> synthsWindow;
     
