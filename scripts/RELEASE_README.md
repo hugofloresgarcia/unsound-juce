@@ -55,7 +55,40 @@ You need a "Developer ID Application" certificate for distribution outside the A
 - **If the certificate doesn't appear:** Make sure you're looking in the **login** keychain (not System), and check the **My Certificates** category
 - **If it shows as expired:** You'll need to create a new certificate following the same process
 - **If you see "This certificate has an invalid issuer":** Make sure you downloaded the correct certificate type (Developer ID Application, not Development)
-- **If the private key is missing:** The certificate must be installed on the same Mac where you generated the CSR. If you're on a different Mac, you'll need to export/import the private key from the original Mac
+
+- **If the private key is missing (certificate shows as valid but `security find-identity` returns 0 identities):**
+  
+  This happens when the certificate was installed but the matching private key is missing. To check:
+  ```bash
+  security find-identity -v -p codesigning
+  ```
+  If this returns "0 valid identities found" even though the certificate appears in Keychain Access, the private key is missing.
+  
+  **Solution 1: Export/Import Private Key (if CSR was created on another Mac)**
+  
+  On the Mac where you created the CSR:
+  1. Open Keychain Access
+  2. Find the certificate under **My Certificates**
+  3. Expand it to see the private key (it should have a small arrow)
+  4. Right-click the certificate → **Export "Developer ID Application..."**
+  5. Choose **Personal Information Exchange (.p12)** format
+  6. Set a password to protect the export
+  7. Transfer the `.p12` file to this Mac securely
+  
+  On this Mac:
+  1. Double-click the `.p12` file
+  2. Enter the password you set
+  3. Enter your Mac login password when prompted
+  4. The certificate and private key will be installed together
+  5. Verify with: `security find-identity -v -p codesigning`
+  
+  **Solution 2: Create New Certificate (recommended if original Mac unavailable)**
+  
+  If you can't access the original Mac or the private key is lost:
+  1. Delete the current certificate from Keychain Access (it's unusable without the private key)
+  2. Follow the certificate creation steps again, making sure to create the CSR **on this Mac**
+  3. Request a new certificate from Apple Developer Portal
+  4. Install the new certificate (it will automatically pair with the private key created with the CSR)
 
 ### 3. App-Specific Password for Notarization
 1. Go to [Apple ID Account Page](https://appleid.apple.com/)

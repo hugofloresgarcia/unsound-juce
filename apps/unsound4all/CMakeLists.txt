@@ -219,13 +219,45 @@ if(ONNXRUNTIME_FOUND)
         target_link_libraries(Unsound4AllApp PRIVATE ${ONNXRUNTIME_LIB})
         target_compile_definitions(Unsound4AllApp PRIVATE HAVE_ONNXRUNTIME=1)
         
-        # On macOS, copy dylib to app bundle
+        # On macOS, copy dylib to app bundle and set rpath
         if(APPLE)
+            # Copy the versioned library first
+            add_custom_command(TARGET Unsound4AllApp POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${ONNXRUNTIME_LIB_DIR}/libonnxruntime.${ONNXRUNTIME_VERSION}.dylib"
+                    "$<TARGET_BUNDLE_DIR:Unsound4AllApp>/Contents/MacOS/libonnxruntime.${ONNXRUNTIME_VERSION}.dylib"
+                COMMENT "Copying ONNX Runtime versioned library to app bundle"
+            )
+            # Fix the install name of the copied library to use @rpath
+            add_custom_command(TARGET Unsound4AllApp POST_BUILD
+                COMMAND install_name_tool -id "@rpath/libonnxruntime.${ONNXRUNTIME_VERSION}.dylib"
+                    "$<TARGET_BUNDLE_DIR:Unsound4AllApp>/Contents/MacOS/libonnxruntime.${ONNXRUNTIME_VERSION}.dylib"
+                COMMENT "Fixing ONNX Runtime library install name"
+            )
+            # Fix the executable's reference to the library to use @rpath
+            # Note: @executable_path is already in rpath via INSTALL_RPATH setting
+            add_custom_command(TARGET Unsound4AllApp POST_BUILD
+                COMMAND install_name_tool -change "${ONNXRUNTIME_LIB_DIR}/libonnxruntime.${ONNXRUNTIME_VERSION}.dylib" "@rpath/libonnxruntime.${ONNXRUNTIME_VERSION}.dylib"
+                    "$<TARGET_BUNDLE_DIR:Unsound4AllApp>/Contents/MacOS/Unsound4All Tape Looper"
+                COMMENT "Fixing executable's library reference to use @rpath"
+            )
+            # Also try to fix any reference to the non-versioned library name
+            add_custom_command(TARGET Unsound4AllApp POST_BUILD
+                COMMAND install_name_tool -change "${ONNXRUNTIME_LIB_DIR}/libonnxruntime.dylib" "@rpath/libonnxruntime.${ONNXRUNTIME_VERSION}.dylib"
+                    "$<TARGET_BUNDLE_DIR:Unsound4AllApp>/Contents/MacOS/Unsound4All Tape Looper"
+                COMMENT "Fixing executable's library reference (non-versioned) to use @rpath"
+            )
+            # Also copy the non-versioned symlink if it exists (for compatibility)
             add_custom_command(TARGET Unsound4AllApp POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "${ONNXRUNTIME_LIB_DIR}/libonnxruntime.dylib"
-                    "$<TARGET_BUNDLE_DIR:Unsound4AllApp>/Contents/MacOS/"
-                COMMENT "Copying ONNX Runtime library to app bundle"
+                    "$<TARGET_BUNDLE_DIR:Unsound4AllApp>/Contents/MacOS/libonnxruntime.dylib"
+                COMMENT "Copying ONNX Runtime library symlink to app bundle"
+            )
+            # Set rpath to find the library in the app bundle
+            set_target_properties(Unsound4AllApp PROPERTIES
+                INSTALL_RPATH "@executable_path"
+                BUILD_WITH_INSTALL_RPATH TRUE
             )
         endif()
         

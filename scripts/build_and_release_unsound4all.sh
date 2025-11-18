@@ -7,9 +7,10 @@
 # - Notarization credentials configured (APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, TEAM_ID)
 # - Xcode Command Line Tools installed
 # - CMake and build tools installed
+# - GitHub CLI (gh) installed and authenticated (for --github-release)
 #
 # Usage:
-#   ./scripts/build_and_release_unsound4all.sh [--skip-notarize] [--skip-dmg]
+#   ./scripts/build_and_release_unsound4all.sh [--skip-notarize] [--skip-dmg] [--skip-github]
 
 set -e  # Exit on error
 
@@ -34,6 +35,7 @@ APPLE_APP_SPECIFIC_PASSWORD="${APPLE_APP_SPECIFIC_PASSWORD:-}"
 # Flags
 SKIP_NOTARIZE=false
 SKIP_DMG=false
+SKIP_GITHUB=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -46,9 +48,13 @@ while [[ $# -gt 0 ]]; do
             SKIP_DMG=true
             shift
             ;;
+        --skip-github)
+            SKIP_GITHUB=true
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--skip-notarize] [--skip-dmg]"
+            echo "Usage: $0 [--skip-notarize] [--skip-dmg] [--skip-github]"
             exit 1
             ;;
     esac
@@ -157,13 +163,20 @@ build_app() {
     
     # Configure CMake
     log_info "Configuring CMake..."
+    # Set minimum macOS deployment target to 11.0 (supports macOS 11+ including macOS 14)
+    # This ensures the app can run on older macOS versions
+    local cmake_args=(
+        -DCMAKE_BUILD_TYPE="${BUILD_TYPE}"
+        -DCMAKE_OSX_DEPLOYMENT_TARGET="11.0"
+    )
+    
     if [[ "$ARCHITECTURE" == "universal" ]]; then
-        cmake .. -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
-                 -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+        cmake_args+=(-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64")
     else
-        cmake .. -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
-                 -DCMAKE_OSX_ARCHITECTURES="${ARCHITECTURE}"
+        cmake_args+=(-DCMAKE_OSX_ARCHITECTURES="${ARCHITECTURE}")
     fi
+    
+    cmake .. "${cmake_args[@]}"
     
     # Build only the Unsound4AllApp target
     log_info "Building Unsound4AllApp..."
@@ -325,7 +338,19 @@ notarize_app() {
         --team-id "$TEAM_ID" \
         2>&1)
     
-    if echo "$status_output" | grep -qi "status: accepted"; then
+    # Check for success indicators in JSON output
+    # The output can be JSON with "status": "Accepted" or "statusCode": 0
+    local is_accepted=false
+    if echo "$status_output" | grep -qiE '"status"\s*:\s*"Accepted"'; then
+        is_accepted=true
+    elif echo "$status_output" | grep -qiE '"statusCode"\s*:\s*0'; then
+        is_accepted=true
+    elif echo "$status_output" | grep -qi "status: accepted"; then
+        # Fallback for non-JSON output format
+        is_accepted=true
+    fi
+    
+    if [[ "$is_accepted" == true ]]; then
         log_info "✓ Notarization successful!"
         
         # Staple the notarization ticket
@@ -403,6 +428,141 @@ create_dmg() {
     log_info "✓ ZIP created: $zip_path"
 }
 
+# Create GitHub release
+create_github_release() {
+    if [[ "$SKIP_GITHUB" == true ]]; then
+        log_warn "Skipping GitHub release (--skip-github flag set)."
+        return
+    fi
+    
+    # Check if GitHub CLI is installed
+    if ! command -v gh &> /dev/null; then
+        log_warn "GitHub CLI (gh) not found. Skipping GitHub release."
+        log_warn "Install it with: brew install gh"
+        log_warn "Then authenticate with: gh auth login"
+        return
+    fi
+    
+    # Check if authenticated
+    local auth_status_output
+    if ! auth_status_output=$(gh auth status 2>&1); then
+        log_warn "GitHub CLI not authenticated. Skipping GitHub release."
+        log_warn "Authenticate with: gh auth login"
+        return
+    fi
+    
+    # Get repository name from git remote
+    local repo_name
+    local remote_url
+    remote_url=$(git config --get remote.origin.url 2>&1)
+    
+    if [[ -z "$remote_url" ]]; then
+        log_warn "No git remote 'origin' found. Skipping GitHub release."
+        return
+    fi
+    
+    # Extract repo name from various URL formats
+    # git@github.com:user/repo.git -> user/repo
+    # git@github-personal:user/repo.git -> user/repo
+    # https://github.com/user/repo.git -> user/repo
+    # https://github.com/user/repo -> user/repo
+    
+    # Use sed to extract user/repo from the URL
+    # First try to match with .git suffix, then without
+    repo_name=$(echo "$remote_url" | sed -E 's|.*[:/]([^/]+/[^/]+)\.git$|\1|')
+    if [[ "$repo_name" == "$remote_url" ]]; then
+        # No .git suffix, try without it
+        repo_name=$(echo "$remote_url" | sed -E 's|.*[:/]([^/]+/[^/]+)$|\1|')
+    fi
+    
+    # Validate that we got a user/repo format
+    if [[ ! "$repo_name" =~ ^[^/]+/[^/]+$ ]]; then
+        log_warn "Could not parse repository name from remote URL: $remote_url"
+        log_warn "Got: $repo_name"
+        log_warn "Skipping GitHub release."
+        return
+    fi
+    
+    log_info "Creating GitHub release for repository: $repo_name"
+    
+    # Create tag name
+    local tag_name="v${VERSION}"
+    
+    # Check if tag already exists
+    if git rev-parse "$tag_name" &> /dev/null 2>&1; then
+        log_warn "Tag $tag_name already exists. Skipping tag creation."
+    else
+        # Create and push tag
+        log_info "Creating git tag: $tag_name"
+        git tag -a "$tag_name" -m "Release ${VERSION}" || {
+            log_error "Failed to create git tag"
+            return 1
+        }
+        
+        log_info "Pushing tag to GitHub..."
+        git push origin "$tag_name" || {
+            log_error "Failed to push tag to GitHub"
+            log_error "You may need to push manually: git push origin $tag_name"
+            return 1
+        }
+        log_info "✓ Tag pushed successfully"
+    fi
+    
+    # Prepare release notes
+    local release_notes="Release ${VERSION} for macOS (${ARCHITECTURE})"
+    release_notes+=$'\n\n'
+    release_notes+="## Changes"
+    release_notes+=$'\n'
+    release_notes+="- Built and notarized for macOS ${ARCHITECTURE}"
+    if [[ "$SKIP_NOTARIZE" == false ]]; then
+        release_notes+=$'\n'
+        release_notes+="- Notarized by Apple"
+    fi
+    
+    # Collect assets to upload
+    local assets=()
+    local dmg_name="${APP_NAME// /_}-${VERSION}-macOS-${ARCHITECTURE}.dmg"
+    local dmg_path="${BUILD_DIR}/${dmg_name}"
+    local zip_name="${APP_NAME// /_}-${VERSION}-macOS-${ARCHITECTURE}.zip"
+    local zip_path="${BUILD_DIR}/${zip_name}"
+    
+    if [[ -f "$dmg_path" ]]; then
+        assets+=("$dmg_path")
+    fi
+    
+    if [[ -f "$zip_path" ]]; then
+        assets+=("$zip_path")
+    fi
+    
+    if [[ ${#assets[@]} -eq 0 ]]; then
+        log_warn "No release assets found (DMG/ZIP). Creating release without assets."
+    fi
+    
+    # Create release
+    log_info "Creating GitHub release..."
+    local release_args=(
+        "release" "create" "$tag_name"
+        "--title" "Release ${VERSION}"
+        "--notes" "$release_notes"
+    )
+    
+    # Add assets
+    for asset in "${assets[@]}"; do
+        release_args+=("$asset")
+    done
+    
+    local gh_output
+    if gh_output=$(gh "${release_args[@]}" 2>&1); then
+        log_info "✓ GitHub release created successfully!"
+        log_info "Release URL: https://github.com/${repo_name}/releases/tag/${tag_name}"
+    else
+        log_error "Failed to create GitHub release"
+        echo "$gh_output"
+        log_error "You may need to create it manually at: https://github.com/${repo_name}/releases/new"
+        return 1
+    fi
+}
+
 # Main execution
 main() {
     log_info "Starting build and release process for ${APP_NAME}"
@@ -428,6 +588,11 @@ main() {
     fi
     
     create_dmg "$app_bundle"
+    
+    # Create GitHub release (non-critical, so continue even if it fails)
+    if ! create_github_release; then
+        log_warn "GitHub release failed, but build completed successfully."
+    fi
     
     log_info "✓ Build and release process completed successfully!"
     log_info "App bundle: $app_bundle"
