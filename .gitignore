@@ -31,3 +31,6 @@ third_party/
 # Environment files with sensitive credentials
 .env
 .env.local
+.envs/
+.ssh_config
+.ssh_known_hosts
