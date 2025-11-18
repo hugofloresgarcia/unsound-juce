@@ -16,7 +16,15 @@ namespace Unsound4All
     
     ONNXModelManager::~ONNXModelManager()
     {
-        // Sessions will be automatically destroyed by unique_ptr
+        // CRITICAL: Destroy sessions BEFORE environment to ensure proper cleanup order
+        // Sessions must be destroyed before Ort::Env
+        DBG("ONNXModelManager: Destroying sessions...");
+        m_audioSession.reset();
+        m_textSession.reset();
+        m_tokenizer.reset();
+        
+        // Ort::Env will be automatically destroyed after sessions
+        DBG("ONNXModelManager: Destructor complete");
     }
     
     bool ONNXModelManager::initialize(const juce::File& audioModelPath, const juce::File& textModelPath)

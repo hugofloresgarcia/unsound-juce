@@ -7,4 +7,6 @@ alwaysApply: true
 - place DBG statements to thoroughly document the flow of code, except in Audio threads where timing is critical. In audio threads, DBG every 2s or so. 
 - use PascalCase for class names, snake_case for local variables, functions and class methods, m_snake_case for class members.
 
+- add debug statements everytime you write an early return path. 
+
 - **UI Layout Rule**: In `resized()` and similar UI layout functions, declare all sizes, margins, and spacing values as meaningful `const` variables at the top of the function, organized into logical groups (margins, label sizes, spacing, button sizes, etc.). Then use these named constants throughout the layout code instead of magic numbers. This makes the code maintainable and easy to adjust.

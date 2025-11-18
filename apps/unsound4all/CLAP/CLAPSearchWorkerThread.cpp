@@ -28,6 +28,13 @@ namespace Unsound4All
     
     void CLAPSearchWorkerThread::run()
     {
+        // Check if thread should stop before proceeding
+        if (threadShouldExit())
+        {
+            DBG("CLAPSearchWorkerThread: Thread asked to exit before starting");
+            return;
+        }
+        
         // Notify status update: computing text embedding
         juce::MessageManager::callAsync([this]()
         {
@@ -38,6 +45,13 @@ namespace Unsound4All
         // Use shared model manager if provided, otherwise create a new one
         ONNXModelManager* modelManager = m_sharedModelManager;
         std::unique_ptr<ONNXModelManager> localModelManager;
+        
+        // Check again after async callback (thread might have been asked to stop)
+        if (threadShouldExit())
+        {
+            DBG("CLAPSearchWorkerThread: Thread asked to exit after status update");
+            return;
+        }
         
         if (modelManager == nullptr || !modelManager->isInitialized())
         {
@@ -79,6 +93,13 @@ namespace Unsound4All
             }
         }
         
+        // Check if thread should stop before using model manager
+        if (threadShouldExit())
+        {
+            DBG("CLAPSearchWorkerThread: Thread asked to exit before using model manager");
+            return;
+        }
+        
         // Get text embedding
         auto textEmbedding = modelManager->getTextEmbedding(textPrompt);
         if (textEmbedding.empty())
@@ -91,6 +112,13 @@ namespace Unsound4All
             return;
         }
         
+        // Check if thread should stop before searching
+        if (threadShouldExit())
+        {
+            DBG("CLAPSearchWorkerThread: Thread asked to exit before searching palette");
+            return;
+        }
+        
         // Notify status update: searching palette
         juce::MessageManager::callAsync([this]()
         {
@@ -100,6 +128,13 @@ namespace Unsound4All
         
         // Search palette for top-4 matches
         auto resultFiles = searchPalette(soundPalettePath, textEmbedding, 4);
+        
+        // Final check before completing
+        if (threadShouldExit())
+        {
+            DBG("CLAPSearchWorkerThread: Thread asked to exit before completing");
+            return;
+        }
         
         // Notify completion
         juce::MessageManager::callAsync([this, resultFiles]()

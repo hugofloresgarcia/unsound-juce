@@ -180,6 +180,25 @@ MainComponent::~MainComponent()
     sinksWindow = nullptr;
     sinksComponent = nullptr;
     
+    // CRITICAL: Stop all threads and clear tracks BEFORE destroying cachedModelManager
+    // This ensures no threads are using ONNX Runtime when Ort::Env is destroyed
+    DBG("MainComponent: Stopping all tracks and threads...");
+    for (auto& track : tracks)
+    {
+        if (track != nullptr)
+        {
+            track->clearLookAndFeel();
+        }
+    }
+    
+    // Clear tracks explicitly to ensure all LooperTrack destructors run
+    // This will stop any CLAPSearchWorkerThread instances
+    tracks.clear();
+    
+    // Now safe to destroy the cached model manager (all threads should be stopped)
+    DBG("MainComponent: Destroying cached model manager...");
+    cachedModelManager.reset();
+    
     // Save MIDI mappings
     auto appDataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
                         .getChildFile("TapeLooper");
@@ -190,15 +209,6 @@ MainComponent::~MainComponent()
     // Save trajectory directory to config
     Shared::ConfigManager::saveStringValue("unsound4all", "trajectoryDir", trajectoryDir);
     DBG("MainComponent: Saved trajectory directory to config: " + trajectoryDir);
-    
-    // Clear LookAndFeel references
-    for (auto& track : tracks)
-    {
-        if (track != nullptr)
-        {
-            track->clearLookAndFeel();
-        }
-    }
     
     setLookAndFeel(nullptr);
 }
