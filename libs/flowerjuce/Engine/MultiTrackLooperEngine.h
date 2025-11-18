@@ -164,7 +164,7 @@ public:
             DBG_SEGFAULT("Track " + juce::String(i) + " processed");
         }
         
-        // Update channel level meters (peak detection)
+        // Update channel level meters (peak detection with decay)
         for (int channel = 0; channel < juce::jmin(16, num_output_channels); ++channel)
         {
             if (output_channel_data[channel] != nullptr)
@@ -178,10 +178,39 @@ public:
                 
                 // Update level meter (peak hold with decay)
                 float currentLevel = m_channel_levels[channel].load();
-                if (peak > currentLevel)
+                
+                // Apply decay first
+                if (currentLevel > 0.001f)
+                {
+                    // Decay factor per audio callback (~11ms at 44.1kHz/512 samples)
+                    // Equivalent to 0.89 per 50ms for UI responsiveness
+                    m_channel_levels[channel].store(currentLevel * m_level_decay_factor);
+                }
+                else
+                {
+                    m_channel_levels[channel].store(0.0f);
+                }
+                
+                // Then update with new peak if higher
+                float decayedLevel = m_channel_levels[channel].load();
+                if (peak > decayedLevel)
                 {
                     m_channel_levels[channel].store(peak);
                 }
+            }
+        }
+        
+        // Also decay channels that aren't being written to (if num_output_channels < 16)
+        for (int channel = num_output_channels; channel < 16; ++channel)
+        {
+            float currentLevel = m_channel_levels[channel].load();
+            if (currentLevel > 0.001f)
+            {
+                m_channel_levels[channel].store(currentLevel * m_level_decay_factor);
+            }
+            else
+            {
+                m_channel_levels[channel].store(0.0f);
             }
         }
         
@@ -336,7 +365,9 @@ public:
 private:
     static constexpr int m_num_tracks = 8;
     static constexpr double m_max_buffer_duration_seconds = 10.0;
-    static constexpr float m_level_decay_factor{0.99f}; // Decay factor for level meters
+    // Decay factor per audio callback (~11ms at 44.1kHz/512 samples)
+    // Equivalent to 0.89 per 50ms for UI responsiveness
+    static constexpr float m_level_decay_factor{0.975f}; // Decay factor for level meters
 
     std::array<TrackEngineType, 8> m_track_engines;
     juce::AudioDeviceManager m_audio_device_manager;

@@ -16,7 +16,7 @@ using namespace Basic;
 MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     : syncButton("sync all"),
       settingsButton("settings"),
-      titleLabel("Title", "tape looper"),
+      titleLabel("Title", "neural tape looper"),
       audioDeviceDebugLabel("AudioDebug", ""),
       midiLearnOverlay(midiLearnManager)
 {

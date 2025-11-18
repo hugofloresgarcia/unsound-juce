@@ -11,9 +11,6 @@ SinksWindow::SinksWindow(CLEATPanner* panner, const std::array<std::atomic<float
     setSize(500, 500);
     startTimer(50); // Update every 50ms
     
-    // Initialize peak levels
-    for (auto& level : peakLevels)
-        level = 0.0f;
     
     // Setup toggle button
     showPinkBoxesToggle.setButtonText("Show Advanced");
@@ -31,9 +28,6 @@ SinksWindow::SinksWindow(const std::array<std::atomic<float>, 16>& levels)
     setSize(500, 500);
     startTimer(50); // Update every 50ms
     
-    // Initialize peak levels
-    for (auto& level : peakLevels)
-        level = 0.0f;
     
     // Setup toggle button (disabled since no CLEAT panner available)
     showPinkBoxesToggle.setButtonText("Show Advanced");
@@ -105,8 +99,8 @@ void SinksWindow::paint(juce::Graphics& g)
                 juce::Rectangle<int> meterRect(x, y, meterWidth, meterHeight);
                 if (channel >= 0 && channel < numChannels)
                 {
-                    // Use peak-hold level with decay (from timerCallback)
-                    float level = peakLevels[channel];
+                    // Read level directly from channelLevels (engine handles decay)
+                    float level = channelLevels[channel].load();
                     float gain = gains[channel];
                     drawChannelMeter(g, meterRect, channel, level, gain, panX, panY);
                 }
@@ -118,8 +112,11 @@ void SinksWindow::paint(juce::Graphics& g)
 void SinksWindow::drawChannelMeter(juce::Graphics& g, juce::Rectangle<int> area, int channel, 
                                     float level, float gain, float panX, float panY)
 {
-    // Convert linear level to dB
-    float levelDb = linearToDb(level);
+    // Apply panner gain to get the actual output level for this channel
+    float outputLevel = level * gain;
+    
+    // Convert linear level to dB (use output level, not raw level)
+    float levelDb = linearToDb(outputLevel);
     
     // Convert gain to dB
     float gainDb = linearToDb(gain);
@@ -132,7 +129,8 @@ void SinksWindow::drawChannelMeter(juce::Graphics& g, juce::Rectangle<int> area,
     const float healthyMaxDb = -15.0f;
     
     // Check if level is effectively silent (below threshold or very small linear value)
-    bool isSilent = (level < 0.0001f) || (levelDb < silenceThresholdDb);
+    // Use outputLevel (after gain) for silence detection
+    bool isSilent = (outputLevel < 0.0001f) || (levelDb < silenceThresholdDb);
     
     // Map dB to normalized value (0.0 = minDb, 1.0 = maxDb)
     float normalizedLevel = juce::jlimit(0.0f, 1.0f, (levelDb - minDb) / (maxDb - minDb));
@@ -337,31 +335,7 @@ void SinksWindow::resized()
 
 void SinksWindow::timerCallback()
 {
-    // Decay channel levels (working version approach)
-    // Always apply decay first, then update peak if current level is higher
-    for (size_t i = 0; i < channelLevels.size(); ++i)
-    {
-        float current = channelLevels[i].load();
-        float currentPeak = peakLevels[i];
-        
-        // Always apply decay to the peak
-        if (currentPeak > 0.001f)
-        {
-            peakLevels[i] = currentPeak * levelDecayFactor;
-        }
-        else
-        {
-            peakLevels[i] = 0.0f;
-        }
-        
-        // If current level is higher than decayed peak, update peak
-        if (current > peakLevels[i])
-        {
-            peakLevels[i] = current;
-        }
-    }
-    
-    // Trigger repaint to update meters and panner view
+    // Engine handles decay - we just trigger repaint to update display
     repaint();
 }
 

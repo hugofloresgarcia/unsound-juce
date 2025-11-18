@@ -22,7 +22,7 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
       settingsButton("settings"),
       sinksButton("sinks"),
       vizButton("viz"),
-      titleLabel("Title", "tape looper"),
+      titleLabel("Title", "neural tape looper"),
       audioDeviceDebugLabel("AudioDebug", ""),
       midiLearnOverlay(midiLearnManager),
       sharedModelParams(Text2Sound::LooperTrack::getDefaultText2SoundParams())
