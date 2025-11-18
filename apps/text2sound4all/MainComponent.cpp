@@ -63,13 +63,9 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     if (midiMappingsFile.existsAsFile())
         midiLearnManager.loadMappings(midiMappingsFile);
     
-    // Load Gradio URL from config
-    juce::String savedGradioUrl = Shared::ConfigManager::loadStringValue("text2sound", "gradioUrl", gradioUrl);
-    if (savedGradioUrl.isNotEmpty())
-    {
-        gradioUrl = savedGradioUrl;
-        DBG("MainComponent: Loaded Gradio URL from config: " + gradioUrl);
-    }
+    // Don't load Gradio URL from config - use the default URL for text2sound4all
+    // The default URL is set in MainComponent.h: "https://hugggof-saos.hf.space/"
+    DBG("MainComponent: Using default Gradio URL: " + gradioUrl);
     
     // Load trajectory directory from config (default: ~/Documents/unsound-objects/trajectories)
     auto defaultTrajectoryDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
@@ -133,9 +129,8 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
         gradioUrl,
         [this](const juce::String& newUrl) {
             setGradioUrl(newUrl);
-            // Save to config immediately when changed
-            Shared::ConfigManager::saveStringValue("text2sound", "gradioUrl", newUrl);
-            DBG("MainComponent: Saved Gradio URL to config: " + newUrl);
+            // Don't save Gradio URL to config - always use the default URL for text2sound4all
+            DBG("MainComponent: Gradio URL changed to: " + newUrl + " (not saved to config)");
         },
         &midiLearnManager,
         trajectoryDir,
@@ -226,9 +221,8 @@ MainComponent::~MainComponent()
     auto midiMappingsFile = appDataDir.getChildFile("midi_mappings_text2sound.xml");
     midiLearnManager.saveMappings(midiMappingsFile);
     
-    // Save Gradio URL to config
-    Shared::ConfigManager::saveStringValue("text2sound", "gradioUrl", gradioUrl);
-    DBG("MainComponent: Saved Gradio URL to config: " + gradioUrl);
+    // Don't save Gradio URL to config - always use the default URL for text2sound4all
+    DBG("MainComponent: Gradio URL: " + gradioUrl + " (not saved to config)");
     
     // Save trajectory directory to config
     Shared::ConfigManager::saveStringValue("text2sound", "trajectoryDir", trajectoryDir);

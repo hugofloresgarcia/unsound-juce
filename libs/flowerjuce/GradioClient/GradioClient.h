@@ -38,7 +38,7 @@ public:
                                        const juce::String& textPrompt,
                                        juce::Array<juce::File>& outputFiles,
                                        const juce::var& customParams = juce::var());
-    
+
     // Process request for generate_audio API (new simplified API)
     // API signature: [textPrompt (string), duration (number)]
     // Returns: [audio1, audio2, audio3, audio4, status]

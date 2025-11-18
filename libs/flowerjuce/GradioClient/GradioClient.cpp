@@ -316,21 +316,47 @@ juce::Result GradioClient::processRequestGenerateAudio(const juce::String& textP
     DBG("GradioClient: POST payload for generate_audio: " + jsonBody);
 
     // Step 2: Make POST request to get event ID
+    // Try API name first, fallback to function index 0 if API name fails
     juce::String eventId;
-    auto postResult = makePostRequestForEventID("generate_audio", eventId, jsonBody);
+    juce::String endpointName = "generate_audio";
+    auto postResult = makePostRequestForEventID(endpointName, eventId, jsonBody);
+    
+    // If API name fails with 500 error suggesting it can't find the endpoint,
+    // try using function index 0 as fallback
     if (postResult.failed())
     {
-        return juce::Result::fail("Failed to make POST request: " + postResult.getErrorMessage());
+        juce::String errorMsg = postResult.getErrorMessage();
+        if (errorMsg.contains("Could not infer function index") || errorMsg.contains("500"))
+        {
+            DBG("GradioClient: API name 'generate_audio' not found, trying function index 0");
+            endpointName = "0";
+            postResult = makePostRequestForEventID(endpointName, eventId, jsonBody);
+        }
+        
+        if (postResult.failed())
+        {
+            return juce::Result::fail("Failed to make POST request: " + postResult.getErrorMessage());
+        }
     }
 
-    DBG("GradioClient: Got event ID: " + eventId);
+    DBG("GradioClient: Got event ID: " + eventId + " using endpoint: " + endpointName);
 
-    // Step 3: Poll for response
+    // Step 3: Poll for response using the same endpoint name that worked
     juce::String response;
-    auto getResult = getResponseFromEventID("generate_audio", eventId, response);
+    auto getResult = getResponseFromEventID(endpointName, eventId, response);
     if (getResult.failed())
     {
-        return juce::Result::fail("Failed to get response: " + getResult.getErrorMessage());
+        // Try function index 0 as fallback if we haven't already
+        if (endpointName != "0")
+        {
+            DBG("GradioClient: Trying function index 0 for polling");
+            getResult = getResponseFromEventID("0", eventId, response);
+        }
+        
+        if (getResult.failed())
+        {
+            return juce::Result::fail("Failed to get response: " + getResult.getErrorMessage());
+        }
     }
 
     DBG("GradioClient: Got response: " + response);
@@ -372,13 +398,75 @@ juce::Result GradioClient::processRequestGenerateAudio(const juce::String& textP
         if (element.isObject())
         {
             juce::DynamicObject* fileObj = element.getDynamicObject();
-            if (fileObj != nullptr && fileObj->hasProperty("url"))
+            if (fileObj != nullptr)
             {
-                juce::String fileURL = fileObj->getProperty("url").toString();
-                DBG("GradioClient: Found output file URL [" + juce::String(i) + "]: " + fileURL);
+                juce::String fileURL;
+                
+                // Try constructing URL from path property first (more reliable)
+                if (fileObj->hasProperty("path"))
+                {
+                    juce::String filePath = fileObj->getProperty("path").toString();
+                    DBG("GradioClient: Found output file path [" + juce::String(i) + "]: " + filePath);
+                    
+                    // Construct URL from path: base URL + "/gradio_api/file=" + path
+                    // Ensure base URL doesn't end with / to avoid double slashes
+                    juce::String baseURL = spaceInfo.gradio;
+                    if (baseURL.endsWithChar('/'))
+                        baseURL = baseURL.substring(0, baseURL.length() - 1);
+                    fileURL = baseURL + "/gradio_api/file=" + filePath;
+                    DBG("GradioClient: Constructed URL from path: " + fileURL);
+                }
+                // Fallback to URL property if path is not available
+                else if (fileObj->hasProperty("url"))
+                {
+                    fileURL = fileObj->getProperty("url").toString();
+                    DBG("GradioClient: Found output file URL [" + juce::String(i) + "]: " + fileURL);
+                    
+                    // Fix malformed URLs: replace "/gradio_a/gradio_api/file=" with "/gradio_api/file="
+                    // Gradio returns URLs with extra "gradio_a/" prefix that needs to be removed
+                    if (fileURL.contains("/gradio_a/gradio_api/file="))
+                    {
+                        fileURL = fileURL.replace("/gradio_a/gradio_api/file=", "/gradio_api/file=");
+                        DBG("GradioClient: Fixed malformed URL to: " + fileURL);
+                    }
+                }
+                else
+                {
+                    DBG("GradioClient: File object has neither 'url' nor 'path' property");
+                    continue;
+                }
+                
+                // Use the URL (from url property, fixed, or constructed from path)
+                juce::URL outputURL(fileURL);
                 
                 juce::File outputFile;
+                auto downloadResult = downloadFileFromURL(outputURL, outputFile);
+                if (!downloadResult.failed())
+                {
+                    outputFiles.add(outputFile);
+                }
+                else
+                {
+                    DBG("GradioClient: Failed to download file [" + juce::String(i) + "]: " + downloadResult.getErrorMessage());
+                }
+            }
+            else if (element.isString())
+            {
+                // Handle case where element is a string URL directly
+                juce::String fileURL = element.toString();
+                DBG("GradioClient: Found output file URL (string) [" + juce::String(i) + "]: " + fileURL);
+                
+                // Fix malformed URLs: replace "/gradio_a/gradio_api/file=" with "/gradio_api/file="
+                if (fileURL.contains("/gradio_a/gradio_api/file="))
+                {
+                    fileURL = fileURL.replace("/gradio_a/gradio_api/file=", "/gradio_api/file=");
+                    DBG("GradioClient: Fixed malformed URL to: " + fileURL);
+                }
+                
+                // Use the URL (fixed if needed)
                 juce::URL outputURL(fileURL);
+                
+                juce::File outputFile;
                 auto downloadResult = downloadFileFromURL(outputURL, outputFile);
                 if (!downloadResult.failed())
                 {
@@ -440,9 +528,37 @@ juce::Result GradioClient::makePostRequestForEventID(const juce::String& endpoin
 
     juce::String response = stream->readEntireStreamAsString();
 
+    // Check status code BEFORE trying to parse JSON
     if (statusCode != 200)
     {
-        return juce::Result::fail("POST request failed with status code: " + juce::String(statusCode) + "\nResponse: " + response);
+        DBG("GradioClient: POST request failed with status code: " + juce::String(statusCode));
+        DBG("GradioClient: Response body: " + response);
+        
+        // Try to extract error message from JSON response if possible
+        juce::String errorMessage = "POST request failed with status code: " + juce::String(statusCode);
+        juce::var parsedError;
+        if (juce::JSON::parse(response, parsedError).wasOk() && parsedError.isObject())
+        {
+            auto* errorObj = parsedError.getDynamicObject();
+            if (errorObj != nullptr)
+            {
+                if (errorObj->hasProperty("error"))
+                {
+                    errorMessage += "\nError: " + errorObj->getProperty("error").toString();
+                }
+                if (errorObj->hasProperty("message"))
+                {
+                    errorMessage += "\nMessage: " + errorObj->getProperty("message").toString();
+                }
+            }
+        }
+        else
+        {
+            // If not JSON, include the raw response
+            errorMessage += "\nResponse: " + response;
+        }
+        
+        return juce::Result::fail(errorMessage);
     }
 
     // Parse response to get event_id
@@ -450,7 +566,8 @@ juce::Result GradioClient::makePostRequestForEventID(const juce::String& endpoin
     auto parseResult = juce::JSON::parse(response, parsedResponse);
     if (parseResult.failed() || !parsedResponse.isObject())
     {
-        return juce::Result::fail("Failed to parse JSON response from POST request");
+        DBG("GradioClient: Failed to parse JSON response. Response was: " + response);
+        return juce::Result::fail("Failed to parse JSON response from POST request. Response: " + response);
     }
 
     juce::DynamicObject* obj = parsedResponse.getDynamicObject();
@@ -656,7 +773,64 @@ juce::Result GradioClient::downloadFileFromURL(const juce::URL& fileURL,
     }
 
     // Copy data from input stream to output stream
-    fileOutput->writeFromInputStream(*stream, stream->getTotalLength());
+    // Handle case where stream length is unknown (-1)
+    juce::int64 streamLength = stream->getTotalLength();
+    if (streamLength < 0)
+    {
+        // Unknown length - read in chunks until exhausted
+        DBG("GradioClient: Stream length unknown, reading in chunks");
+        const int bufferSize = 8192;
+        juce::HeapBlock<char> buffer(bufferSize);
+        juce::int64 totalBytesRead = 0;
+        
+        while (!stream->isExhausted())
+        {
+            int bytesRead = stream->read(buffer, bufferSize);
+            if (bytesRead <= 0)
+                break;
+            
+            if (!fileOutput->write(buffer, static_cast<size_t>(bytesRead)))
+            {
+                return juce::Result::fail("Failed to write to output file");
+            }
+            
+            totalBytesRead += bytesRead;
+        }
+        
+        DBG("GradioClient: Downloaded " + juce::String(totalBytesRead) + " bytes");
+    }
+    else
+    {
+        fileOutput->writeFromInputStream(*stream, streamLength);
+    }
+    
+    // Flush and close the output stream before verifying
+    fileOutput->flush();
+    fileOutput = nullptr; // Close the stream
+    
+    // Verify the downloaded file is not HTML (check first few bytes)
+    juce::FileInputStream verifyStream(downloadedFile);
+    if (verifyStream.openedOk())
+    {
+        char header[20];
+        int bytesRead = verifyStream.read(header, 20);
+        if (bytesRead > 0)
+        {
+            juce::String headerStr(header, bytesRead);
+            DBG("GradioClient: File header check - first " + juce::String(bytesRead) + " bytes: " + headerStr);
+            if (headerStr.startsWith("<!doctype") || headerStr.startsWith("<html") || headerStr.startsWith("<!DOCTYPE"))
+            {
+                DBG("GradioClient: ERROR - Downloaded file is HTML, not audio!");
+                DBG("GradioClient: File URL was: " + fileURL.toString(true));
+                DBG("GradioClient: First bytes: " + headerStr);
+                return juce::Result::fail("Downloaded file is HTML, not audio. URL may be incorrect: " + fileURL.toString(true));
+            }
+        }
+    }
+    else
+    {
+        DBG("GradioClient: WARNING - Could not open downloaded file for verification");
+    }
 
     DBG("GradioClient: File downloaded successfully to: " + downloadedFile.getFullPathName());
     return juce::Result::ok();
