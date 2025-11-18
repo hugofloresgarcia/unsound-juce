@@ -68,8 +68,9 @@ StartupDialog::StartupDialog(juce::AudioDeviceManager& deviceManager)
     // Setup OK button
     okButton.addListener(this);
     addAndMakeVisible(okButton);
-    
-    setSize(600, 600);
+
+    // Make the dialog a bit taller so MIDI settings are visible by default
+    setSize(600, 750);
 }
 
 void StartupDialog::resized()

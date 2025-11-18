@@ -36,7 +36,13 @@ void LooperTrackEngine::audioDeviceStopped()
 
 void LooperTrackEngine::reset()
 {
+    // Reset read head and playback/recording flags
     trackState.readHead.reset();
+    trackState.isPlaying.store(false);
+    trackState.writeHead.setRecordEnable(false);
+
+    wasRecording = false;
+    wasPlaying   = false;
 }
 
 bool LooperTrackEngine::loadFromFile(const juce::File& audioFile)

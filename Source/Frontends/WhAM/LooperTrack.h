@@ -114,6 +114,11 @@ public:
     juce::var getCustomParams() const { return customVampNetParams; }
     void setCustomParams(const juce::var& params, juce::NotificationType notification = juce::dontSendNotification);
 
+    // Mic button API
+    bool isMicEnabled() const;
+    void setMicEnabled(bool enabled);
+    void updateMicButtonAvailability();
+
     bool isAutogenEnabled() const { return autogenToggle.getToggleState(); }
     void setAutogenEnabled(bool enabled);
 
@@ -175,11 +180,9 @@ private:
     // Custom VampNet parameters (excluding periodic prompt which is in UI)
     juce::var customVampNetParams;
     std::map<juce::String, juce::String> vampParamToKnobId;
-    std::vector<juce::String> modelChoiceOptions;
-    juce::String modelChoiceKnobId;
-    
+
     std::unique_ptr<ModelParamsPopup> modelParamsPopup;
-    
+
     void applyLookAndFeel();
 
     void recordEnableButtonToggled(bool enabled);
@@ -193,12 +196,8 @@ private:
     
     void timerCallback() override;
     void initializeModelParameterKnobs();
-    void refreshModelChoiceOptions();
-    void configureModelChoiceSlider();
     void syncCustomParamsToKnobs();
     double getCustomParamAsDouble(const juce::String& key, double defaultValue) const;
-    int getModelChoiceIndex(const juce::String& choice) const;
-    juce::String getModelChoiceValueForIndex(int index) const;
     void addModelParameterKnob(const juce::String& key,
                                const juce::String& label,
                                double min,
@@ -208,7 +207,7 @@ private:
                                bool isInteger,
                                bool isBoolean = false,
                                const juce::String& suffix = {});
-    
+
     // MIDI learn support
     Shared::MidiLearnManager* midiLearnManager = nullptr;
     std::unique_ptr<Shared::MidiLearnable> generateButtonLearnable;

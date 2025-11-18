@@ -23,6 +23,7 @@ struct SessionConfig
     juce::String gradioUrl;
     std::vector<TrackState> tracks;
     std::vector<Shared::MidiMapping> midiMappings;
+    juce::var synthState; // Synths (click + sampler) configuration
 
     juce::var toVar() const;
     static juce::Result fromVar(const juce::var& data, SessionConfig& out);

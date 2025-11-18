@@ -53,8 +53,15 @@ void VampNetTrackEngine::audioDeviceStopped()
 
 void VampNetTrackEngine::reset()
 {
+    // Reset read heads and playback/recording flags so the next r->p behaves like a fresh start
     trackState.recordReadHead.reset();
     trackState.outputReadHead.reset();
+
+    trackState.isPlaying.store(false);
+    trackState.writeHead.setRecordEnable(false);
+
+    wasRecording = false;
+    wasPlaying   = false;
 }
 
 bool VampNetTrackEngine::loadFromFile(const juce::File& audioFile)
@@ -199,6 +206,9 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
     if (isFirstCall)
         DBG_SEGFAULT("Got track reference");
 
+    // Track whether we have any actual input channels this callback
+    track.hasInputChannels.store(numInputChannels > 0);
+
     // Safety check: if buffers are not allocated, return early
     {
         const juce::ScopedLock sl1(track.recordBuffer.lock);
@@ -217,7 +227,9 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
 
     bool isPlaying = track.isPlaying.load();
     bool hasExistingAudio = track.recordBuffer.hasRecorded.load();
-    
+    bool micEnabled = track.micEnabled.load();
+    bool hasInputChannelsFlag = track.hasInputChannels.load();
+
     if (isFirstCall && shouldDebug)
     {
         DBG("[VampNetTrackEngine] Track state check:");
@@ -225,6 +237,8 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
         DBG("  hasExistingAudio: " << (hasExistingAudio ? "YES" : "NO"));
         DBG("  recordedLength: " << track.recordBuffer.recordedLength.load());
         DBG("  recordEnable: " << (track.writeHead.getRecordEnable() ? "YES" : "NO"));
+        DBG("  micEnabled: " << (micEnabled ? "YES" : "NO"));
+        DBG("  hasInputChannels: " << (hasInputChannelsFlag ? "YES" : "NO"));
     }
     size_t recordedLength = track.recordBuffer.recordedLength.load();
     float playheadPos = track.recordReadHead.getPos();
@@ -246,6 +260,8 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
         juce::Logger::writeToLog(juce::String("VampNetTrack")
             + "\t - Play: " + (isPlaying ? "YES" : "NO")
             + "\t RecEnable: " + (track.writeHead.getRecordEnable() ? "YES" : "NO")
+            + "\t MicEnabled: " + (micEnabled ? "YES" : "NO")
+            + "\t HasInputChannels: " + (hasInputChannelsFlag ? "YES" : "NO")
             + "\t Playhead: " + juce::String(playheadPos)
             + "\t RecordedLen: " + juce::String(recordedLength)
             + "\t HasAudio: " + (hasExistingAudio ? "YES" : "NO")
@@ -299,13 +315,13 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
         
         // OPTIMIZATION: Pre-cache values that don't change during the block
         float wrapPos = static_cast<float>(track.writeHead.getWrapPos());
-        bool isRecording = track.writeHead.getRecordEnable() && numInputChannels > 0;
+        bool isRecording = track.writeHead.getRecordEnable() && track.micEnabled.load() && numInputChannels > 0;
         int inputChannel = track.writeHead.getInputChannel();
         bool clickActive = clickSynth->isClickActive();
         bool samplerActive = sampler->isPlaying();
         double sampleRate = track.writeHead.getSampleRate();
         float mix = track.dryWetMix.load();
-        
+
         // Store positions and input samples for writing (since writeHead locks internally)
         juce::Array<float> writePositions;
         juce::Array<float> writeSamples;
@@ -314,7 +330,7 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
             writePositions.resize(numSamples);
             writeSamples.resize(numSamples);
         }
-        
+
         // OPTIMIZATION: Lock buffers once per block for reading instead of per-sample
         // This dramatically reduces lock contention (from numSamples locks to 1 lock per block)
         {

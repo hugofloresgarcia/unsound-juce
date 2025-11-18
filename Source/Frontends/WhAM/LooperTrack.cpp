@@ -9,15 +9,15 @@ void VampNetWorkerThread::run()
 {
     juce::File tempAudioFile;
     juce::Result saveResult = juce::Result::ok();
-    
+
     bool isSentinel = audioFile.getFileName() == "has_audio";
-    
+
     if (isSentinel)
     {
         DBG("VampNetWorkerThread: Saving input audio to file");
         saveResult = saveBufferToFile(trackIndex, tempAudioFile);
         DBG("VampNetWorkerThread: Save result: " + saveResult.getErrorMessage());
-        
+
         if (saveResult.failed())
         {
             DBG("VampNetWorkerThread: Save failed: " + saveResult.getErrorMessage());
@@ -71,43 +71,43 @@ juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFil
     }
 
     juce::URL gradioEndpoint(configuredUrl);
-    
+
     // Step 1: Upload input audio file if provided
     juce::String uploadedFilePath;
     bool hasAudio = inputAudioFile != juce::File() && inputAudioFile.existsAsFile();
-    
+
     if (hasAudio)
     {
         auto uploadResult = Shared::uploadFileToGradio(configuredUrl, inputAudioFile, uploadedFilePath);
         if (uploadResult.failed())
             return juce::Result::fail("Failed to upload audio file: " + uploadResult.getErrorMessage());
-        
+
         DBG("VampNetWorkerThread: File uploaded successfully. Path: " + uploadedFilePath);
     }
 
     // Step 2: Prepare JSON payload with all 18 parameters
     juce::Array<juce::var> dataItems;
-    
+
     // [0] Input audio file
     if (hasAudio)
     {
         juce::DynamicObject::Ptr fileObj = new juce::DynamicObject();
         fileObj->setProperty("path", juce::var(uploadedFilePath));
-        
+
         juce::DynamicObject::Ptr metaObj = new juce::DynamicObject();
         metaObj->setProperty("_type", juce::var("gradio.FileData"));
         fileObj->setProperty("meta", juce::var(metaObj));
-        
+
         dataItems.add(juce::var(fileObj));
     }
     else
     {
         dataItems.add(juce::var());  // null for no audio
     }
-    
+
     // VampNet parameters - use custom params if provided, otherwise use defaults
     juce::var paramsToUse = customParams.isObject() ? customParams : WhAM::LooperTrack::getDefaultVampNetParams();
-    
+
     auto* obj = paramsToUse.getDynamicObject();
     if (obj != nullptr)
     {
@@ -129,12 +129,12 @@ juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFil
         dataItems.add(obj->getProperty("beat_mask_width"));         // [16]
         dataItems.add(obj->getProperty("feedback_steps"));          // [17]
     }
-    
+
     juce::DynamicObject::Ptr payloadObj = new juce::DynamicObject();
     payloadObj->setProperty("data", juce::var(dataItems));
-    
+
     juce::String jsonBody = juce::JSON::toString(juce::var(payloadObj), false);
-    
+
     DBG("VampNetWorkerThread: POST payload: " + jsonBody);
 
     // Step 3: Make POST request to get event ID
@@ -214,12 +214,12 @@ juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFil
 
     juce::StringPairArray getResponseHeaders;
     int getStatusCode = 0;
-    
+
     // Match curl's default headers for SSE streaming
     juce::String sseHeaders = "Accept: text/event-stream\r\n"
                               "Cache-Control: no-cache\r\n"
                               "Connection: keep-alive\r\n";
-    
+
     auto getOptions = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
                        .withExtraHeaders(sseHeaders)
                        .withConnectionTimeoutMs(120000)  // 2 minute timeout for generation
@@ -230,9 +230,9 @@ juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFil
 
     DBG("VampNetWorkerThread: Creating streaming connection...");
     std::unique_ptr<juce::InputStream> getStream(getEndpoint.createInputStream(getOptions));
-    
+
     DBG("VampNetWorkerThread: Status code: " + juce::String(getStatusCode));
-    
+
     // Log response headers
     DBG("VampNetWorkerThread: Response headers:");
     for (int i = 0; i < getResponseHeaders.size(); ++i)
@@ -242,7 +242,7 @@ juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFil
 
     if (getStream == nullptr)
         return juce::Result::fail("Failed to create GET stream. Status code: " + juce::String(getStatusCode));
-    
+
     // Check if we got a valid status code
     if (getStatusCode != 0 && getStatusCode != 200)
     {
@@ -252,9 +252,9 @@ juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFil
 
     // Use shared SSE parsing utility
     juce::String eventResponse;
-    auto sseParseResult = Shared::parseSSEStream(getStream.get(), eventResponse, 
+    auto sseParseResult = Shared::parseSSEStream(getStream.get(), eventResponse,
         [this]() { return threadShouldExit(); });
-    
+
     if (sseParseResult.failed())
         return sseParseResult;
 
@@ -298,7 +298,7 @@ juce::Result VampNetWorkerThread::callVampNetAPI(const juce::File& inputAudioFil
 
 // LooperTrack implementation
 LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::function<juce::String()> gradioUrlGetter, Shared::MidiLearnManager* midiManager, const juce::String& pannerType)
-    : looperEngine(engine), 
+    : looperEngine(engine),
       trackIndex(index),
       waveformDisplay(engine, index),
       transportControls(midiManager, "track" + juce::String(index)),
@@ -331,32 +331,32 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     // Setup track label
     trackLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(trackLabel);
-    
+
     // Setup pan label
     panLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(panLabel);
-    
+
     // Setup pan coordinate label
     panCoordLabel.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(panCoordLabel);
-    
+
     // Setup reset button
     resetButton.onLeftClick = [this] { resetButtonClicked(); };
     addAndMakeVisible(resetButton);
-    
+
     // Setup generate button
     generateButton.onClick = [this] { generateButtonClicked(); };
     addAndMakeVisible(generateButton);
-    
+
     // Setup MIDI learn for generate button
     if (midiLearnManager)
     {
         generateButtonLearnable = std::make_unique<Shared::MidiLearnable>(*midiLearnManager, trackIdPrefix + "_generate", true);
-        
+
         // Create mouse listener for right-click handling
         generateButtonMouseListener = std::make_unique<Shared::MidiLearnMouseListener>(*generateButtonLearnable, this);
         generateButton.addMouseListener(generateButtonMouseListener.get(), false);
-        
+
         midiLearnManager->registerParameter({
             trackIdPrefix + "_generate",
             [this](float value) {
@@ -383,25 +383,29 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
             true
         });
     }
-    
+
     // Setup configure params button
     configureParamsButton.setButtonText("model params...");
     configureParamsButton.setClickingTogglesState(true);
     configureParamsButton.setToggleState(false, juce::dontSendNotification);
     configureParamsButton.onClick = [this] { configureParamsButtonClicked(); };
     addAndMakeVisible(configureParamsButton);
-    
+
     // Setup waveform display
     addAndMakeVisible(waveformDisplay);
-    
+
     // Setup transport controls
     transportControls.onRecordToggle = [this](bool enabled) { recordEnableButtonToggled(enabled); };
     transportControls.onPlayToggle = [this](bool shouldPlay) { playButtonClicked(shouldPlay); };
     transportControls.onMuteToggle = [this](bool muted) { muteButtonToggled(muted); };
+    transportControls.onMicToggle = [this](bool enabled) { setMicEnabled(enabled); };
     transportControls.onReset = [this]() { resetButtonClicked(); };
     addAndMakeVisible(transportControls);
-    
-    // Setup parameter knobs (speed, overdub, periodic prompt, dry/wet)
+
+    // WhAM uses the mic button; it should be visible. Availability will track input channels.
+    transportControls.setMicButtonVisible(true);
+
+    // Setup parameter knobs (speed, overdub, dry/wet)
     parameterKnobs.addKnob({
         "speed",
         0.25, 4.0, 1.0, 0.01,
@@ -413,7 +417,7 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
         },
         ""  // parameterId - will be auto-generated
     });
-    
+
     parameterKnobs.addKnob({
         "overdub",
         0.0, 1.0, 0.5, 0.01,
@@ -423,17 +427,7 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
         },
         ""  // parameterId - will be auto-generated
     });
-    
-    parameterKnobs.addKnob({
-        "periodic prompt",
-        1.0, 23.0, 8.0, 1.0,
-        "",
-        [this](double value) {
-            // Value is stored in the knob, retrieved when generating
-        },
-        ""  // parameterId - will be auto-generated
-    });
-    
+
     parameterKnobs.addKnob({
         "dry/wet",
         0.0, 1.0, 0.5, 0.01,
@@ -446,7 +440,7 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     addAndMakeVisible(parameterKnobs);
     initializeModelParameterKnobs();
     syncCustomParamsToKnobs();
-    
+
     // Setup level control (applies to both read heads)
     levelControl.onLevelChange = [this](double value) {
         auto& track = looperEngine.getTrack(trackIndex);
@@ -454,23 +448,23 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
         track.outputReadHead.setLevelDb(static_cast<float>(value));
     };
     addAndMakeVisible(levelControl);
-    
+
     // Setup "use o as i" toggle
     useOutputAsInputToggle.setButtonText("use o as i");
     useOutputAsInputToggle.setToggleState(false, juce::dontSendNotification);
     addAndMakeVisible(useOutputAsInputToggle);
-    
+
     // Setup "autogen" toggle
     autogenToggle.setButtonText("autogen");
     autogenToggle.setToggleState(false, juce::dontSendNotification);
     addAndMakeVisible(autogenToggle);
-    
+
     // Setup input selector
     inputSelector.onChannelChange = [this](int channel) {
         looperEngine.getTrack(trackIndex).writeHead.setInputChannel(channel);
     };
     addAndMakeVisible(inputSelector);
-    
+
     // Setup output selector (applies to both read heads)
     outputSelector.onChannelChange = [this](int channel) {
         auto& track = looperEngine.getTrack(trackIndex);
@@ -478,12 +472,12 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
         track.outputReadHead.setOutputChannel(channel);
     };
     addAndMakeVisible(outputSelector);
-    
+
     // Initialize channel selectors (will show "all" if device not ready yet)
     // They will be updated again after device is initialized via updateChannelSelectors()
     inputSelector.updateChannels(looperEngine.getAudioDeviceManager());
     outputSelector.updateChannels(looperEngine.getAudioDeviceManager());
-    
+
     // Setup panner based on type
     auto pannerTypeLower = pannerType.toLowerCase();
     if (pannerTypeLower == "stereo")
@@ -529,10 +523,10 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
         };
         addAndMakeVisible(panner2DComponent.get());
     }
-    
+
     // Apply custom look and feel to all child components
     applyLookAndFeel();
-    
+
     // Start timer for VU meter updates (30Hz)
     startTimer(33);
 }
@@ -555,7 +549,7 @@ void LooperTrack::applyLookAndFeel()
 void LooperTrack::paint(juce::Graphics& g)
 {
     auto& track = looperEngine.getTrack(trackIndex);
-    
+
     // Background - pitch black
     g.fillAll(juce::Colours::black);
 
@@ -574,20 +568,20 @@ void LooperTrack::paint(juce::Graphics& g)
         g.setColour(juce::Colour(0xff1eb19d).withAlpha(0.15f)); // Teal
         g.fillRect(getLocalBounds());
     }
-    
+
     // Draw arrow between input and output selectors
     const int componentMargin = 5;
     const int trackLabelHeight = 20;
     const int spacingSmall = 5;
     const int channelSelectorHeight = 30;
-    
+
     auto bounds = getLocalBounds().reduced(componentMargin);
     bounds.removeFromTop(trackLabelHeight + spacingSmall);
     auto channelSelectorArea = bounds.removeFromTop(channelSelectorHeight);
     const int selectorWidth = (channelSelectorArea.getWidth() - 40) / 2;
     channelSelectorArea.removeFromLeft(selectorWidth + spacingSmall);
     auto arrowArea = channelSelectorArea.removeFromLeft(40);
-    
+
     g.setColour(juce::Colours::grey);
     g.setFont(juce::Font(14.0f));
     g.drawText("-->", arrowArea, juce::Justification::centred);
@@ -605,51 +599,51 @@ void LooperTrack::resized()
     const int configureButtonHeight = 30;
     const int channelSelectorHeight = 30;
     const int controlsHeight = 160;
-    
+
     const int labelHeight = 15;
     const int stereoPannerHeight = 60;
     const int panner2DHeight = 150;
-    
+
     auto bounds = getLocalBounds().reduced(componentMargin);
-    
+
     // Track label at top with reset button in top right corner
     auto trackLabelArea = bounds.removeFromTop(trackLabelHeight);
     resetButton.setBounds(trackLabelArea.removeFromRight(resetButtonSize));
     trackLabelArea.removeFromRight(spacingSmall);
     trackLabel.setBounds(trackLabelArea);
     bounds.removeFromTop(spacingSmall);
-    
+
     // Channel selectors: [input] --> [output]
     auto channelSelectorArea = bounds.removeFromTop(channelSelectorHeight);
     const int selectorWidth = (channelSelectorArea.getWidth() - 40) / 2; // Leave space for arrow
     const int arrowWidth = 40;
-    
+
     inputSelector.setBounds(channelSelectorArea.removeFromLeft(selectorWidth));
     channelSelectorArea.removeFromLeft(spacingSmall);
-    
+
     // Draw arrow in the middle
     auto arrowArea = channelSelectorArea.removeFromLeft(arrowWidth);
-    
+
     outputSelector.setBounds(channelSelectorArea.removeFromLeft(selectorWidth));
     bounds.removeFromTop(spacingSmall);
-    
+
     // Leave a spacer before the waveform/controls block
     bounds.removeFromTop(spacingSmall);
-    
+
     // Remaining area now contains waveform + lower controls
     auto remainingArea = bounds;
-    
+
     const int knobAreaHeight = parameterKnobs.getRequiredHeight(remainingArea.getWidth());
     auto removeBottomSpacing = [&]() {
         if (remainingArea.getHeight() > spacingSmall)
             remainingArea.removeFromBottom(spacingSmall);
     };
-    
+
     // Layout panner (bottom-most)
     auto typeLower = pannerType.toLowerCase();
     bool hasStereoPanner = (typeLower == "stereo" && stereoPanSlider.isVisible());
     bool has2DPanner = ((typeLower == "quad" || typeLower == "cleat") && panner2DComponent != nullptr && panner2DComponent->isVisible());
-    
+
     if (panner != nullptr && (hasStereoPanner || has2DPanner))
     {
         int desiredHeight = hasStereoPanner ? stereoPannerHeight : panner2DHeight;
@@ -660,7 +654,7 @@ void LooperTrack::resized()
             panner2DComponent->setBounds(pannerArea);
         else
             pannerArea.setHeight(0);
-        
+
         removeBottomSpacing();
         auto panLabelArea = remainingArea.removeFromBottom(labelHeight);
         panLabel.setBounds(panLabelArea.removeFromLeft(50));
@@ -675,22 +669,22 @@ void LooperTrack::resized()
         if (panner2DComponent != nullptr)
             panner2DComponent->setBounds(0, 0, 0, 0);
     }
-    
+
     // Transport controls
     auto buttonArea = remainingArea.removeFromBottom(buttonHeight);
     transportControls.setBounds(buttonArea);
     removeBottomSpacing();
-    
+
     // Configure params button
     auto configureArea = remainingArea.removeFromBottom(configureButtonHeight);
     configureParamsButton.setBounds(configureArea);
     removeBottomSpacing();
-    
+
     // Generate button
     auto generateArea = remainingArea.removeFromBottom(generateButtonHeight);
     generateButton.setBounds(generateArea);
     removeBottomSpacing();
-    
+
     // Level control and toggles
     auto controlsArea = remainingArea.removeFromBottom(controlsHeight);
     levelControl.setBounds(controlsArea.removeFromLeft(115)); // 80 + 5 + 30
@@ -701,7 +695,7 @@ void LooperTrack::resized()
     toggleArea.removeFromTop(spacingSmall);
     useOutputAsInputToggle.setBounds(toggleArea.removeFromTop(30)); // Second toggle
     removeBottomSpacing();
-    
+
     // Knob array (all VampNet controls)
     if (knobAreaHeight > 0)
     {
@@ -713,7 +707,7 @@ void LooperTrack::resized()
     {
         parameterKnobs.setBounds({});
     }
-    
+
     // Remaining area is waveform
     waveformDisplay.setBounds(remainingArea);
 }
@@ -729,13 +723,13 @@ void LooperTrack::recordEnableButtonToggled(bool enabled)
 void LooperTrack::playButtonClicked(bool shouldPlay)
 {
     auto& track = looperEngine.getTrack(trackIndex);
-    
+
     if (shouldPlay)
     {
         track.isPlaying.store(true);
         track.recordReadHead.setPlaying(true);
         track.outputReadHead.setPlaying(true);
-        
+
         if (track.writeHead.getRecordEnable() && !track.recordBuffer.hasRecorded.load())
         {
             const juce::ScopedLock sl(track.recordBuffer.lock);
@@ -756,7 +750,7 @@ void LooperTrack::playButtonClicked(bool shouldPlay)
             juce::Logger::writeToLog("~~~ Playback just stopped, finalized recording");
         }
     }
-    
+
     repaint();
 }
 
@@ -770,8 +764,8 @@ void LooperTrack::muteButtonToggled(bool muted)
 void LooperTrack::generateButtonClicked()
 {
     auto& track = looperEngine.getTrack(trackIndex);
-    
-    // Get periodic prompt value from knob
+
+    // Get periodic prompt value from model parameters
     float periodicPrompt = static_cast<float>(getPeriodicPrompt());
 
     DBG("LooperTrack: Starting VampNet generation with periodic prompt: " + juce::String(periodicPrompt));
@@ -789,7 +783,7 @@ void LooperTrack::generateButtonClicked()
 
     // Check if we should use output buffer as input
     bool useOutputAsInput = useOutputAsInputToggle.getToggleState();
-    
+
     // Determine if we have audio (check appropriate buffer based on toggle)
     juce::File audioFile;
     bool hasAudio = false;
@@ -803,7 +797,7 @@ void LooperTrack::generateButtonClicked()
         hasAudio = track.recordBuffer.hasRecorded.load();
         DBG("LooperTrack: Using record buffer as input, hasAudio=" + juce::String(hasAudio ? "YES" : "NO"));
     }
-    
+
     if (hasAudio)
     {
         audioFile = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("has_audio");
@@ -826,7 +820,7 @@ void LooperTrack::generateButtonClicked()
     {
         onVampNetComplete(result, outputFile);
     };
-    
+
     vampNetWorkerThread->startThread();
 }
 
@@ -843,9 +837,9 @@ void LooperTrack::configureParamsButtonClicked()
 
 juce::var LooperTrack::getDefaultVampNetParams()
 {
-    // Create default parameters object (excluding periodic_prompt which is in UI)
+    // Create default parameters object (including periodic_prompt)
     juce::DynamicObject::Ptr params = new juce::DynamicObject();
-    
+
     params->setProperty("sample_temperature", juce::var(1.0));
     params->setProperty("top_p", juce::var(0));
     params->setProperty("mask_dropout", juce::var(0));
@@ -855,20 +849,15 @@ juce::var LooperTrack::getDefaultVampNetParams()
     params->setProperty("typical_mass", juce::var(0.15));
     params->setProperty("typical_min_tokens", juce::var(64));
     params->setProperty("seed", juce::var(0));
-    params->setProperty("model_choice", juce::var("default"));
     params->setProperty("compression_prompt", juce::var(3));
     params->setProperty("pitch_shift_amount", juce::var(0));
     params->setProperty("sample_cutoff", juce::var(0.9));
     params->setProperty("sampling_steps", juce::var(12));
     params->setProperty("beat_mask_width", juce::var(0));
     params->setProperty("feedback_steps", juce::var(1));
-    
-    juce::Array<juce::var> modelChoices;
-    modelChoices.add(juce::var("default"));
-    modelChoices.add(juce::var("melody"));
-    modelChoices.add(juce::var("percussion"));
-    params->setProperty("model_choice_options", juce::var(modelChoices));
-    
+    params->setProperty("periodic_prompt", juce::var(8));
+    params->setProperty("model_choice", juce::var("default"));
+
     return juce::var(params);
 }
 
@@ -889,7 +878,7 @@ void LooperTrack::onVampNetComplete(juce::Result result, juce::File outputFile)
     {
         juce::String errorTitle = "generation failed";
         juce::String errorMessage = "failed to generate audio: " + result.getErrorMessage();
-        
+
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                               errorTitle,
                                               errorMessage);
@@ -898,11 +887,11 @@ void LooperTrack::onVampNetComplete(juce::Result result, juce::File outputFile)
 
     // Load the generated audio back into the track
     auto& trackEngine = looperEngine.getTrackEngine(trackIndex);
-    
+
     if (trackEngine.loadFromFile(outputFile))
     {
         repaint(); // Refresh waveform display
-        
+
         // Check if autogen is enabled - if so, automatically trigger next generation
         if (autogenToggle.getToggleState())
         {
@@ -926,7 +915,8 @@ void LooperTrack::onVampNetComplete(juce::Result result, juce::File outputFile)
 void LooperTrack::resetButtonClicked()
 {
     auto& track = looperEngine.getTrack(trackIndex);
-    
+    auto& trackEngine = looperEngine.getTrackEngine(trackIndex);
+
     // Stop any ongoing generation
     if (vampNetWorkerThread != nullptr)
     {
@@ -935,62 +925,40 @@ void LooperTrack::resetButtonClicked()
     }
     generateButton.setEnabled(true);
     generateButton.setButtonText("generate");
-    
+
     // Stop playback
     track.isPlaying.store(false);
     track.recordReadHead.setPlaying(false);
     track.outputReadHead.setPlaying(false);
     transportControls.setPlayState(false);
-    
+
     // Disable recording
     track.writeHead.setRecordEnable(false);
     transportControls.setRecordState(false);
-    
-    // Clear both buffers
-    const juce::ScopedLock sl1(track.recordBuffer.lock);
-    const juce::ScopedLock sl2(track.outputBuffer.lock);
-    track.recordBuffer.clearBuffer();
-    track.outputBuffer.clearBuffer();
+
+    // Clear both buffers and reset heads
+    {
+        const juce::ScopedLock sl1(track.recordBuffer.lock);
+        const juce::ScopedLock sl2(track.outputBuffer.lock);
+        track.recordBuffer.clearBuffer();
+        track.outputBuffer.clearBuffer();
+    }
     track.writeHead.reset();
     track.recordReadHead.reset();
     track.outputReadHead.reset();
-    
-    // Reset controls to defaults
-    parameterKnobs.setKnobValue(0, 1.0, juce::dontSendNotification); // speed
-    track.recordReadHead.setSpeed(1.0f);
-    track.outputReadHead.setSpeed(1.0f);
-    
-    parameterKnobs.setKnobValue(1, 0.5, juce::dontSendNotification); // overdub
-    track.writeHead.setOverdubMix(0.5f);
-    
-    parameterKnobs.setKnobValue(2, 8.0, juce::dontSendNotification); // periodic prompt
-    
-    parameterKnobs.setKnobValue(3, 0.5, juce::dontSendNotification); // dry/wet
-    track.dryWetMix.store(0.5f);
 
-    setCustomParams(getDefaultVampNetParams());
-    
-    levelControl.setLevelValue(0.0, juce::dontSendNotification);
-    track.recordReadHead.setLevelDb(0.0f);
-    track.outputReadHead.setLevelDb(0.0f);
-    
-    // Unmute
-    track.recordReadHead.setMuted(false);
-    track.outputReadHead.setMuted(false);
-    transportControls.setMuteState(false);
-    
-    // Reset output channel to all
-    outputSelector.setSelectedChannel(1, juce::dontSendNotification);
-    track.recordReadHead.setOutputChannel(-1);
-    track.outputReadHead.setOutputChannel(-1);
-    
+    // Also reset the engine's internal state machine flags so r->p behaves like a fresh start
+    trackEngine.reset();
+
+    // Leave UI controls (knobs, model params, level, panner, mute, output routing) unchanged.
+    // This button now strictly clears the track's audio content.
     repaint();
 }
 
 LooperTrack::~LooperTrack()
 {
     stopTimer();
-    
+
     // Remove mouse listener first
     if (generateButtonMouseListener)
         generateButton.removeMouseListener(generateButtonMouseListener.get());
@@ -1003,7 +971,7 @@ LooperTrack::~LooperTrack()
         midiLearnManager->unregisterParameter(trackIdPrefix + "_generate");
         midiLearnManager->unregisterParameter(trackIdPrefix + "_clear");
     }
-    
+
     // Stop and wait for background thread to finish
     if (vampNetWorkerThread != nullptr)
     {
@@ -1027,7 +995,17 @@ float LooperTrack::getPlaybackSpeed() const
 
 float LooperTrack::getPeriodicPrompt() const
 {
-    return static_cast<float>(parameterKnobs.getKnobValue(2));
+    if (customVampNetParams.isObject())
+    {
+        if (auto* obj = customVampNetParams.getDynamicObject())
+        {
+            auto value = obj->getProperty("periodic_prompt");
+            if (value.isDouble() || value.isInt())
+                return static_cast<float>(value);
+        }
+    }
+    // Fallback to default periodic_prompt if not present
+    return 8.0f;
 }
 
 juce::var LooperTrack::getKnobState() const
@@ -1048,8 +1026,6 @@ void LooperTrack::setCustomParams(const juce::var& params, juce::NotificationTyp
     else
         customVampNetParams = getDefaultVampNetParams();
 
-    refreshModelChoiceOptions();
-    configureModelChoiceSlider();
     syncCustomParamsToKnobs();
 }
 
@@ -1061,6 +1037,34 @@ void LooperTrack::setAutogenEnabled(bool enabled)
 void LooperTrack::setUseOutputAsInputEnabled(bool enabled)
 {
     useOutputAsInputToggle.setToggleState(enabled, juce::dontSendNotification);
+}
+
+bool LooperTrack::isMicEnabled() const
+{
+    const auto& track = looperEngine.getTrack(trackIndex);
+    return track.micEnabled.load();
+}
+
+void LooperTrack::setMicEnabled(bool enabled)
+{
+    auto& track = looperEngine.getTrack(trackIndex);
+    track.micEnabled.store(enabled);
+    transportControls.setMicState(enabled);
+}
+
+void LooperTrack::updateMicButtonAvailability()
+{
+    auto& track = looperEngine.getTrack(trackIndex);
+    bool hasInput = track.hasInputChannels.load();
+
+    if (!hasInput)
+    {
+        // No input channels: force mic off and disable the button so it appears "stuck off".
+        track.micEnabled.store(false);
+        transportControls.setMicState(false);
+    }
+
+    transportControls.setMicEnabled(hasInput);
 }
 
 Shared::ParameterKnobs* LooperTrack::getModelParameterKnobComponent()
@@ -1165,54 +1169,9 @@ double LooperTrack::getCustomParamAsDouble(const juce::String& key, double defau
     return defaultValue;
 }
 
-int LooperTrack::getModelChoiceIndex(const juce::String& choice) const
-{
-    for (int i = 0; i < static_cast<int>(modelChoiceOptions.size()); ++i)
-    {
-        if (modelChoiceOptions[i].equalsIgnoreCase(choice))
-            return i;
-    }
-    return 0;
-}
-
-juce::String LooperTrack::getModelChoiceValueForIndex(int index) const
-{
-    if (modelChoiceOptions.empty())
-        return "default";
-
-    index = juce::jlimit(0, static_cast<int>(modelChoiceOptions.size()) - 1, index);
-    return modelChoiceOptions[(size_t) index];
-}
-
-void LooperTrack::configureModelChoiceSlider()
-{
-    if (modelChoiceKnobId.isEmpty())
-        return;
-
-    auto* advancedKnobs = getModelParameterKnobComponent();
-    if (advancedKnobs == nullptr)
-        return;
-
-    auto* slider = advancedKnobs->getSliderForParameter(modelChoiceKnobId);
-    if (slider == nullptr)
-        return;
-
-    int maxIndex = juce::jmax(0, static_cast<int>(modelChoiceOptions.size()) - 1);
-    slider->setRange(0.0, static_cast<double>(maxIndex), 1.0);
-    slider->setNumDecimalPlacesToDisplay(0);
-    slider->textFromValueFunction = [this](double value) {
-        return getModelChoiceValueForIndex(static_cast<int>(std::round(value)));
-    };
-    slider->valueFromTextFunction = [this](const juce::String& text) {
-        return static_cast<double>(getModelChoiceIndex(text));
-    };
-}
-
 void LooperTrack::initializeModelParameterKnobs()
 {
     vampParamToKnobId.clear();
-    modelChoiceKnobId.clear();
-    refreshModelChoiceOptions();
 
     if (getModelParameterKnobComponent() == nullptr)
         return;
@@ -1232,57 +1191,7 @@ void LooperTrack::initializeModelParameterKnobs()
     addModelParameterKnob("sampling_steps", "steps", 1.0, 24.0, 1.0, 12.0, true);
     addModelParameterKnob("beat_mask_width", "beat mask", 0.0, 1.0, 0.01, 0.0, false);
     addModelParameterKnob("feedback_steps", "feedback", 1.0, 8.0, 1.0, 1.0, true);
-
-    modelChoiceKnobId = trackIdPrefix + "_model_choice";
-    juce::String currentChoice = "default";
-    if (customVampNetParams.isObject())
-    {
-        if (auto* obj = customVampNetParams.getDynamicObject())
-            currentChoice = obj->getProperty("model_choice").toString();
-    }
-    double modelIndex = static_cast<double>(getModelChoiceIndex(currentChoice));
-
-    auto* advancedKnobs = getModelParameterKnobComponent();
-    if (advancedKnobs == nullptr)
-        return;
-
-    advancedKnobs->addKnob({
-        "model choice",
-        0.0,
-        static_cast<double>(juce::jmax(0, static_cast<int>(modelChoiceOptions.size()) - 1)),
-        modelIndex,
-        1.0,
-        "",
-        [this](double value) {
-            int index = static_cast<int>(std::round(value));
-            auto choice = getModelChoiceValueForIndex(index);
-            if (auto* obj = customVampNetParams.getDynamicObject())
-                obj->setProperty("model_choice", choice);
-        },
-        modelChoiceKnobId
-    });
-
-    configureModelChoiceSlider();
-}
-
-void LooperTrack::refreshModelChoiceOptions()
-{
-    modelChoiceOptions.clear();
-    if (customVampNetParams.isObject())
-    {
-        if (auto* obj = customVampNetParams.getDynamicObject())
-        {
-            auto optionsVar = obj->getProperty("model_choice_options");
-            if (auto* arr = optionsVar.getArray())
-            {
-                for (const auto& item : *arr)
-                    modelChoiceOptions.push_back(item.toString());
-            }
-        }
-    }
-
-    if (modelChoiceOptions.empty())
-        modelChoiceOptions = {"default"};
+    addModelParameterKnob("periodic_prompt", "periodic", 1.0, 23.0, 1.0, 8.0, true);
 }
 
 void LooperTrack::syncCustomParamsToKnobs()
@@ -1299,14 +1208,6 @@ void LooperTrack::syncCustomParamsToKnobs()
             if (auto* advancedKnobs = getModelParameterKnobComponent())
                 advancedKnobs->setKnobValue(entry.second, value, juce::dontSendNotification);
         }
-    }
-
-    if (!modelChoiceKnobId.isEmpty())
-    {
-        auto choice = obj->getProperty("model_choice").toString();
-        int index = getModelChoiceIndex(choice);
-        if (auto* advancedKnobs = getModelParameterKnobComponent())
-            advancedKnobs->setKnobValue(modelChoiceKnobId, static_cast<double>(index), juce::dontSendNotification);
     }
 }
 
@@ -1371,13 +1272,16 @@ void LooperTrack::timerCallback()
 {
     // Sync button states with model state
     auto& track = looperEngine.getTrack(trackIndex);
-    
+
     bool modelRecordEnable = track.writeHead.getRecordEnable();
     transportControls.setRecordState(modelRecordEnable);
-    
+
     bool modelIsPlaying = track.isPlaying.load();
     transportControls.setPlayState(modelIsPlaying);
-    
+
+    // Update mic availability based on whether there are input channels
+    updateMicButtonAvailability();
+
     // Update displays
     waveformDisplay.repaint();
     levelControl.repaint();

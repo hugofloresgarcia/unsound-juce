@@ -4,6 +4,7 @@
 // Ensure VampNet types are fully defined (they're forward declared in VampNetTrackEngine.h)
 #include "../VampNet/ClickSynth.h"
 #include "../VampNet/Sampler.h"
+#include "SettingsComponent.h"
 
 using namespace WhAM;
 
@@ -344,65 +345,59 @@ void MainComponent::settingsButtonClicked()
 
 void MainComponent::showSettings()
 {
-    juce::AlertWindow settingsWindow("settings",
-                                     "configure gradio url and view midi bindings.",
-                                     juce::AlertWindow::NoIcon);
-
-    settingsWindow.addTextEditor("gradioUrl", getGradioUrl(), "gradio url:");
-    
-    // List current MIDI bindings
     auto mappings = midiLearnManager.getAllMappings();
-    
-    juce::String midiInfo;
-    if (mappings.empty())
+
+    auto* settingsComp = new SettingsComponent(
+        getGradioUrl(),
+        [](const juce::String&) {}, // will be overridden below
+        mappings);
+
+    // Give the settings dialog a sensible default size so it doesn't open tiny
+    settingsComp->setSize(600, 400);
+
+    juce::DialogWindow::LaunchOptions options;
+    options.content.setOwned(settingsComp);
+    options.dialogTitle = "settings";
+    options.dialogBackgroundColour = juce::Colours::black;
+    options.escapeKeyTriggersCloseButton = true;
+    options.useNativeTitleBar = false;
+    options.resizable = true;
+    options.useBottomRightCornerResizer = true;
+    options.componentToCentreAround = this;
+
+    auto* dialog = options.launchAsync();
+    if (dialog != nullptr)
     {
-        midiInfo = "No MIDI bindings configured.";
-    }
-    else
-    {
-        midiInfo = "Current MIDI bindings:\n\n";
-        for (const auto& mapping : mappings)
-        {
-            if (!mapping.isValid())
-                continue;
-                
-            juce::String typeStr = mapping.type == Shared::MidiMapping::MessageType::CC ? "CC" : "Note";
-            juce::String modeStr = mapping.mode == Shared::MidiMapping::Mode::Toggle ? " (toggle)" : "";
-            midiInfo += mapping.parameterId + " -> " + typeStr + " " + juce::String(mapping.number) + modeStr + "\n";
-        }
-    }
-    
-    settingsWindow.addTextBlock(midiInfo);
-    
-    settingsWindow.addButton("cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
-    settingsWindow.addButton("save", 1, juce::KeyPress(juce::KeyPress::returnKey));
-    settingsWindow.centreAroundComponent(this, 500, 300);
+        settingsComp->setOnApply([this, dialog](const juce::String& url) {
+            juce::String newUrl = url.trim();
 
-    if (settingsWindow.runModalLoop() == 1)
-    {
-        juce::String newUrl = settingsWindow.getTextEditorContents("gradioUrl").trim();
+            if (newUrl.isEmpty())
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                       "invalid url",
+                                                       "the gradio url cannot be empty.");
+                return;
+            }
 
-        if (newUrl.isEmpty())
-        {
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                   "invalid url",
-                                                   "the gradio url cannot be empty.");
-            return;
-        }
+            juce::URL parsedUrl(newUrl);
+            if (!parsedUrl.isWellFormed() || parsedUrl.getScheme().isEmpty())
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                       "invalid url",
+                                                       "please enter a valid gradio url, including the protocol (e.g., https://).");
+                return;
+            }
 
-        juce::URL parsedUrl(newUrl);
-        if (!parsedUrl.isWellFormed() || parsedUrl.getScheme().isEmpty())
-        {
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                   "invalid url",
-                                                   "please enter a valid gradio url, including the protocol (e.g., https://).");
-            return;
-        }
+            if (!newUrl.endsWithChar('/'))
+                newUrl += "/";
 
-        if (!newUrl.endsWithChar('/'))
-            newUrl += "/";
+            setGradioUrl(newUrl);
+            dialog->closeButtonPressed();
+        });
 
-        setGradioUrl(newUrl);
+        settingsComp->setOnCancel([dialog]() {
+            dialog->closeButtonPressed();
+        });
     }
 }
 
@@ -817,6 +812,10 @@ SessionConfig MainComponent::buildSessionConfig() const
     }
 
     config.midiMappings = midiLearnManager.getAllMappings();
+
+    if (synthsWindow != nullptr)
+        config.synthState = synthsWindow->getState();
+
     return config;
 }
 
@@ -845,6 +844,17 @@ void MainComponent::applySessionConfig(const SessionConfig& config, bool showErr
         track->setUseOutputAsInputEnabled(trackState.useOutputAsInput);
         track->setLevelDb(trackState.levelDb, juce::sendNotificationSync);
         track->applyPannerState(trackState.pannerState);
+    }
+
+    if (config.synthState.isObject())
+    {
+        if (synthsWindow == nullptr)
+        {
+            auto numTracks = static_cast<int>(tracks.size());
+            synthsWindow = std::make_unique<SynthsWindow>(looperEngine, numTracks, &midiLearnManager);
+            synthsWindow->setVisible(false);
+        }
+        synthsWindow->applyState(config.synthState);
     }
 
     if (!config.midiMappings.empty())

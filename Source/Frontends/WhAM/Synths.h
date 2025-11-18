@@ -18,12 +18,16 @@ class SynthsWindow : public juce::DialogWindow
 public:
     SynthsWindow(VampNetMultiTrackLooperEngine& engine, int numTracks, Shared::MidiLearnManager* midiManager = nullptr);
     ~SynthsWindow() override;
-    
+
+    // Serialize/restore synth configuration for session configs
+    juce::var getState() const;
+    void applyState(const juce::var& state);
+
     void closeButtonPressed() override;
-    
+
     int getSelectedTrack() const;
     bool isEnabled() const;
-    
+
 private:
     class ContentComponent : public juce::Component
     {
@@ -33,10 +37,13 @@ private:
         
         void paint(juce::Graphics& g) override;
         void resized() override;
-        
+
         int getSelectedTrack() const;
         bool isEnabled() const;
-        
+
+        juce::var getState() const;
+        void applyState(const juce::var& state);
+
     private:
         VampNetMultiTrackLooperEngine& looperEngine;
         Shared::MidiLearnManager* midiLearnManager;
@@ -78,7 +85,8 @@ private:
         
         // Shared
         std::atomic<int> selectedTrack{0};
-        
+        juce::String lastSampleFilePath;
+
         void tabButtonClicked(int tabIndex);
         void clickSynthEnableButtonChanged();
         void clickSynthTrackSelectorChanged();

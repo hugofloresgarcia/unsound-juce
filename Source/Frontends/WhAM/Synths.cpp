@@ -405,15 +405,16 @@ void SynthsWindow::ContentComponent::samplerTrackSelectorChanged()
 void SynthsWindow::ContentComponent::loadSampleButtonClicked()
 {
     int trackIdx = selectedTrack.load();
-    
+
     juce::FileChooser chooser("Select audio sample...",
                               juce::File(),
                               "*.wav;*.aif;*.aiff;*.mp3;*.ogg;*.flac");
-    
+
     if (chooser.browseForFileToOpen())
     {
         juce::File selectedFile = chooser.getResult();
-        
+        lastSampleFilePath = selectedFile.getFullPathName();
+
         if (trackIdx >= 0 && trackIdx < looperEngine.getNumTracks())
         {
             if (looperEngine.getTrackEngine(trackIdx).getSampler().loadSample(selectedFile))
@@ -443,7 +444,7 @@ void SynthsWindow::ContentComponent::samplerTriggerButtonClicked()
 {
     if (!samplerEnabled.load())
         return;
-    
+
     int trackIdx = selectedTrack.load();
     if (trackIdx >= 0 && trackIdx < looperEngine.getNumTracks())
     {
@@ -475,6 +476,97 @@ bool SynthsWindow::ContentComponent::isEnabled() const
         return clickSynthEnabled.load();
     else
         return samplerEnabled.load();
+}
+
+juce::var SynthsWindow::ContentComponent::getState() const
+{
+    juce::DynamicObject::Ptr obj = new juce::DynamicObject();
+
+    obj->setProperty("showingClickSynth", showingClickSynth.load());
+    obj->setProperty("clickEnabled", clickSynthEnabled.load());
+    obj->setProperty("samplerEnabled", samplerEnabled.load());
+    obj->setProperty("frequency", frequencySlider.getValue());
+    obj->setProperty("durationMs", durationSlider.getValue());
+    obj->setProperty("amplitude", amplitudeSlider.getValue());
+    obj->setProperty("clickTrackId", clickSynthTrackSelector.getSelectedId());
+    obj->setProperty("samplerTrackId", samplerTrackSelector.getSelectedId());
+    obj->setProperty("sampleName", sampleNameLabel.getText());
+    obj->setProperty("samplePath", lastSampleFilePath);
+
+    return juce::var(obj);
+}
+
+void SynthsWindow::ContentComponent::applyState(const juce::var& state)
+{
+    if (!state.isObject())
+        return;
+
+    auto* obj = state.getDynamicObject();
+    if (obj == nullptr)
+        return;
+
+    auto clickTrackIdVar = obj->getProperty("clickTrackId");
+    if (clickTrackIdVar.isInt())
+        clickSynthTrackSelector.setSelectedId(static_cast<int>(clickTrackIdVar), juce::sendNotification);
+
+    auto samplerTrackIdVar = obj->getProperty("samplerTrackId");
+    if (samplerTrackIdVar.isInt())
+        samplerTrackSelector.setSelectedId(static_cast<int>(samplerTrackIdVar), juce::sendNotification);
+
+    auto clickEnabledVar = obj->getProperty("clickEnabled");
+    if (clickEnabledVar.isBool())
+        clickSynthEnableButton.setToggleState(static_cast<bool>(clickEnabledVar), juce::sendNotification);
+
+    auto samplerEnabledVar = obj->getProperty("samplerEnabled");
+    if (samplerEnabledVar.isBool())
+        samplerEnableButton.setToggleState(static_cast<bool>(samplerEnabledVar), juce::sendNotification);
+
+    auto freqVar = obj->getProperty("frequency");
+    if (freqVar.isDouble() || freqVar.isInt())
+        frequencySlider.setValue(static_cast<double>(freqVar), juce::sendNotification);
+
+    auto durVar = obj->getProperty("durationMs");
+    if (durVar.isDouble() || durVar.isInt())
+        durationSlider.setValue(static_cast<double>(durVar), juce::sendNotification);
+
+    auto ampVar = obj->getProperty("amplitude");
+    if (ampVar.isDouble() || ampVar.isInt())
+        amplitudeSlider.setValue(static_cast<double>(ampVar), juce::sendNotification);
+
+    auto showingVar = obj->getProperty("showingClickSynth");
+    if (showingVar.isBool())
+        tabButtonClicked(static_cast<bool>(showingVar) ? 1 : 0);
+
+    auto sampleNameVar = obj->getProperty("sampleName");
+    if (sampleNameVar.isString())
+        sampleNameLabel.setText(sampleNameVar.toString(), juce::dontSendNotification);
+
+    auto samplePathVar = obj->getProperty("samplePath");
+    if (samplePathVar.isString())
+    {
+        juce::File sampleFile(samplePathVar.toString());
+        if (sampleFile.existsAsFile())
+        {
+            int trackIdx = selectedTrack.load();
+            if (trackIdx >= 0 && trackIdx < looperEngine.getNumTracks())
+            {
+                if (looperEngine.getTrackEngine(trackIdx).getSampler().loadSample(sampleFile))
+                    sampleNameLabel.setText(sampleFile.getFileName(), juce::dontSendNotification);
+            }
+            else if (trackIdx == -1)
+            {
+                bool success = false;
+                for (int i = 0; i < looperEngine.getNumTracks(); ++i)
+                {
+                    if (looperEngine.getTrackEngine(i).getSampler().loadSample(sampleFile))
+                        success = true;
+                }
+                if (success)
+                    sampleNameLabel.setText(sampleFile.getFileName() + " (all tracks)", juce::dontSendNotification);
+            }
+            lastSampleFilePath = sampleFile.getFullPathName();
+        }
+    }
 }
 
 // SynthsWindow implementation
@@ -511,5 +603,18 @@ bool SynthsWindow::isEnabled() const
     if (contentComponent != nullptr)
         return contentComponent->isEnabled();
     return false;
+}
+
+juce::var SynthsWindow::getState() const
+{
+    if (contentComponent != nullptr)
+        return contentComponent->getState();
+    return juce::var();
+}
+
+void SynthsWindow::applyState(const juce::var& state)
+{
+    if (contentComponent != nullptr)
+        contentComponent->applyState(state);
 }
 

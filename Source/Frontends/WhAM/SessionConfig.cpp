@@ -64,6 +64,10 @@ juce::var SessionConfig::toVar() const
     }
     root->setProperty("midiMappings", juce::var(mappingArray));
 
+    // Optional synth state (may be missing in older configs)
+    if (synthState.isObject())
+        root->setProperty("synth", synthState);
+
     return juce::var(root);
 }
 
@@ -78,6 +82,9 @@ juce::Result SessionConfig::fromVar(const juce::var& data, SessionConfig& out)
 
     SessionConfig config;
     config.gradioUrl = rootObj->getProperty("gradioUrl").toString();
+
+    // Optional synth state (may be missing in older configs)
+    config.synthState = rootObj->getProperty("synth");
 
     auto tracksVar = rootObj->getProperty("tracks");
     if (tracksVar.isArray())

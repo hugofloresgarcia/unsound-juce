@@ -33,30 +33,37 @@ public:
     std::function<void(bool)> onRecordToggle;
     std::function<void(bool)> onPlayToggle;
     std::function<void(bool)> onMuteToggle;
+    std::function<void(bool)> onMicToggle;
     std::function<void()> onReset;
 
     // Sync button states from external source
     void setRecordState(bool enabled);
     void setPlayState(bool playing);
     void setMuteState(bool muted);
+    void setMicState(bool enabled);
+    void setMicButtonVisible(bool visible);
+    void setMicEnabled(bool enabled);
 
 private:
     juce::ToggleButton recordEnableButton;
     juce::ToggleButton playButton;
     juce::ToggleButton muteButton;
+    juce::ToggleButton micButton;
     juce::TextButton resetButton;
-    
+
     EmptyToggleLookAndFeel emptyToggleLookAndFeel;
-    
+
     // MIDI learn support
     MidiLearnManager* midiLearnManager = nullptr;
     juce::String trackIdPrefix;
     std::unique_ptr<MidiLearnable> recordLearnable;
     std::unique_ptr<MidiLearnable> playLearnable;
     std::unique_ptr<MidiLearnable> muteLearnable;
+    std::unique_ptr<MidiLearnable> micLearnable;
     std::unique_ptr<MidiLearnMouseListener> recordMouseListener;
     std::unique_ptr<MidiLearnMouseListener> playMouseListener;
     std::unique_ptr<MidiLearnMouseListener> muteMouseListener;
+    std::unique_ptr<MidiLearnMouseListener> micMouseListener;
 
     void drawCustomToggleButton(juce::Graphics& g, juce::ToggleButton& button, 
                                 const juce::String& letter, juce::Rectangle<int> bounds,
