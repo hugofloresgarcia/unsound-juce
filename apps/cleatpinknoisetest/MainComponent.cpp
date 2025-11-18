@@ -37,8 +37,11 @@ MainComponent::MainComponent()
     cleatPanner.prepare(44100.0);
     cleatPanner.set_pan(0.5f, 0.5f); // Center position
     
+    // Set initial gain power
+    cleatPanner.set_gain_power(cleatGainPower);
+    
     // Compute initial max gain channel and channels within 3dB (center position)
-    auto initialGains = PanningUtils::compute_cleat_gains(0.5f, 0.5f);
+    auto initialGains = PanningUtils::compute_cleat_gains(0.5f, 0.5f, cleatGainPower);
     int maxChannel = -1;
     float maxGain = 0.0f;
     for (int i = 0; i < 16; ++i)
@@ -101,6 +104,23 @@ MainComponent::MainComponent()
     startAudioButton.onClick = [this] { startAudioButtonClicked(); };
     addAndMakeVisible(startAudioButton);
     
+    // Setup sinks button
+    sinksButton.setButtonText("Sinks");
+    sinksButton.onClick = [this] { sinksButtonClicked(); };
+    addAndMakeVisible(sinksButton);
+    
+    // Setup gain power slider
+    gainPowerLabel.setText("CLEAT Gain Power:", juce::dontSendNotification);
+    gainPowerLabel.setJustificationType(juce::Justification::centredLeft);
+    gainPowerLabel.setFont(juce::Font(14.0f));
+    addAndMakeVisible(gainPowerLabel);
+    
+    gainPowerSlider.setRange(0.1, 100.0, 0.1);
+    gainPowerSlider.setValue(cleatGainPower);
+    gainPowerSlider.setTextValueSuffix("");
+    gainPowerSlider.addListener(this);
+    addAndMakeVisible(gainPowerSlider);
+    
     // Don't initialize audio device manager yet - wait for button click
     audioDeviceInitialized = false;
     
@@ -131,14 +151,14 @@ void MainComponent::paint(juce::Graphics& g)
         g.drawText("Channel Meters", labelArea, juce::Justification::centred);
     }
     
-    // Draw channel level meters in a 4x4 grid at the bottom
+    // Draw channel level meters in a 4x4 grid
     // Use the stored metersArea from resized()
     if (metersArea.getHeight() > 50 && metersArea.getWidth() > 50)
     {
         const int numChannels = 16;
         const int cols = 4;
         const int rows = 4;
-        const int meterSpacing = 3;
+        const int meterSpacing = 10;
         const int meterWidth = (metersArea.getWidth() - (cols + 1) * meterSpacing) / cols;
         const int meterHeight = (metersArea.getHeight() - (rows + 1) * meterSpacing) / rows;
         
@@ -164,52 +184,87 @@ void MainComponent::drawChannelMeter(juce::Graphics& g, juce::Rectangle<int> are
     bool isMaxChannel = (maxGainChannel.load() == channel);
     bool isWithin3Db = channelsWithin3Db[channel].load();
     
-    // Background
-    g.setColour(juce::Colours::darkgrey);
-    g.fillRoundedRectangle(area.toFloat(), 3.0f);
+    // Convert linear level to dB
+    float levelDb = linearToDb(level);
     
-    // Border - highlight max channel with cyan, within-3dB with yellow
-    if (isMaxChannel)
+    // Define dB range: -60dB to 0dB (full range), healthy range: -40dB to -15dB
+    const float minDb = -60.0f;
+    const float maxDb = 0.0f;
+    const float silenceThresholdDb = -50.0f; // Below this is considered silence
+    const float healthyMinDb = -40.0f;
+    const float healthyMaxDb = -15.0f;
+    
+    // Check if level is effectively silent (below threshold or very small linear value)
+    bool isSilent = (level < 0.0001f) || (levelDb < silenceThresholdDb);
+    
+    // Map dB to normalized value (0.0 = minDb, 1.0 = maxDb)
+    float normalizedLevel = juce::jlimit(0.0f, 1.0f, (levelDb - minDb) / (maxDb - minDb));
+    
+    // Calculate circle center and maximum radius
+    float centerX = area.getCentreX();
+    float centerY = area.getCentreY() - 10.0f; // Offset upward to leave room for dB label
+    float maxRadius = juce::jmin(static_cast<float>(area.getWidth()), static_cast<float>(area.getHeight()) - 20.0f) * 0.4f; // Leave room for label
+    
+    // Calculate radius based on normalized level (minimum radius for visibility)
+    float minRadius = maxRadius * 0.1f; // Minimum 10% of max radius
+    float radius = minRadius + (maxRadius - minRadius) * normalizedLevel;
+    
+    // Color based on dB range:
+    // Silent (below -50dB or < 0.0001 linear): dim gray
+    // Below -40dB: dim gray (too quiet)
+    // -40dB to -15dB: green (healthy)
+    // -15dB to 0dB: yellow/red (too loud)
+    juce::Colour circleColour;
+    if (isSilent || levelDb < healthyMinDb)
     {
-        g.setColour(juce::Colours::cyan);
-        g.drawRoundedRectangle(area.toFloat(), 3.0f, 3.0f); // Thicker border for highlight
+        circleColour = juce::Colours::darkgrey.withBrightness(0.3f);
     }
-    else if (isWithin3Db)
+    else if (levelDb <= healthyMaxDb)
     {
-        g.setColour(juce::Colours::yellow);
-        g.drawRoundedRectangle(area.toFloat(), 3.0f, 2.0f); // Medium border for within-3dB
+        circleColour = juce::Colours::green;
+    }
+    else if (levelDb < -5.0f)
+    {
+        circleColour = juce::Colours::yellow;
     }
     else
     {
-        g.setColour(juce::Colours::grey);
-        g.drawRoundedRectangle(area.toFloat(), 3.0f, 1.0f);
+        circleColour = juce::Colours::red;
     }
     
-    // Level bar (vertical, bottom to top)
-    if (level > 0.001f)
+    // Draw circle
+    if (!isSilent && levelDb > minDb)
     {
-        float levelHeight = area.getHeight() * juce::jlimit(0.0f, 1.0f, level);
-        juce::Rectangle<float> levelRect(
-            area.getX() + 2.0f,
-            area.getBottom() - levelHeight - 2.0f,
-            area.getWidth() - 4.0f,
-            levelHeight
-        );
+        g.setColour(circleColour);
+        g.fillEllipse(centerX - radius, centerY - radius, radius * 2.0f, radius * 2.0f);
         
-        // Color: green for low, yellow for mid, red for high
-        juce::Colour meterColour;
-        if (level < 0.5f)
-            meterColour = juce::Colours::green;
-        else if (level < 0.8f)
-            meterColour = juce::Colours::yellow;
+        // Draw border - highlight max channel with cyan, within-3dB with yellow
+        if (isMaxChannel)
+        {
+            g.setColour(juce::Colours::cyan);
+            g.drawEllipse(centerX - radius, centerY - radius, radius * 2.0f, radius * 2.0f, 2.5f);
+        }
+        else if (isWithin3Db)
+        {
+            g.setColour(juce::Colours::yellow);
+            g.drawEllipse(centerX - radius, centerY - radius, radius * 2.0f, radius * 2.0f, 1.5f);
+        }
         else
-            meterColour = juce::Colours::red;
-        
-        g.setColour(meterColour);
-        g.fillRoundedRectangle(levelRect, 2.0f);
+        {
+            g.setColour(circleColour.brighter(0.3f));
+            g.drawEllipse(centerX - radius, centerY - radius, radius * 2.0f, radius * 2.0f, 1.5f);
+        }
+    }
+    else
+    {
+        // Draw very faint circle for silence
+        g.setColour(juce::Colours::darkgrey.withAlpha(0.2f));
+        g.drawEllipse(centerX - minRadius, centerY - minRadius, minRadius * 2.0f, minRadius * 2.0f, 1.0f);
+        // Don't show dB value for silence - use minDb for display
+        levelDb = minDb; // Use minDb for display when silent
     }
     
-    // Channel number label - highlight max channel and within-3dB channels
+    // Channel number label (above circle) - highlight max channel and within-3dB channels
     if (isMaxChannel)
     {
         g.setColour(juce::Colours::cyan);
@@ -225,72 +280,173 @@ void MainComponent::drawChannelMeter(juce::Graphics& g, juce::Rectangle<int> are
         g.setColour(juce::Colours::white);
         g.setFont(juce::Font(10.0f));
     }
-    g.drawText(juce::String(channel), area, juce::Justification::centredTop);
+    auto channelLabelArea = area;
+    channelLabelArea.removeFromBottom(area.getHeight() - static_cast<int>(centerY - maxRadius - 5));
+    g.drawText(juce::String(channel), channelLabelArea, juce::Justification::centred);
     
-    // Level value in dB
-    float levelDb = linearToDb(level);
-    g.setFont(juce::Font(8.0f));
-    g.drawText(juce::String(levelDb, 1) + " dB", area, juce::Justification::centredBottom);
+    // Level value in dB (below circle) - make it clearly visible
+    g.setColour(juce::Colours::white);
+    g.setFont(juce::Font(10.0f));
+    auto dbLabelArea = area;
+    dbLabelArea.removeFromTop(static_cast<int>(centerY + maxRadius + 8));
+    juce::String dbText;
+    if (isSilent)
+    {
+        dbText = "-inf dB";
+    }
+    else
+    {
+        dbText = juce::String(levelDb, 1) + " dB";
+    }
+    g.drawText(dbText, dbLabelArea, juce::Justification::centred);
 }
 
 void MainComponent::resized()
 {
+    // ============================================================================
+    // Size and margin constants
+    // ============================================================================
+    const int topMargin = 10;
+    const int horizontalMargin = 20;
+    
+    // Label sizes
+    const int panLabelHeight = 30;
+    const int panLabelVerticalMargin = 5;
+    const int debugLabelHeight = 25;
+    const int debugLabelVerticalMargin = 2;
+    const int levelLabelHeight = 30;
+    const int levelLabelVerticalMargin = 5;
+    const int gainPowerLabelHeight = 30;
+    const int gainPowerLabelVerticalMargin = 5;
+    const int channelMetersLabelHeight = 20;
+    
+    // Spacing between elements
+    const int spacingAfterPanLabel = 10;
+    const int spacingAfterPanner = 20;
+    const int spacingAfterDebugLabel = 5;
+    const int spacingAfterLevelLabel = 10;
+    const int spacingAfterLevelSlider = 20;
+    const int spacingAfterGainPowerLabel = 5;
+    const int spacingAfterGainPowerSlider = 20;
+    const int spacingAfterStartAudioButton = 10;
+    const int spacingAfterStartStopButton = 10;
+    const int spacingAfterSinksButton = 10;
+    
+    // Slider sizes
+    const int levelSliderHeight = 40;
+    const int levelSliderVerticalMargin = 10;
+    const int gainPowerSliderHeight = 40;
+    const int gainPowerSliderVerticalMargin = 10;
+    
+    // Button sizes
+    const int startAudioButtonHeight = 50;
+    const int startAudioButtonHorizontalMargin = 250;
+    const int startAudioButtonVerticalMargin = 10;
+    const int startStopButtonHeight = 50;
+    const int startStopButtonHorizontalMargin = 200;
+    const int startStopButtonVerticalMargin = 10;
+    const int sinksButtonHeight = 50;
+    const int sinksButtonHorizontalMargin = 200;
+    const int sinksButtonVerticalMargin = 10;
+    
+    // Panner settings
+    const int pannerHorizontalMargin = 40;
+    const int pannerMinSize = 200;
+    
+    // Meters area
+    const int metersAreaEstimatedHeight = 200; // 4 rows * ~50px each
+    
+    // ============================================================================
+    // Calculate reserved height for panner sizing
+    // ============================================================================
+    int reservedHeight = topMargin
+                       + panLabelHeight + spacingAfterPanLabel
+                       + spacingAfterPanner
+                       + debugLabelHeight + spacingAfterDebugLabel
+                       + levelLabelHeight + spacingAfterLevelLabel
+                       + levelSliderHeight + spacingAfterLevelSlider
+                       + gainPowerLabelHeight + spacingAfterGainPowerLabel
+                       + gainPowerSliderHeight + spacingAfterGainPowerSlider
+                       + startAudioButtonHeight + spacingAfterStartAudioButton
+                       + startStopButtonHeight + spacingAfterStartStopButton
+                       + sinksButtonHeight + spacingAfterSinksButton
+                       + channelMetersLabelHeight
+                       + metersAreaEstimatedHeight;
+    
+    // ============================================================================
+    // Layout UI elements
+    // ============================================================================
     auto area = getLocalBounds();
-    area.removeFromTop(10);
+    area.removeFromTop(topMargin);
     
     // Pan label
-    auto panLabelArea = area.removeFromTop(30);
-    panLabel.setBounds(panLabelArea.reduced(20, 5));
+    auto panLabelArea = area.removeFromTop(panLabelHeight);
+    panLabel.setBounds(panLabelArea.reduced(horizontalMargin, panLabelVerticalMargin));
     
-    area.removeFromTop(10);
+    area.removeFromTop(spacingAfterPanLabel);
     
     // 2D Panner component (square, but leave room for buttons and meters)
-    // Reserve: 30 (pan label) + 10 (spacing) + 25 (debug) + 5 + 30 (level) + 10 + 40 (slider) + 20 + 50 (start audio) + 10 + 50 (stop) + 10 + 20 (label) + meters
-    // Meters need about 200 pixels (4 rows * ~50px each)
-    int reservedHeight = 30 + 10 + 25 + 5 + 30 + 10 + 40 + 20 + 50 + 10 + 50 + 10 + 20 + 200;
-    auto pannerSize = juce::jmin(area.getWidth() - 40, area.getHeight() - reservedHeight);
-    pannerSize = juce::jmax(200, pannerSize); // Minimum 200px
+    auto pannerSize = juce::jmin(area.getWidth() - pannerHorizontalMargin, area.getHeight() - reservedHeight);
+    pannerSize = juce::jmax(pannerMinSize, pannerSize);
     auto pannerArea = area.removeFromTop(pannerSize);
     pannerArea = pannerArea.withSizeKeepingCentre(pannerSize, pannerSize);
     panner2DComponent->setBounds(pannerArea);
     
-    area.removeFromTop(20);
+    area.removeFromTop(spacingAfterPanner);
     
     // Debug label
-    auto debugLabelArea = area.removeFromTop(25);
-    debugLabel.setBounds(debugLabelArea.reduced(20, 2));
+    auto debugLabelArea = area.removeFromTop(debugLabelHeight);
+    debugLabel.setBounds(debugLabelArea.reduced(horizontalMargin, debugLabelVerticalMargin));
     
-    area.removeFromTop(5);
+    area.removeFromTop(spacingAfterDebugLabel);
     
     // Level label
-    auto levelLabelArea = area.removeFromTop(30);
-    levelLabel.setBounds(levelLabelArea.reduced(20, 5));
+    auto levelLabelArea = area.removeFromTop(levelLabelHeight);
+    levelLabel.setBounds(levelLabelArea.reduced(horizontalMargin, levelLabelVerticalMargin));
     
-    area.removeFromTop(10);
+    area.removeFromTop(spacingAfterLevelLabel);
     
     // Level slider
-    auto sliderArea = area.removeFromTop(40);
-    levelSlider.setBounds(sliderArea.reduced(20, 10));
+    auto levelSliderArea = area.removeFromTop(levelSliderHeight);
+    levelSlider.setBounds(levelSliderArea.reduced(horizontalMargin, levelSliderVerticalMargin));
     
-    area.removeFromTop(20);
+    area.removeFromTop(spacingAfterLevelSlider);
+    
+    // Gain power label
+    auto gainPowerLabelArea = area.removeFromTop(gainPowerLabelHeight);
+    gainPowerLabel.setBounds(gainPowerLabelArea.reduced(horizontalMargin, gainPowerLabelVerticalMargin));
+    
+    area.removeFromTop(spacingAfterGainPowerLabel);
+    
+    // Gain power slider
+    auto gainPowerSliderArea = area.removeFromTop(gainPowerSliderHeight);
+    gainPowerSlider.setBounds(gainPowerSliderArea.reduced(horizontalMargin, gainPowerSliderVerticalMargin));
+    
+    area.removeFromTop(spacingAfterGainPowerSlider);
     
     // Start Audio button
-    auto startAudioArea = area.removeFromTop(50);
-    startAudioButton.setBounds(startAudioArea.reduced(250, 10));
+    auto startAudioArea = area.removeFromTop(startAudioButtonHeight);
+    startAudioButton.setBounds(startAudioArea.reduced(startAudioButtonHorizontalMargin, startAudioButtonVerticalMargin));
     
-    area.removeFromTop(10);
+    area.removeFromTop(spacingAfterStartAudioButton);
     
     // Start/Stop button
-    auto buttonArea = area.removeFromTop(50);
-    startStopButton.setBounds(buttonArea.reduced(200, 10));
+    auto startStopButtonArea = area.removeFromTop(startStopButtonHeight);
+    startStopButton.setBounds(startStopButtonArea.reduced(startStopButtonHorizontalMargin, startStopButtonVerticalMargin));
     
-    area.removeFromTop(10);
+    area.removeFromTop(spacingAfterStartStopButton);
+    
+    // Sinks button
+    auto sinksButtonArea = area.removeFromTop(sinksButtonHeight);
+    sinksButton.setBounds(sinksButtonArea.reduced(sinksButtonHorizontalMargin, sinksButtonVerticalMargin));
+    
+    area.removeFromTop(spacingAfterSinksButton);
     
     // Channel meters area (remaining space at bottom)
     // Reserve space for label
-    if (area.getHeight() > 20)
+    if (area.getHeight() > channelMetersLabelHeight)
     {
-        area.removeFromTop(20); // Space for "Channel Meters" label
+        area.removeFromTop(channelMetersLabelHeight);
     }
     metersArea = area;
 }
@@ -306,7 +462,7 @@ void MainComponent::timerCallback()
     panLabel.setText("Pan: " + juce::String(panX, 2) + ", " + juce::String(panY, 2), juce::dontSendNotification);
     
     // Update max gain channel and channels within 3dB based on current smoothed pan position
-    auto gains = PanningUtils::compute_cleat_gains(panX, panY);
+    auto gains = PanningUtils::compute_cleat_gains(panX, panY, cleatGainPower);
     int maxChannel = -1;
     float maxGain = 0.0f;
     for (int i = 0; i < 16; ++i)
@@ -521,13 +677,63 @@ void MainComponent::levelSliderValueChanged()
     outputLevelLinear = dbToLinear(outputLevelDb);
 }
 
+void MainComponent::gainPowerSliderValueChanged()
+{
+    float newGainPower = static_cast<float>(gainPowerSlider.getValue());
+    setCLEATGainPower(newGainPower);
+}
+
+void MainComponent::setCLEATGainPower(float gainPower)
+{
+    cleatGainPower = gainPower;
+    cleatPanner.set_gain_power(gainPower);
+    DBG("[CLEATPinkNoiseTest] CLEAT gain power updated to " << gainPower);
+}
+
+void MainComponent::sinksButtonClicked()
+{
+    // Check if window needs to be created or recreated (if closed by user)
+    if (sinksWindow == nullptr || sinksComponent == nullptr || 
+        (sinksWindow != nullptr && !sinksWindow->isVisible()))
+    {
+        // If window exists but was closed, clean it up first
+        if (sinksWindow != nullptr)
+        {
+            sinksWindow = nullptr;
+            sinksComponent = nullptr;
+        }
+        
+        // Create sinks component
+        sinksComponent = std::make_unique<flowerjuce::SinksWindow>(&cleatPanner, channelLevels);
+        
+        // Create dialog window
+        sinksWindow = std::make_unique<SinksDialogWindow>(
+            "Sinks",
+            juce::Colours::black
+        );
+        
+        // Transfer ownership to DialogWindow (release from unique_ptr)
+        sinksWindow->setContentOwned(sinksComponent.release(), true);
+        sinksWindow->setResizable(true, true);
+        sinksWindow->setSize(500, 500);
+        sinksWindow->centreWithSize(500, 500);
+        sinksWindow->setVisible(true);
+        sinksWindow->toFront(true);
+    }
+    else
+    {
+        // Window already exists and is visible, just bring it to front
+        sinksWindow->toFront(true);
+    }
+}
+
 void MainComponent::panPositionChanged(float x, float y)
 {
     DBG("[CLEATPinkNoiseTest] Pan position changed: (" << x << ", " << y << ")");
     cleatPanner.set_pan(x, y);
     
     // Get and log current gains for debugging
-    auto gains = PanningUtils::compute_cleat_gains(x, y);
+    auto gains = PanningUtils::compute_cleat_gains(x, y, cleatGainPower);
     DBG("[CLEATPinkNoiseTest] Computed gains:");
     
     // Find max gain channel
@@ -575,6 +781,10 @@ void MainComponent::sliderValueChanged(juce::Slider* slider)
     if (slider == &levelSlider)
     {
         levelSliderValueChanged();
+    }
+    else if (slider == &gainPowerSlider)
+    {
+        gainPowerSliderValueChanged();
     }
 }
 
@@ -783,7 +993,7 @@ void MainComponent::audioDeviceAboutToStart(juce::AudioIODevice* device)
         // Get initial gains
         float panX = cleatPanner.get_pan_x();
         float panY = cleatPanner.get_pan_y();
-        auto gains = PanningUtils::compute_cleat_gains(panX, panY);
+        auto gains = PanningUtils::compute_cleat_gains(panX, panY, cleatGainPower);
         DBG("  Initial pan position: (" << panX << ", " << panY << ")");
         DBG("  Initial gains:");
         for (int i = 0; i < 16; ++i)

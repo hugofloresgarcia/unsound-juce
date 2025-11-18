@@ -46,6 +46,10 @@ public:
     // Returns the output sample value, or 0.0f if not playing/muted
     float process_sample();
     
+    // Get raw sample value before level gain and mute (pre-fader)
+    // Returns the interpolated sample value without any gain/mute applied
+    float get_raw_sample() const;
+    
     // Advance playhead (call after process_sample for each sample)
     // Returns true if the playhead wrapped around the tape loop
     bool advance(float wrap_pos);

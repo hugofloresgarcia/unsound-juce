@@ -58,8 +58,10 @@ class OnsetDetector
 {
 public:
     OnsetDetector()
-        : threshold(0.1f), lowerThreshold(0.05f), useRMS(true), wasAboveThreshold(false)
+        : threshold(0.01f), lowerThreshold(0.005f), useRMS(true), wasAboveThreshold(false)
     {
+        // Lower thresholds: 0.01 (1%) for detection, 0.005 (0.5%) for reset
+        // This makes onset detection more sensitive to transients
     }
     
     ~OnsetDetector() = default;

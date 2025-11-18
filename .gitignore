@@ -24,3 +24,5 @@ Makefile
 
 .cache/
 .DS_Store
+
+scratch/

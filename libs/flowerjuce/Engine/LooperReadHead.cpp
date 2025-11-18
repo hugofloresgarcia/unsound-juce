@@ -18,6 +18,12 @@ LooperReadHead::LooperReadHead(TapeLoop& tape_loop)
     m_mute_gain.setCurrentAndTargetValue(1.0f); // Start unmuted
 }
 
+float LooperReadHead::get_raw_sample() const
+{
+    // Return raw interpolated sample without any gain/mute applied (pre-fader)
+    return interpolate_sample(m_pos.load());
+}
+
 float LooperReadHead::process_sample()
 {   
     static int call_count = 0;

@@ -88,6 +88,7 @@ target_sources(flowerjuce PRIVATE
     Components/MidiLearnManager.cpp
     Components/ConfigManager.cpp
     Components/VariationSelector.cpp
+    Components/SinksWindow.cpp
 )
 
 # Components headers
@@ -107,6 +108,7 @@ target_sources(flowerjuce PRIVATE
     Components/SettingsDialog.h
     Components/ModelParameterDialog.h
     Components/AudioInfoDisplay.h
+    Components/SinksWindow.h
 )
 
 # CustomLookAndFeel header

@@ -96,8 +96,18 @@ public:
     // Set panner smoothing time (called from MainComponent when settings change)
     void setPannerSmoothingTime(double smoothingTime);
     
+    // Set CLEAT gain power (called from MainComponent when settings change)
+    void setCLEATGainPower(float gainPower);
+    
+    // Get current pan position (returns false if panner not available)
+    bool getPanPosition(float& x, float& y) const;
+    
     // Public static method to get default parameters
     static juce::var getDefaultText2SoundParams();
+    
+    // Clear LookAndFeel references from all child components
+    // Called by MainComponent during shutdown to prevent assertion
+    void clearLookAndFeel();
 
 private:
     MultiTrackLooperEngine& looperEngine;
@@ -141,6 +151,10 @@ private:
     juce::Label pathSpeedLabel;
     juce::Slider pathScaleKnob;
     juce::Label pathScaleLabel;
+    
+    // Filter cutoff knob (above level control)
+    juce::Slider cutoffKnob;
+    juce::Label cutoffLabel;
     
     // Onset detector for audio analysis
     OnsetDetector onsetDetector;

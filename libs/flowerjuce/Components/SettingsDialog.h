@@ -19,13 +19,16 @@ public:
                    std::function<void(const juce::String&)> onGradioUrlChanged = nullptr,
                    Shared::MidiLearnManager* midiLearnManager = nullptr,
                    const juce::String& currentTrajectoryDir = juce::String(),
-                   std::function<void(const juce::String&)> onTrajectoryDirChanged = nullptr)
+                   std::function<void(const juce::String&)> onTrajectoryDirChanged = nullptr,
+                   float currentCLEATGainPower = 1.0f,
+                   std::function<void(float)> onCLEATGainPowerChanged = nullptr)
         : juce::DialogWindow("Settings",
                            juce::Colours::darkgrey,
                            true),
           onSmoothingTimeChangedCallback(onSmoothingTimeChanged),
           onGradioUrlChangedCallback(onGradioUrlChanged),
           onTrajectoryDirChangedCallback(onTrajectoryDirChanged),
+          onCLEATGainPowerChangedCallback(onCLEATGainPowerChanged),
           midiLearnManagerPtr(midiLearnManager)
     {
         auto* content = new ContentComponent(currentSmoothingTime,
@@ -43,6 +46,11 @@ public:
             [this](const juce::String& dir) {
                 if (onTrajectoryDirChangedCallback)
                     onTrajectoryDirChangedCallback(dir);
+            },
+            currentCLEATGainPower,
+            [this](float gainPower) {
+                if (onCLEATGainPowerChangedCallback)
+                    onCLEATGainPowerChangedCallback(gainPower);
             });
         
         setContentOwned(content, true);
@@ -74,6 +82,12 @@ public:
             content->updateTrajectoryDir(dir);
     }
     
+    void updateCLEATGainPower(float gainPower)
+    {
+        if (auto* content = dynamic_cast<ContentComponent*>(getContentComponent()))
+            content->updateCLEATGainPower(gainPower);
+    }
+    
     void refreshMidiInfo()
     {
         if (auto* content = dynamic_cast<ContentComponent*>(getContentComponent()))
@@ -84,6 +98,7 @@ private:
     std::function<void(double)> onSmoothingTimeChangedCallback;
     std::function<void(const juce::String&)> onGradioUrlChangedCallback;
     std::function<void(const juce::String&)> onTrajectoryDirChangedCallback;
+    std::function<void(float)> onCLEATGainPowerChangedCallback;
     Shared::MidiLearnManager* midiLearnManagerPtr;
 
     class ContentComponent : public juce::Component
@@ -95,12 +110,16 @@ private:
                         std::function<void(const juce::String&)> onGradioUrlChanged,
                         Shared::MidiLearnManager* midiLearnManager,
                         const juce::String& currentTrajectoryDir,
-                        std::function<void(const juce::String&)> onTrajectoryDirChanged)
+                        std::function<void(const juce::String&)> onTrajectoryDirChanged,
+                        float currentCLEATGainPower,
+                        std::function<void(float)> onCLEATGainPowerChanged)
             : onSmoothingTimeChangedCallback(onSmoothingTimeChanged),
               onGradioUrlChangedCallback(onGradioUrlChanged),
               onTrajectoryDirChangedCallback(onTrajectoryDirChanged),
+              onCLEATGainPowerChangedCallback(onCLEATGainPowerChanged),
               midiLearnManagerPtr(midiLearnManager),
-              smoothingTimeSlider(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight)
+              smoothingTimeSlider(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight),
+              cleatGainPowerSlider(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight)
         {
             auto font = juce::Font(juce::FontOptions()
                                   .withName(juce::Font::getDefaultMonospacedFontName())
@@ -125,6 +144,22 @@ private:
                     onSmoothingTimeChangedCallback(smoothingTimeSlider.getValue());
             };
             addAndMakeVisible(smoothingTimeSlider);
+            
+            // CLEAT gain power (only if callback provided)
+            if (onCLEATGainPowerChangedCallback)
+            {
+                cleatGainPowerLabel.setText("CLEAT Gain Power:", juce::dontSendNotification);
+                cleatGainPowerLabel.setJustificationType(juce::Justification::centredLeft);
+                addAndMakeVisible(cleatGainPowerLabel);
+                
+                cleatGainPowerSlider.setRange(0.1, 3.0, 0.1);
+                cleatGainPowerSlider.setValue(currentCLEATGainPower);
+                cleatGainPowerSlider.onValueChange = [this] {
+                    if (onCLEATGainPowerChangedCallback)
+                        onCLEATGainPowerChangedCallback(static_cast<float>(cleatGainPowerSlider.getValue()));
+                };
+                addAndMakeVisible(cleatGainPowerSlider);
+            }
             
             // Gradio section (only if callback provided)
             if (onGradioUrlChangedCallback)
@@ -221,6 +256,12 @@ private:
                 trajectoryDirEditor.setText(dir, juce::dontSendNotification);
         }
         
+        void updateCLEATGainPower(float gainPower)
+        {
+            if (cleatGainPowerSlider.isVisible())
+                cleatGainPowerSlider.setValue(gainPower, juce::dontSendNotification);
+        }
+        
         void refreshMidiInfo()
         {
             if (midiLearnManagerPtr == nullptr || !midiInfoEditor.isVisible())
@@ -260,6 +301,15 @@ private:
             bounds.removeFromTop(5);
             smoothingTimeSlider.setBounds(bounds.removeFromTop(30));
             bounds.removeFromTop(20);
+            
+            // CLEAT gain power (if visible)
+            if (cleatGainPowerLabel.isVisible())
+            {
+                cleatGainPowerLabel.setBounds(bounds.removeFromTop(20));
+                bounds.removeFromTop(5);
+                cleatGainPowerSlider.setBounds(bounds.removeFromTop(30));
+                bounds.removeFromTop(20);
+            }
             
             // Gradio section (if visible)
             if (gradioLabel.isVisible())
@@ -303,11 +353,14 @@ private:
         std::function<void(double)> onSmoothingTimeChangedCallback;
         std::function<void(const juce::String&)> onGradioUrlChangedCallback;
         std::function<void(const juce::String&)> onTrajectoryDirChangedCallback;
+        std::function<void(float)> onCLEATGainPowerChangedCallback;
         Shared::MidiLearnManager* midiLearnManagerPtr;
         
         juce::Label pannerLabel;
         juce::Label smoothingLabel;
         juce::Slider smoothingTimeSlider;
+        juce::Label cleatGainPowerLabel;
+        juce::Slider cleatGainPowerSlider;
         
         juce::Label gradioLabel;
         juce::Label gradioUrlLabel;

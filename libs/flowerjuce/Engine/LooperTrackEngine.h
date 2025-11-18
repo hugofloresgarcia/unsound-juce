@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <juce_dsp/juce_dsp.h>
 #include "TapeLoop.h"
 #include "LooperWriteHead.h"
 #include "LooperReadHead.h"
@@ -69,6 +70,12 @@ public:
     
     // Set panner for spatial audio distribution
     void set_panner(Panner* panner) { m_track_state.m_panner = panner; }
+    
+    // Set low pass filter cutoff frequency (in Hz)
+    void set_filter_cutoff(float cutoff_hz);
+    
+    // Get mono output level (for visualization)
+    float getMonoOutputLevel() const { return m_mono_output_level.load(); }
 
 protected:
     // Helper methods factored out for reuse by VampNetTrackEngine
@@ -86,5 +93,14 @@ private:
     
     juce::AudioFormatManager m_format_manager;
     std::function<void(float)> m_audio_sample_callback; // Callback for audio samples (for onset detection)
+    
+    // Mono output level tracking (for visualization)
+    std::atomic<float> m_mono_output_level{0.0f};
+    
+    // Low pass filter
+    juce::dsp::IIR::Filter<float> m_low_pass_filter;
+    juce::dsp::IIR::Coefficients<float>::Ptr m_filter_coefficients;
+    std::atomic<float> m_filter_cutoff{20000.0f}; // Default to 20kHz (no filtering)
+    double m_current_sample_rate{44100.0};
 };
 

@@ -10,6 +10,7 @@
 #include <flowerjuce/Components/MidiLearnManager.h>
 #include <flowerjuce/Components/MidiLearnComponent.h>
 #include <flowerjuce/Components/ConfigManager.h>
+#include <flowerjuce/Components/SinksWindow.h>
 
 namespace Shared
 {
@@ -18,6 +19,39 @@ namespace Shared
 
 namespace Text2Sound
 {
+    class VizWindow;
+
+    // Custom DialogWindow that properly handles close button
+    class SinksDialogWindow : public juce::DialogWindow
+    {
+    public:
+        SinksDialogWindow(const juce::String& name, juce::Colour colour)
+            : juce::DialogWindow(name, colour, true, true)
+        {
+        }
+
+        void closeButtonPressed() override
+        {
+            // Hide the window instead of asserting
+            setVisible(false);
+        }
+    };
+
+    // Custom DialogWindow for viz window
+    class VizDialogWindow : public juce::DialogWindow
+    {
+    public:
+        VizDialogWindow(const juce::String& name, juce::Colour colour)
+            : juce::DialogWindow(name, colour, true, true)
+        {
+        }
+
+        void closeButtonPressed() override
+        {
+            // Hide the window instead of asserting
+            setVisible(false);
+        }
+    };
 
 class MainComponent : public juce::Component,
                       public juce::Timer
@@ -38,11 +72,13 @@ private:
     // MIDI learn support - must be declared before tracks so it's destroyed after them
     Shared::MidiLearnManager midiLearnManager;
     
-    std::vector<std::unique_ptr<Text2Sound::LooperTrack>> tracks;
+    std::vector<std::shared_ptr<Text2Sound::LooperTrack>> tracks;
     
     juce::TextButton syncButton;
     juce::TextButton modelParamsButton;
     juce::TextButton settingsButton;
+    juce::TextButton sinksButton;
+    juce::TextButton vizButton;
     juce::Label titleLabel;
     juce::Label audioDeviceDebugLabel;
     CustomLookAndFeel customLookAndFeel;
@@ -59,6 +95,7 @@ private:
     
     // Shared settings
     double pannerSmoothingTime{0.0}; // Smoothing time in seconds for panner trajectories
+    float cleatGainPower{1.0f}; // CLEAT gain power factor (default 1.0 = no change)
     
     Shared::MidiLearnOverlay midiLearnOverlay;
 
@@ -70,7 +107,18 @@ private:
     void showModelParams();
     void settingsButtonClicked();
     void showSettings();
+    void sinksButtonClicked();
+    void vizButtonClicked();
     juce::var getSharedModelParams() const { return sharedModelParams; }
+    void setCLEATGainPower(float gainPower);
+    
+    // Sinks window
+    std::unique_ptr<SinksDialogWindow> sinksWindow;
+    std::unique_ptr<flowerjuce::SinksWindow> sinksComponent;
+    
+    // Viz window
+    std::unique_ptr<VizDialogWindow> vizWindow;
+    std::unique_ptr<Text2Sound::VizWindow> vizComponent;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

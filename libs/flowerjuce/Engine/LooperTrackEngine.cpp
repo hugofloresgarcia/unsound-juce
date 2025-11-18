@@ -12,6 +12,11 @@
 LooperTrackEngine::LooperTrackEngine()
 {
     m_format_manager.registerBasicFormats();
+    
+    // Initialize filter with default coefficients (no filtering at 20kHz)
+    m_filter_coefficients = juce::dsp::IIR::Coefficients<float>::makeLowPass(44100.0, 20000.0f);
+    m_low_pass_filter.coefficients = m_filter_coefficients;
+    m_current_sample_rate = 44100.0;
 }
 
 void LooperTrackEngine::initialize(double sample_rate, double max_buffer_duration_seconds)
@@ -27,12 +32,40 @@ void LooperTrackEngine::audio_device_about_to_start(double sample_rate)
     m_track_state.m_read_head.set_sample_rate(sample_rate);
     m_track_state.m_write_head.reset();
     m_track_state.m_read_head.reset();
+    
+    // Update filter sample rate and prepare
+    m_current_sample_rate = sample_rate;
+    float current_cutoff = m_filter_cutoff.load();
+    m_filter_coefficients = juce::dsp::IIR::Coefficients<float>::makeLowPass(sample_rate, current_cutoff);
+    
+    juce::dsp::ProcessSpec spec;
+    spec.sampleRate = sample_rate;
+    spec.maximumBlockSize = 512;
+    spec.numChannels = 1;
+    m_low_pass_filter.prepare(spec);
+    m_low_pass_filter.coefficients = m_filter_coefficients;
 }
 
 void LooperTrackEngine::audio_device_stopped()
 {
     m_track_state.m_is_playing.store(false);
     m_track_state.m_read_head.set_playing(false);
+}
+
+void LooperTrackEngine::set_filter_cutoff(float cutoff_hz)
+{
+    // Clamp cutoff to valid range (20Hz to Nyquist)
+    float nyquist = static_cast<float>(m_current_sample_rate * 0.5);
+    cutoff_hz = juce::jlimit(20.0f, nyquist, cutoff_hz);
+    
+    m_filter_cutoff.store(cutoff_hz);
+    
+    // Update filter coefficients
+    if (m_current_sample_rate > 0.0)
+    {
+        m_filter_coefficients = juce::dsp::IIR::Coefficients<float>::makeLowPass(m_current_sample_rate, cutoff_hz);
+        m_low_pass_filter.coefficients = m_filter_coefficients;
+    }
 }
 
 void LooperTrackEngine::reset()
@@ -244,6 +277,7 @@ bool LooperTrackEngine::process_block(const float* const* input_channel_data,
             DBG_SEGFAULT("Entering sample loop, num_samples=" + juce::String(num_samples));
         
         // First pass: collect playback samples and handle recording
+        float max_mono_level = 0.0f;
         for (int sample = 0; sample < num_samples; ++sample)
         {
             if (is_first_call && sample == 0)
@@ -254,17 +288,30 @@ bool LooperTrackEngine::process_block(const float* const* input_channel_data,
             // Handle recording (overdub or new)
             process_recording(track, input_channel_data, num_input_channels, current_position, sample, is_first_call && sample == 0);
 
-            // Playback (read head processes the sample)
+            // Get raw sample value BEFORE level gain/mute (pre-fader) for onset detection
+            // Must hold lock since get_raw_sample() accesses tape loop buffer
+            float raw_sample_value = 0.0f;
+            if (track.m_is_playing.load() && track.m_read_head.get_playing())
+            {
+                const juce::ScopedLock sl(track.m_tape_loop.m_lock);
+                raw_sample_value = track.m_read_head.get_raw_sample();
+            }
+            
+            // Feed raw pre-fader sample to callback if set (for onset detection, etc.)
+            // This ensures onset detection happens before any level control or filtering
+            if (m_audio_sample_callback)
+            {
+                m_audio_sample_callback(raw_sample_value);
+            }
+            
+            // Playback (read head processes the sample) - applies level gain and mute
             float sample_value = process_playback(track, is_first_call && sample == 0);
             
             // Store sample in mono buffer for panner processing
             mono_buffer[sample] = sample_value;
             
-            // Feed audio sample to callback if set (for onset detection, etc.)
-            if (m_audio_sample_callback)
-            {
-                m_audio_sample_callback(sample_value);
-            }
+            // Track peak level for visualization
+            max_mono_level = juce::jmax(max_mono_level, std::abs(sample_value));
 
             // Advance read head by one sample
             if (is_first_call && sample == 0)
@@ -277,6 +324,27 @@ bool LooperTrackEngine::process_block(const float* const* input_channel_data,
                 track.m_write_head.set_record_enable(false); // Stop recording
                 juce::Logger::writeToLog("~~~ WRAPPED! Finalized recording");
             }
+        }
+        
+        // Apply low pass filter to mono buffer if cutoff is less than Nyquist
+        float cutoff = m_filter_cutoff.load();
+        if (cutoff < m_current_sample_rate * 0.5f)
+        {
+            // Create array of channel pointers for AudioBlock (mono = 1 channel)
+            // AudioBlock expects SampleType* const* (pointer to const pointer to SampleType)
+            float* channelPtr = mono_buffer.getData();
+            float* const channelDataArray[1] = { channelPtr };
+            float* const* channelData = channelDataArray; // Explicit pointer to array
+            juce::dsp::AudioBlock<float> block(channelData, 1, 0, static_cast<size_t>(num_samples));
+            juce::dsp::ProcessContextReplacing<float> context(block);
+            m_low_pass_filter.process(context);
+        }
+        
+        // Update mono output level (peak hold with decay)
+        float currentLevel = m_mono_output_level.load();
+        if (max_mono_level > currentLevel)
+        {
+            m_mono_output_level.store(max_mono_level);
         }
         
         // Second pass: apply panner to distribute audio to all output channels

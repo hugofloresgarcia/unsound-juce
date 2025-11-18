@@ -114,7 +114,7 @@ namespace PanningUtils
     }
 
     //==============================================================================
-    std::array<float, 16> compute_cleat_gains(float x, float y)
+    std::array<float, 16> compute_cleat_gains(float x, float y, float gain_power)
     {
         x = juce::jlimit(0.0f, 1.0f, x);
         y = juce::jlimit(0.0f, 1.0f, y);
@@ -168,7 +168,29 @@ namespace PanningUtils
             }
         }
         
-        // Return raw gains without normalization (matching Max/MSP patcher)
+        // Apply power function to increase gain differences while preserving relative proportions
+        // Power factor > 1 increases contrast: higher gains become relatively higher
+        // Only apply if gain_power != 1.0 (to avoid unnecessary computation when default)
+        if (gain_power != 1.0f)
+        {
+            float sum = 0.0f;
+            for (int i = 0; i < 16; ++i)
+            {
+                gains[i] = std::pow(gains[i], gain_power);
+                sum += gains[i];
+            }
+            
+            // // Normalize to preserve energy and relative proportions
+            // if (sum > 0.0f)
+            // {
+            //     float norm = 1.0f / sum;
+            //     for (int i = 0; i < 16; ++i)
+            //     {
+            //         gains[i] *= norm;
+            //     }
+            // }
+        }
+        
         return gains;
     }
     
@@ -490,6 +512,86 @@ namespace PanningUtils
             
             float x = origin_x + radius * std::cos(angle);
             float y = origin_y + radius * std::sin(angle);
+            
+            // Clamp to 0-1 range
+            x = juce::jlimit(0.0f, 1.0f, x);
+            y = juce::jlimit(0.0f, 1.0f, y);
+            
+            coords.push_back({x, y});
+        }
+        
+        return coords;
+    }
+    
+    std::vector<std::pair<float, float>> generate_horizontal_line_path(int num_points)
+    {
+        std::vector<std::pair<float, float>> coords;
+        
+        // Random number generator
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+        std::uniform_int_distribution<int> point_dist(50, 100);
+        std::uniform_int_distribution<int> dir_dist(0, 1);
+        
+        // Generate random number of points if not specified
+        if (num_points <= 0)
+            num_points = point_dist(gen);
+        
+        // Random Y position (vertical position of the line)
+        float y = 0.2f + dist(gen) * 0.6f; // Keep within bounds (0.2 to 0.8)
+        
+        // Random direction (left to right or right to left)
+        int direction = dir_dist(gen) == 0 ? 1 : -1;
+        
+        // Start position
+        float start_x = direction == 1 ? 0.1f : 0.9f;
+        
+        // Generate points along horizontal line
+        for (int i = 0; i < num_points; ++i)
+        {
+            float t = static_cast<float>(i) / static_cast<float>(num_points - 1);
+            float x = start_x + direction * t * 0.8f; // Move across 80% of width
+            
+            // Clamp to 0-1 range
+            x = juce::jlimit(0.0f, 1.0f, x);
+            y = juce::jlimit(0.0f, 1.0f, y);
+            
+            coords.push_back({x, y});
+        }
+        
+        return coords;
+    }
+    
+    std::vector<std::pair<float, float>> generate_vertical_line_path(int num_points)
+    {
+        std::vector<std::pair<float, float>> coords;
+        
+        // Random number generator
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+        std::uniform_int_distribution<int> point_dist(50, 100);
+        std::uniform_int_distribution<int> dir_dist(0, 1);
+        
+        // Generate random number of points if not specified
+        if (num_points <= 0)
+            num_points = point_dist(gen);
+        
+        // Random X position (horizontal position of the line)
+        float x = 0.2f + dist(gen) * 0.6f; // Keep within bounds (0.2 to 0.8)
+        
+        // Random direction (bottom to top or top to bottom)
+        int direction = dir_dist(gen) == 0 ? 1 : -1;
+        
+        // Start position
+        float start_y = direction == 1 ? 0.1f : 0.9f;
+        
+        // Generate points along vertical line
+        for (int i = 0; i < num_points; ++i)
+        {
+            float t = static_cast<float>(i) / static_cast<float>(num_points - 1);
+            float y = start_y + direction * t * 0.8f; // Move across 80% of height
             
             // Clamp to 0-1 range
             x = juce::jlimit(0.0f, 1.0f, x);

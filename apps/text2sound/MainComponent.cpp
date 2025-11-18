@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "VizWindow.h"
 #include <flowerjuce/Components/ModelParameterDialog.h>
 #include <flowerjuce/Components/SettingsDialog.h>
 #include <flowerjuce/Components/ConfigManager.h>
@@ -19,6 +20,8 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     : syncButton("sync all"),
       modelParamsButton("model params"),
       settingsButton("settings"),
+      sinksButton("sinks"),
+      vizButton("viz"),
       titleLabel("Title", "tape looper"),
       audioDeviceDebugLabel("AudioDebug", ""),
       midiLearnOverlay(midiLearnManager),
@@ -41,7 +44,7 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     for (int i = 0; i < actualNumTracks; ++i)
     {
         DBG_SEGFAULT("Creating LooperTrack " + juce::String(i));
-        tracks.push_back(std::make_unique<LooperTrack>(looperEngine, i, gradioUrlProvider, &midiLearnManager, pannerType));
+        tracks.push_back(std::make_shared<LooperTrack>(looperEngine, i, gradioUrlProvider, &midiLearnManager, pannerType));
         // Initialize track with shared model params
         tracks[i]->updateModelParams(sharedModelParams);
         // Initialize track with current smoothing time
@@ -101,6 +104,14 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     settingsButton.onClick = [this] { settingsButtonClicked(); };
     addAndMakeVisible(settingsButton);
     
+    // Setup sinks button
+    sinksButton.onClick = [this] { sinksButtonClicked(); };
+    addAndMakeVisible(sinksButton);
+    
+    // Setup viz button
+    vizButton.onClick = [this] { vizButtonClicked(); };
+    addAndMakeVisible(vizButton);
+    
     // Create settings dialog
     settingsDialog = std::make_unique<Shared::SettingsDialog>(
         pannerSmoothingTime,
@@ -127,6 +138,10 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
             // Save to config immediately when changed
             Shared::ConfigManager::saveStringValue("text2sound", "trajectoryDir", newDir);
             DBG("MainComponent: Saved trajectory directory to config: " + newDir);
+        },
+        cleatGainPower,
+        [this](float gainPower) {
+            setCLEATGainPower(gainPower);
         }
     );
     
@@ -176,6 +191,12 @@ MainComponent::~MainComponent()
     
     removeKeyListener(&midiLearnOverlay);
     
+    // Close sinks window before tracks are destroyed
+    // Note: sinksComponent ownership was transferred to sinksWindow, so destroying
+    // the window will automatically delete the component
+    sinksWindow = nullptr;
+    sinksComponent = nullptr; // Already nullptr after release(), but set for clarity
+    
     // Save MIDI mappings
     auto appDataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
                         .getChildFile("TapeLooper");
@@ -191,6 +212,17 @@ MainComponent::~MainComponent()
     Shared::ConfigManager::saveStringValue("text2sound", "trajectoryDir", trajectoryDir);
     DBG("MainComponent: Saved trajectory directory to config: " + trajectoryDir);
     
+    // Clear LookAndFeel references from all child components BEFORE clearing our own
+    // This prevents the assertion in LookAndFeel destructor about active weak references
+    for (auto& track : tracks)
+    {
+        if (track != nullptr)
+        {
+            track->clearLookAndFeel();
+        }
+    }
+    
+    // Now safe to clear our own LookAndFeel reference
     setLookAndFeel(nullptr);
 }
 
@@ -214,6 +246,10 @@ void MainComponent::resized()
     modelParamsButton.setBounds(controlArea.removeFromLeft(120));
     controlArea.removeFromLeft(10);
     settingsButton.setBounds(controlArea.removeFromLeft(120));
+    controlArea.removeFromLeft(10);
+    sinksButton.setBounds(controlArea.removeFromLeft(120));
+    controlArea.removeFromLeft(10);
+    vizButton.setBounds(controlArea.removeFromLeft(120));
     bounds.removeFromTop(10);
 
     // Tracks arranged horizontally (columns) with fixed width
@@ -289,6 +325,17 @@ juce::String MainComponent::getGradioUrl() const
     return gradioUrl;
 }
 
+void MainComponent::setCLEATGainPower(float gainPower)
+{
+    cleatGainPower = gainPower;
+    DBG("MainComponent: CLEAT gain power updated to " + juce::String(gainPower));
+    // Apply to all CLEAT panners in all tracks
+    for (auto& track : tracks)
+    {
+        track->setCLEATGainPower(gainPower);
+    }
+}
+
 void MainComponent::modelParamsButtonClicked()
 {
     showModelParams();
@@ -320,10 +367,97 @@ void MainComponent::showSettings()
         settingsDialog->updateSmoothingTime(pannerSmoothingTime);
         settingsDialog->updateGradioUrl(getGradioUrl());
         settingsDialog->updateTrajectoryDir(trajectoryDir);
+        settingsDialog->updateCLEATGainPower(cleatGainPower);
         settingsDialog->refreshMidiInfo();
         
         // Show the dialog (non-modal)
         settingsDialog->setVisible(true);
         settingsDialog->toFront(true);
+    }
+}
+
+void MainComponent::sinksButtonClicked()
+{
+    // Check if window needs to be created or recreated (if closed by user)
+    if (sinksWindow == nullptr || sinksComponent == nullptr || 
+        (sinksWindow != nullptr && !sinksWindow->isVisible()))
+    {
+        // If window exists but was closed, clean it up first
+        if (sinksWindow != nullptr)
+        {
+            sinksWindow = nullptr;
+            sinksComponent = nullptr;
+        }
+        
+        // Create sinks component (without CLEAT panner, so no pink boxes)
+        const auto& channelLevels = looperEngine.getChannelLevels();
+        sinksComponent = std::make_unique<flowerjuce::SinksWindow>(channelLevels);
+        
+        // Create dialog window
+        sinksWindow = std::make_unique<SinksDialogWindow>(
+            "Sinks",
+            juce::Colours::black
+        );
+        
+        // Transfer ownership to DialogWindow (release from unique_ptr)
+        sinksWindow->setContentOwned(sinksComponent.release(), true);
+        sinksWindow->setResizable(true, true);
+        sinksWindow->setSize(500, 500);
+        sinksWindow->centreWithSize(500, 500);
+        sinksWindow->setVisible(true);
+        sinksWindow->toFront(true);
+    }
+    else
+    {
+        // Window already exists and is visible, bring it to front
+        sinksWindow->toFront(true);
+    }
+}
+
+void MainComponent::vizButtonClicked()
+{
+    // Check if window needs to be created or recreated (if closed by user)
+    if (vizWindow == nullptr || vizComponent == nullptr || 
+        (vizWindow != nullptr && !vizWindow->isVisible()))
+    {
+        // If window exists but was closed, clean it up first
+        if (vizWindow != nullptr)
+        {
+            vizWindow = nullptr;
+            vizComponent = nullptr;
+        }
+        
+        // Create vector of weak_ptr to tracks (safe access)
+        std::vector<std::weak_ptr<LooperTrack>> trackWeakPtrs;
+        trackWeakPtrs.reserve(tracks.size());
+        for (size_t i = 0; i < tracks.size(); ++i)
+        {
+            if (tracks[i] != nullptr)
+            {
+                trackWeakPtrs.push_back(tracks[i]); // Implicit conversion from shared_ptr to weak_ptr
+            }
+        }
+        
+        // Create viz component
+        vizComponent = std::make_unique<VizWindow>(looperEngine, std::move(trackWeakPtrs));
+        
+        // Create dialog window
+        vizWindow = std::make_unique<VizDialogWindow>(
+            "Viz",
+            juce::Colours::black
+        );
+        
+        // Transfer ownership to DialogWindow (release from unique_ptr)
+        vizWindow->setContentOwned(vizComponent.release(), true);
+        vizWindow->setResizable(true, true);
+        vizWindow->setSize(800, 800);
+        vizWindow->centreWithSize(800, 800);
+        vizWindow->setVisible(true);
+        vizWindow->toFront(true);
+    }
+    else
+    {
+        // Window already exists and is visible, bring it to front
+        vizWindow->toFront(true);
     }
 }

@@ -251,16 +251,21 @@ void Panner2DComponent::start_playback()
     m_smoothed_pan_y.setCurrentAndTargetValue(m_pan_y);
     
     // Start timer for playback animation
-    // If smoothing is enabled, we need timer for smooth updates
-    // If onset triggering is disabled, we need timer for trajectory advancement
-    if (!m_onset_triggering_enabled || m_smoothing_time > 0.0)
+    // Timer is always needed for visual updates (repaints and smoothing if enabled)
+    // If onset triggering is enabled, trajectory advances only on onsets, but timer handles visual updates
+    if (m_smoothing_time > 0.0)
     {
-        startTimer(16); // ~60fps for smooth updates (especially important for smoothing)
+        startTimer(16); // ~60fps for smooth updates
+    }
+    else if (m_onset_triggering_enabled)
+    {
+        // Onset triggering enabled, no smoothing - timer needed for visual updates when onsets advance trajectory
+        startTimer(16); // ~60fps for responsive visual updates
     }
     else
     {
-        // No timer needed - only onsets will advance, no smoothing
-        stopTimer();
+        // Timer-based advancement, no smoothing
+        startTimer(100); // 100ms = 10fps
     }
 }
 
@@ -294,17 +299,18 @@ void Panner2DComponent::set_onset_triggering_enabled(bool enabled)
     {
         if (enabled)
         {
-            // If smoothing is enabled, we still need timer for smooth updates
-            // Otherwise, stop timer - will advance ONLY on onsets
+            // Timer is always needed for visual updates (repaints and smoothing if enabled)
+            // Trajectory advancement happens only on onsets, but timer handles visual updates
             if (m_smoothing_time > 0.0)
             {
                 startTimer(16); // ~60fps for smooth updates
-                DBG("Panner2DComponent: Onset triggering enabled with smoothing - timer running for smooth updates only");
+                DBG("Panner2DComponent: Onset triggering enabled with smoothing - timer running for smooth updates");
             }
             else
             {
-                stopTimer();
-                DBG("Panner2DComponent: Onset triggering enabled - timer stopped, trajectory will advance only on onsets");
+                // Still need timer for repaints when position changes via onset advancement
+                startTimer(16); // ~60fps for responsive visual updates
+                DBG("Panner2DComponent: Onset triggering enabled - timer running for visual updates, trajectory advances only on onsets");
             }
         }
         else
@@ -344,15 +350,15 @@ void Panner2DComponent::set_smoothing_time(double smoothing_time_seconds)
             // Need timer for smooth updates
             startTimer(16); // ~60fps for smooth updates
         }
-        else if (!m_onset_triggering_enabled)
+        else if (m_onset_triggering_enabled)
         {
-            // No smoothing, but timer needed for trajectory advancement
-            startTimer(100); // 100ms = 10fps
+            // No smoothing, but onset triggering enabled - timer needed for visual updates
+            startTimer(32); // ~30fps for responsive visual updates
         }
         else
         {
-            // No smoothing, onset triggering enabled - no timer needed
-            stopTimer();
+            // No smoothing, timer-based advancement
+            startTimer(100); // 100ms = 10fps
         }
     }
     
@@ -440,13 +446,27 @@ void Panner2DComponent::timerCallback()
         }
     }
     
-    // Repaint if needed
-    if (needs_repaint)
+    // Always repaint when smoothing is enabled (for smooth visual updates)
+    // When onset triggering is enabled without smoothing, repaint is also needed periodically
+    // to ensure UI stays responsive and shows any position changes from onset advancement
+    if (needs_repaint || m_smoothing_time > 0.0)
     {
         repaint();
         if (m_on_pan_change)
         {
             m_on_pan_change(m_pan_x, m_pan_y);
+        }
+    }
+    // Even if no changes detected, repaint periodically when onset triggering is enabled
+    // to ensure visual updates are shown (position changes happen via advance_trajectory_onset)
+    else if (m_onset_triggering_enabled)
+    {
+        // Repaint at lower frequency when no changes (every few timer ticks)
+        m_repaint_counter++;
+        if (m_repaint_counter >= 4) // Repaint every 4 timer ticks (~15fps when timer is 60fps)
+        {
+            m_repaint_counter = 0;
+            repaint();
         }
     }
 }

@@ -93,6 +93,7 @@ private:
     std::map<juce::String, MidiLearnableParameter> parameters;
     std::map<int, juce::String> ccToParameterMap;  // CC number -> parameter ID
     std::map<juce::String, int> parameterToCcMap;  // parameter ID -> CC number
+    std::map<juce::String, int> pendingMappings;   // parameter ID -> CC number (for parameters not yet registered)
     
     juce::String learningParameterId;
     std::unique_ptr<juce::MidiInput> midiInput;
@@ -101,6 +102,7 @@ private:
     juce::CriticalSection mapLock;
     
     void processControlChange(int ccNumber, int ccValue);
+    void restorePendingMapping(const juce::String& parameterId);
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiLearnManager)
 };

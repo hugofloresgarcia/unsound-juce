@@ -28,6 +28,13 @@ public:
         // Don't initialize audio device manager here - wait until setup is complete
         // This prevents conflicts when applying device settings from the startup dialog
         // Initialize buffers with default sample rate (will be updated when device starts)
+        
+        // Initialize channel level meters
+        for (auto& level : m_channel_levels)
+        {
+            level.store(0.0f);
+        }
+        
         DBG_SEGFAULT("Initializing track engines");
         for (size_t i = 0; i < m_track_engines.size(); ++i)
         {
@@ -155,6 +162,27 @@ public:
                                         output_channel_data, num_output_channels,
                                         num_samples, debug_this_track);
             DBG_SEGFAULT("Track " + juce::String(i) + " processed");
+        }
+        
+        // Update channel level meters (peak detection)
+        for (int channel = 0; channel < juce::jmin(16, num_output_channels); ++channel)
+        {
+            if (output_channel_data[channel] != nullptr)
+            {
+                // Find peak in this channel
+                float peak = 0.0f;
+                for (int sample = 0; sample < num_samples; ++sample)
+                {
+                    peak = juce::jmax(peak, std::abs(output_channel_data[channel][sample]));
+                }
+                
+                // Update level meter (peak hold with decay)
+                float currentLevel = m_channel_levels[channel].load();
+                if (peak > currentLevel)
+                {
+                    m_channel_levels[channel].store(peak);
+                }
+            }
         }
         
                 DBG_SEGFAULT("EXIT: audioDeviceIOCallbackWithContext");
@@ -301,13 +329,21 @@ public:
         DBG_SEGFAULT("EXIT: start_audio");
     }
 
+    // Get channel levels for visualization (16 channels)
+    std::array<std::atomic<float>, 16>& getChannelLevels() { return m_channel_levels; }
+    const std::array<std::atomic<float>, 16>& getChannelLevels() const { return m_channel_levels; }
+
 private:
     static constexpr int m_num_tracks = 8;
     static constexpr double m_max_buffer_duration_seconds = 10.0;
+    static constexpr float m_level_decay_factor{0.99f}; // Decay factor for level meters
 
     std::array<TrackEngineType, 8> m_track_engines;
     juce::AudioDeviceManager m_audio_device_manager;
     std::atomic<double> m_current_sample_rate{44100.0};
+    
+    // Channel level meters (peak detection with decay)
+    mutable std::array<std::atomic<float>, 16> m_channel_levels;
 };
 
 // Include track engine headers for type aliases

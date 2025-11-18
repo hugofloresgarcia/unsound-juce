@@ -37,6 +37,10 @@ public:
     // Get current smoothed pan positions (actual values being used for audio)
     float get_smoothed_pan_x() const { return m_smooth_x.getCurrentValue(); }
     float get_smoothed_pan_y() const { return m_smooth_y.getCurrentValue(); }
+    
+    // Gain power factor control (default 1.0, higher values increase gain differences)
+    void set_gain_power(float power);
+    float get_gain_power() const { return m_gain_power.load(); }
 
 private:
     std::atomic<float> m_pan_x{0.5f}; // Default to center
@@ -44,5 +48,7 @@ private:
     
     juce::SmoothedValue<float> m_smooth_x{0.5f}; // Smoothed x position
     juce::SmoothedValue<float> m_smooth_y{0.5f}; // Smoothed y position
+    
+    std::atomic<float> m_gain_power{1.0f}; // Gain power factor (default 1.0 = no change)
 };
 

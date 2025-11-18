@@ -28,6 +28,9 @@ void MidiLearnManager::registerParameter(const MidiLearnableParameter& param)
 {
     juce::ScopedLock lock(mapLock);
     parameters[param.id] = param;
+    
+    // Check if there's a pending mapping for this parameter and restore it
+    restorePendingMapping(param.id);
 }
 
 void MidiLearnManager::unregisterParameter(const juce::String& parameterId)
@@ -45,6 +48,9 @@ void MidiLearnManager::unregisterParameter(const juce::String& parameterId)
         ccToParameterMap.erase(ccNumber);
         parameterToCcMap.erase(it);
     }
+    
+    // Remove any pending mapping for this parameter
+    pendingMappings.erase(parameterId);
 }
 
 void MidiLearnManager::startLearning(const juce::String& parameterId)
@@ -85,6 +91,12 @@ void MidiLearnManager::clearMapping(const juce::String& parameterId)
         parameterToCcMap.erase(it);
         juce::Logger::writeToLog("MidiLearnManager: Cleared mapping for: " + parameterId);
     }
+    
+    // Also clear any pending mapping
+    if (pendingMappings.erase(parameterId) > 0)
+    {
+        juce::Logger::writeToLog("MidiLearnManager: Cleared pending mapping for: " + parameterId);
+    }
 }
 
 void MidiLearnManager::clearAllMappings()
@@ -92,6 +104,7 @@ void MidiLearnManager::clearAllMappings()
     juce::ScopedLock lock(mapLock);
     ccToParameterMap.clear();
     parameterToCcMap.clear();
+    pendingMappings.clear();
     juce::Logger::writeToLog("MidiLearnManager: Cleared all mappings");
 }
 
@@ -225,23 +238,36 @@ void MidiLearnManager::loadMappings(const juce::File& file)
     
     juce::ScopedLock lock(mapLock);
     
+    // Clear existing mappings and pending mappings
     ccToParameterMap.clear();
     parameterToCcMap.clear();
+    pendingMappings.clear();
+    
+    int restoredCount = 0;
+    int pendingCount = 0;
     
     for (auto* mapping : xml->getChildWithTagNameIterator("Mapping"))
     {
         juce::String parameterId = mapping->getStringAttribute("parameterId");
         int ccNumber = mapping->getIntAttribute("ccNumber");
         
-        // Only restore mapping if parameter still exists
+        // Restore mapping if parameter exists, otherwise store as pending
         if (parameters.find(parameterId) != parameters.end())
         {
             ccToParameterMap[ccNumber] = parameterId;
             parameterToCcMap[parameterId] = ccNumber;
+            restoredCount++;
+        }
+        else
+        {
+            // Store as pending mapping for when parameter is registered later
+            pendingMappings[parameterId] = ccNumber;
+            pendingCount++;
         }
     }
     
-    juce::Logger::writeToLog("MidiLearnManager: Loaded " + juce::String(parameterToCcMap.size()) + " mappings");
+    juce::Logger::writeToLog("MidiLearnManager: Loaded " + juce::String(restoredCount) + " mappings, " + 
+                            juce::String(pendingCount) + " pending");
 }
 
 void MidiLearnManager::handleIncomingMidiMessage(juce::MidiInput* source, const juce::MidiMessage& message)
@@ -403,6 +429,33 @@ void MidiLearnManager::handleIncomingMidiMessage(juce::MidiInput* source, const 
             // Normal mode - process CC messages
             processControlChange(ccNumber, ccValue);
         }
+    }
+}
+
+void MidiLearnManager::restorePendingMapping(const juce::String& parameterId)
+{
+    // mapLock should already be held by caller
+    
+    auto pendingIt = pendingMappings.find(parameterId);
+    if (pendingIt != pendingMappings.end())
+    {
+        int ccNumber = pendingIt->second;
+        
+        // Remove old mapping for this CC if it exists
+        auto oldParamIt = ccToParameterMap.find(ccNumber);
+        if (oldParamIt != ccToParameterMap.end())
+        {
+            parameterToCcMap.erase(oldParamIt->second);
+        }
+        
+        // Create the mapping
+        ccToParameterMap[ccNumber] = parameterId;
+        parameterToCcMap[parameterId] = ccNumber;
+        
+        // Remove from pending
+        pendingMappings.erase(pendingIt);
+        
+        juce::Logger::writeToLog("MidiLearnManager: Restored pending mapping for " + parameterId + " -> CC " + juce::String(ccNumber));
     }
 }
 

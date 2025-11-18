@@ -50,6 +50,13 @@ float CLEATPanner::get_pan_y() const
     return m_pan_y.load();
 }
 
+void CLEATPanner::set_gain_power(float power)
+{
+    // Clamp power to reasonable range (0.1 to 3.0)
+    power = juce::jlimit(0.1f, 3.0f, power);
+    m_gain_power.store(power);
+}
+
 void CLEATPanner::process_block(const float* const* input_channel_data,
                                int num_input_channels,
                                float* const* output_channel_data,
@@ -63,6 +70,9 @@ void CLEATPanner::process_block(const float* const* input_channel_data,
     // Get input channel (mono)
     const float* input = input_channel_data[0];
     
+    // Get current gain power factor
+    float gain_power = m_gain_power.load();
+    
     // Process samples with per-sample smoothing (matching Max/MSP line~ behavior)
     for (int sample = 0; sample < num_samples; ++sample)
     {
@@ -71,7 +81,7 @@ void CLEATPanner::process_block(const float* const* input_channel_data,
         float y = m_smooth_y.getNextValue();
         
         // Compute panning gains using smoothed positions (16 channels, row-major)
-        auto gains = PanningUtils::compute_cleat_gains(x, y);
+        auto gains = PanningUtils::compute_cleat_gains(x, y, gain_power);
         
         float input_sample = input[sample];
         

@@ -213,7 +213,9 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
         if (panner2DComponent != nullptr)
         {
             panner2DComponent->set_onset_triggering_enabled(enabled);
-            trajectoryPlaying.store(panner2DComponent->is_playing()); // Update cached state
+            // Update cached trajectory playing state immediately (for audio thread access)
+            trajectoryPlaying.store(panner2DComponent->is_playing());
+            DBG("LooperTrack: Onset toggle [" + juce::String(enabled ? "ON" : "OFF") + "], trajectory playing: " + (panner2DComponent->is_playing() ? "true" : "false"));
         }
     };
     addAndMakeVisible(onsetToggle);
@@ -347,6 +349,21 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     }
     
     addAndMakeVisible(parameterKnobs);
+    
+    // Setup cutoff knob (above level control)
+    cutoffKnob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    cutoffKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    cutoffKnob.setRange(20.0, 20000.0, 1.0);
+    cutoffKnob.setValue(20000.0); // Default to 20kHz (no filtering)
+    cutoffKnob.setDoubleClickReturnValue(true, 20000.0);
+    cutoffKnob.onValueChange = [this] {
+        looperEngine.get_track_engine(trackIndex).set_filter_cutoff(static_cast<float>(cutoffKnob.getValue()));
+    };
+    addAndMakeVisible(cutoffKnob);
+    cutoffLabel.setText("cutoff", juce::dontSendNotification);
+    cutoffLabel.setJustificationType(juce::Justification::centred);
+    cutoffLabel.setFont(juce::FontOptions(11.0f));
+    addAndMakeVisible(cutoffLabel);
     
     // Setup level control
     levelControl.onLevelChange = [this](double value) {
@@ -533,6 +550,21 @@ void LooperTrack::applyLookAndFeel()
     }
 }
 
+void LooperTrack::clearLookAndFeel()
+{
+    // Clear LookAndFeel references from all components that use it
+    // This must be called before the parent's LookAndFeel is destroyed
+    trackLabel.setLookAndFeel(nullptr);
+    resetButton.setLookAndFeel(nullptr);
+    generateButton.setLookAndFeel(nullptr);
+    textPromptEditor.setLookAndFeel(nullptr);
+    textPromptLabel.setLookAndFeel(nullptr);
+    autogenToggle.setLookAndFeel(nullptr);
+    // Also clear references to our own emptyToggleLookAndFeel
+    trajectoryToggle.setLookAndFeel(nullptr);
+    onsetToggle.setLookAndFeel(nullptr);
+}
+
 void LooperTrack::paint(juce::Graphics& g)
 {
     auto& track = looperEngine.get_track(trackIndex);
@@ -626,6 +658,21 @@ void LooperTrack::paint(juce::Graphics& g)
             g.drawText(scaleText, knobBounds, juce::Justification::centred);
         }
     }
+    
+    // Draw cutoff knob value label
+    if (cutoffKnob.isVisible() && cutoffKnob.getWidth() > 0)
+    {
+        auto knobBounds = cutoffKnob.getBounds();
+        double cutoffValue = cutoffKnob.getValue();
+        juce::String cutoffText;
+        if (cutoffValue >= 1000.0)
+            cutoffText = juce::String(cutoffValue / 1000.0, 1) + "k";
+        else
+            cutoffText = juce::String(static_cast<int>(cutoffValue));
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::FontOptions(10.0f));
+        g.drawText(cutoffText, knobBounds, juce::Justification::centred);
+    }
 }
 
 void LooperTrack::resized()
@@ -690,14 +737,30 @@ void LooperTrack::resized()
     // Level control and VU meter with knobs and autogen toggle
     auto controlsArea = bottomArea.removeFromTop(controlsHeight);
     
-    // Left side: VU meter (levelControl)
-    levelControl.setBounds(controlsArea.removeFromLeft(115)); // 80 + 5 + 30
+    // Left column: cutoff knob above level control (stacked vertically)
+    const int cutoffKnobSize = 60;
+    const int cutoffLabelHeight = 15;
+    const int leftColumnWidth = 115; // Match level control width
+    auto leftColumn = controlsArea.removeFromLeft(leftColumnWidth);
+    
+    // Cutoff knob at top
+    auto cutoffArea = leftColumn.removeFromTop(cutoffKnobSize + cutoffLabelHeight);
+    cutoffKnob.setBounds(cutoffArea.removeFromTop(cutoffKnobSize));
+    cutoffLabel.setBounds(cutoffArea);
+    leftColumn.removeFromTop(spacingSmall);
+    
+    // Level control below cutoff knob (uses remaining height)
+    levelControl.setBounds(leftColumn);
     controlsArea.removeFromLeft(spacingSmall);
     
-    // Right side: knobs above autogen toggle
+    // Right side: parameter knobs in same height container as level control, autogen toggle below
     auto rightSide = controlsArea;
-    auto knobArea = rightSide.removeFromTop(knobAreaHeight);
-    parameterKnobs.setBounds(knobArea);
+    auto sharedHeightArea = rightSide.removeFromTop(knobAreaHeight);
+    
+    // Parameter knobs (speed, duration) in shared height area
+    parameterKnobs.setBounds(sharedHeightArea);
+    
+    // Autogen toggle below
     rightSide.removeFromTop(spacingSmall);
     autogenToggle.setBounds(rightSide.removeFromTop(30)); // Toggle button height
     bottomArea.removeFromTop(spacingSmall);
@@ -917,6 +980,45 @@ void LooperTrack::setPannerSmoothingTime(double smoothingTime)
     }
 }
 
+void LooperTrack::setCLEATGainPower(float gainPower)
+{
+    if (panner != nullptr && pannerType == "cleat")
+    {
+        if (auto* cleatPanner = dynamic_cast<CLEATPanner*>(panner.get()))
+        {
+            cleatPanner->set_gain_power(gainPower);
+            DBG("LooperTrack: CLEAT gain power set to " + juce::String(gainPower) + " for track " + juce::String(trackIndex));
+        }
+    }
+}
+
+bool LooperTrack::getPanPosition(float& x, float& y) const
+{
+    if (panner2DComponent != nullptr)
+    {
+        // Get smoothed pan position if available
+        x = panner2DComponent->get_pan_x();
+        y = panner2DComponent->get_pan_y();
+        return true;
+    }
+    else if (pannerType.toLowerCase() == "stereo" && panner != nullptr)
+    {
+        // For stereo panner, get pan value and map to 2D
+        if (auto* stereoPanner = dynamic_cast<const StereoPanner*>(panner.get()))
+        {
+            float panValue = stereoPanner->get_pan();
+            x = panValue; // Map to x coordinate (0.0 = left, 1.0 = right)
+            y = 0.5f; // Center y position for stereo
+            return true;
+        }
+    }
+    
+    // No panner available
+    x = 0.5f;
+    y = 0.5f;
+    return false;
+}
+
 
 juce::var LooperTrack::getDefaultText2SoundParams()
 {
@@ -1118,6 +1220,9 @@ void LooperTrack::resetButtonClicked()
     track.m_read_head.reset();
     
     // Reset controls to defaults
+    cutoffKnob.setValue(20000.0, juce::dontSendNotification); // cutoff (default 20kHz = no filtering)
+    looperEngine.get_track_engine(trackIndex).set_filter_cutoff(20000.0f);
+    
     parameterKnobs.setKnobValue(0, 1.0, juce::dontSendNotification); // speed
     track.m_read_head.set_speed(1.0f);
     
@@ -1269,6 +1374,14 @@ void LooperTrack::generatePath(const juce::String& pathType)
     {
         coords = PanningUtils::generate_spiral_path();
     }
+    else if (pathTypeLower == "hl")
+    {
+        coords = PanningUtils::generate_horizontal_line_path();
+    }
+    else if (pathTypeLower == "vl")
+    {
+        coords = PanningUtils::generate_vertical_line_path();
+    }
     else
     {
         DBG("LooperTrack: Unknown path type: " + pathType);
@@ -1297,7 +1410,19 @@ void LooperTrack::feedAudioSample(float sample)
     // Process onset detection directly here for low latency
     
     // Only process if onset toggle is enabled and trajectory is playing (use atomic flags)
-    if (!onsetToggleEnabled.load() || !trajectoryPlaying.load())
+    bool onsetEnabled = onsetToggleEnabled.load();
+    bool trajPlaying = trajectoryPlaying.load();
+    
+    // Debug: Log state periodically (every 10000 samples ~= every 0.2s at 44.1kHz)
+    // static int sample_count = 0;
+    // sample_count++;
+    // if (sample_count % 10000 == 0)
+    // {
+    //     // DBG("LooperTrack[" + juce::String(trackIndex) + "]: feedAudioSample - onsetEnabled=" + 
+    //         (onsetEnabled ? "true" : "false") + ", trajPlaying=" + (trajPlaying ? "true" : "false"));
+    // }
+    
+    if (!onsetEnabled || !trajPlaying)
         return;
     
     // Add sample to processing buffer (lock-free, single writer from audio thread)
@@ -1321,9 +1446,30 @@ void LooperTrack::feedAudioSample(float sample)
             // Process block for onset detection
             bool detected = onsetDetector.processBlock(onsetProcessingBuffer.data(), onsetBlockSize, sample_rate);
             
+            // Debug: Log loudness periodically to see if we're getting audio
+            static int block_count = 0;
+            block_count++;
+            if (block_count % 100 == 0) // Every 100 blocks (~12.8s at 128 samples/block, 44.1kHz)
+            {
+                // Calculate loudness manually for debugging
+                float sumSquares = 0.0f;
+                for (int i = 0; i < onsetBlockSize; ++i)
+                {
+                    sumSquares += onsetProcessingBuffer[i] * onsetProcessingBuffer[i];
+                }
+                float rms = std::sqrt(sumSquares / static_cast<float>(onsetBlockSize));
+                float peak = 0.0f;
+                for (int i = 0; i < onsetBlockSize; ++i)
+                {
+                    peak = juce::jmax(peak, std::abs(onsetProcessingBuffer[i]));
+                }
+                DBG("LooperTrack[" + juce::String(trackIndex) + "]: Audio levels - RMS=" + juce::String(rms, 4) + 
+                    " Peak=" + juce::String(peak, 4) + " Threshold=" + juce::String(onsetDetector.getThreshold(), 4));
+            }
+            
             if (detected)
             {
-                // DBG("LooperTrack: Onset detected in track " + juce::String(trackIndex) + " (audio thread) - advancing trajectory");
+                DBG("LooperTrack[" + juce::String(trackIndex) + "]: Onset detected! (audio thread) - advancing trajectory");
                 
                 // Update atomic flags for UI thread
                 onsetDetected.store(true);
@@ -1353,9 +1499,18 @@ void LooperTrack::timerCallback()
     transportControls.setPlayState(modelIsPlaying);
     
     // Update cached trajectory playing state (for audio thread access)
+    // Only update if state actually changed to avoid excessive logging
     if (panner2DComponent != nullptr)
     {
-        trajectoryPlaying.store(panner2DComponent->is_playing());
+        bool isPlaying = panner2DComponent->is_playing();
+        bool currentStoredState = trajectoryPlaying.load();
+        
+        // Only update and log if state actually changed
+        if (isPlaying != currentStoredState)
+        {
+            trajectoryPlaying.store(isPlaying);
+            DBG("LooperTrack[" + juce::String(trackIndex) + "]: Trajectory playing state changed: " + (isPlaying ? "PLAYING" : "STOPPED"));
+        }
     }
     
     // Note: Onset detection is now processed directly in feedAudioSample() from audio thread
@@ -1432,9 +1587,16 @@ void LooperTrack::handleAsyncUpdate()
     if (pendingTrajectoryAdvance.load())
     {
         pendingTrajectoryAdvance.store(false);
+        DBG("LooperTrack[" + juce::String(trackIndex) + "]: handleAsyncUpdate - advancing trajectory");
         if (panner2DComponent != nullptr)
         {
+            bool wasPlaying = panner2DComponent->is_playing();
+            DBG("LooperTrack[" + juce::String(trackIndex) + "]: panner2DComponent->is_playing()=" + (wasPlaying ? "true" : "false"));
             panner2DComponent->advance_trajectory_onset();
+        }
+        else
+        {
+            DBG("LooperTrack[" + juce::String(trackIndex) + "]: ERROR - panner2DComponent is null!");
         }
     }
     

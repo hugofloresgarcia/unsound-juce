@@ -39,6 +39,8 @@ private:
     juce::ToggleButton swirlsPathButton;
     juce::ToggleButton bouncePathButton;
     juce::ToggleButton spiralPathButton;
+    juce::ToggleButton horizontalLinePathButton;
+    juce::ToggleButton verticalLinePathButton;
     
     // Empty look and feel for toggle buttons (so they don't draw themselves)
     EmptyToggleLookAndFeel emptyToggleLookAndFeel;
@@ -50,6 +52,8 @@ private:
     juce::Colour swirlsColor{0xffed1683};   // Pink
     juce::Colour bounceColor{0xff00ff00};   // Green
     juce::Colour spiralColor{0xfff3d430};   // Yellow
+    juce::Colour horizontalLineColor{0xff00ffff}; // Cyan
+    juce::Colour verticalLineColor{0xffff00ff};   // Magenta
     
     void drawCustomPathButton(juce::Graphics& g, juce::ToggleButton& button, 
                               const juce::String& label, juce::Rectangle<int> bounds,

@@ -6,11 +6,28 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <flowerjuce/Panners/CLEATPanner.h>
 #include <flowerjuce/Panners/Panner2DComponent.h>
+#include <flowerjuce/Components/SinksWindow.h>
 #include <random>
 #include <array>
+#include <memory>
 
 namespace CLEATPinkNoiseTest
 {
+    // Custom DialogWindow that properly handles close button
+    class SinksDialogWindow : public juce::DialogWindow
+    {
+    public:
+        SinksDialogWindow(const juce::String& name, juce::Colour colour)
+            : juce::DialogWindow(name, colour, true, true)
+        {
+        }
+
+        void closeButtonPressed() override
+        {
+            // Hide the window instead of asserting
+            setVisible(false);
+        }
+    };
 
 class MainComponent : public juce::Component,
                       public juce::AudioIODeviceCallback,
@@ -59,7 +76,8 @@ private:
     
     // Channel level meters (peak detection with decay)
     std::array<std::atomic<float>, 16> channelLevels;
-    static constexpr float levelDecayFactor{0.99f}; // Faster decay for better responsiveness
+    // 0.89 per 50ms frame ≈ 0.7 second decay time constant (faster, more responsive)
+    static constexpr float levelDecayFactor{0.89f};
     
     // Track channel with maximum gain and channels within 3dB
     std::atomic<int> maxGainChannel{-1}; // -1 means no channel selected
@@ -76,9 +94,19 @@ private:
     juce::Slider levelSlider;
     juce::TextButton startStopButton;
     juce::TextButton startAudioButton;
+    juce::TextButton sinksButton;
+    juce::Slider gainPowerSlider;
+    juce::Label gainPowerLabel;
     std::unique_ptr<Panner2DComponent> panner2DComponent;
     bool isPlaying{false};
     bool audioDeviceInitialized{false};
+    
+    // Power gain factor for CLEAT panner (default 1.0 = no change)
+    float cleatGainPower{1.0f};
+    
+    // Sinks window
+    std::unique_ptr<SinksDialogWindow> sinksWindow;
+    std::unique_ptr<flowerjuce::SinksWindow> sinksComponent;
     
     // Helper to draw a single channel level meter
     void drawChannelMeter(juce::Graphics& g, juce::Rectangle<int> area, int channel, float level);
@@ -88,8 +116,11 @@ private:
     
     void startStopButtonClicked();
     void startAudioButtonClicked();
+    void sinksButtonClicked();
     void levelSliderValueChanged();
+    void gainPowerSliderValueChanged();
     void panPositionChanged(float x, float y);
+    void setCLEATGainPower(float gainPower);
     
     // Slider::Listener
     void sliderValueChanged(juce::Slider* slider) override;

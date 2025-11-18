@@ -25,6 +25,8 @@ target_sources(Text2SoundApp PRIVATE
     MainComponent.h
     LooperTrack.cpp
     LooperTrack.h
+    VizWindow.cpp
+    VizWindow.h
 )
 
 # Link flowerjuce library

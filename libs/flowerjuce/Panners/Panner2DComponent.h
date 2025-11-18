@@ -116,6 +116,9 @@ private:
     juce::SmoothedValue<float> m_smoothed_pan_x{0.5f};
     juce::SmoothedValue<float> m_smoothed_pan_y{0.5f};
     double m_last_sample_rate{44100.0};
+    
+    // Counter for periodic repaints when onset triggering is enabled
+    int m_repaint_counter{0};
 
     // Convert component-local coordinates to normalized pan coordinates
     juce::Point<float> component_to_pan(juce::Point<float> component_pos) const;

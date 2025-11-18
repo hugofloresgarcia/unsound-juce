@@ -43,8 +43,9 @@ namespace PanningUtils
     // Compute CLEAT panning gains for a mono signal
     // x: 0.0 = left, 1.0 = right
     // y: 0.0 = bottom, 1.0 = top
+    // gain_power: power factor for gain differences (default 1.0 = no change, higher = more contrast)
     // Returns: array of 16 gains (row-major: channels 0-3 = bottom row left-to-right)
-    std::array<float, 16> compute_cleat_gains(float x, float y);
+    std::array<float, 16> compute_cleat_gains(float x, float y, float gain_power = 1.0f);
     
     // Path generation functions for panner trajectories
     // All functions generate points in normalized 0-1 space (x, y)
@@ -67,5 +68,11 @@ namespace PanningUtils
     
     // Generate spiral path (from center outward)
     std::vector<std::pair<float, float>> generate_spiral_path(int num_points = 0);
+    
+    // Generate horizontal line path (moves left to right or right to left)
+    std::vector<std::pair<float, float>> generate_horizontal_line_path(int num_points = 0);
+    
+    // Generate vertical line path (moves bottom to top or top to bottom)
+    std::vector<std::pair<float, float>> generate_vertical_line_path(int num_points = 0);
 }
 
