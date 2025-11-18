@@ -21,7 +21,11 @@ public:
                    const juce::String& currentTrajectoryDir = juce::String(),
                    std::function<void(const juce::String&)> onTrajectoryDirChanged = nullptr,
                    float currentCLEATGainPower = 1.0f,
-                   std::function<void(float)> onCLEATGainPowerChanged = nullptr)
+                   std::function<void(float)> onCLEATGainPowerChanged = nullptr,
+                   int currentDBScanEps = 15,
+                   std::function<void(int)> onDBScanEpsChanged = nullptr,
+                   int currentDBScanMinPts = 3,
+                   std::function<void(int)> onDBScanMinPtsChanged = nullptr)
         : juce::DialogWindow("Settings",
                            juce::Colours::darkgrey,
                            true),
@@ -29,6 +33,8 @@ public:
           onGradioUrlChangedCallback(onGradioUrlChanged),
           onTrajectoryDirChangedCallback(onTrajectoryDirChanged),
           onCLEATGainPowerChangedCallback(onCLEATGainPowerChanged),
+          onDBScanEpsChangedCallback(onDBScanEpsChanged),
+          onDBScanMinPtsChangedCallback(onDBScanMinPtsChanged),
           midiLearnManagerPtr(midiLearnManager)
     {
         auto* content = new ContentComponent(currentSmoothingTime,
@@ -51,6 +57,16 @@ public:
             [this](float gainPower) {
                 if (onCLEATGainPowerChangedCallback)
                     onCLEATGainPowerChangedCallback(gainPower);
+            },
+            currentDBScanEps,
+            [this](int eps) {
+                if (onDBScanEpsChangedCallback)
+                    onDBScanEpsChangedCallback(eps);
+            },
+            currentDBScanMinPts,
+            [this](int minPts) {
+                if (onDBScanMinPtsChangedCallback)
+                    onDBScanMinPtsChangedCallback(minPts);
             });
         
         setContentOwned(content, true);
@@ -99,6 +115,8 @@ private:
     std::function<void(const juce::String&)> onGradioUrlChangedCallback;
     std::function<void(const juce::String&)> onTrajectoryDirChangedCallback;
     std::function<void(float)> onCLEATGainPowerChangedCallback;
+    std::function<void(int)> onDBScanEpsChangedCallback;
+    std::function<void(int)> onDBScanMinPtsChangedCallback;
     Shared::MidiLearnManager* midiLearnManagerPtr;
 
     class ContentComponent : public juce::Component
@@ -112,14 +130,22 @@ private:
                         const juce::String& currentTrajectoryDir,
                         std::function<void(const juce::String&)> onTrajectoryDirChanged,
                         float currentCLEATGainPower,
-                        std::function<void(float)> onCLEATGainPowerChanged)
+                        std::function<void(float)> onCLEATGainPowerChanged,
+                        int currentDBScanEps,
+                        std::function<void(int)> onDBScanEpsChanged,
+                        int currentDBScanMinPts,
+                        std::function<void(int)> onDBScanMinPtsChanged)
             : onSmoothingTimeChangedCallback(onSmoothingTimeChanged),
               onGradioUrlChangedCallback(onGradioUrlChanged),
               onTrajectoryDirChangedCallback(onTrajectoryDirChanged),
               onCLEATGainPowerChangedCallback(onCLEATGainPowerChanged),
+              onDBScanEpsChangedCallback(onDBScanEpsChanged),
+              onDBScanMinPtsChangedCallback(onDBScanMinPtsChanged),
               midiLearnManagerPtr(midiLearnManager),
               smoothingTimeSlider(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight),
-              cleatGainPowerSlider(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight)
+              cleatGainPowerSlider(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight),
+              dbscanEpsSlider(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight),
+              dbscanMinPtsSlider(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight)
         {
             auto font = juce::Font(juce::FontOptions()
                                   .withName(juce::Font::getDefaultMonospacedFontName())
@@ -159,6 +185,38 @@ private:
                         onCLEATGainPowerChangedCallback(static_cast<float>(cleatGainPowerSlider.getValue()));
                 };
                 addAndMakeVisible(cleatGainPowerSlider);
+            }
+            
+            // DBScan section (only if callbacks provided)
+            if (onDBScanEpsChangedCallback && onDBScanMinPtsChangedCallback)
+            {
+                dbscanLabel.setText("DBScan Clustering", juce::dontSendNotification);
+                dbscanLabel.setFont(font.boldened());
+                addAndMakeVisible(dbscanLabel);
+                
+                dbscanEpsLabel.setText("Eps:", juce::dontSendNotification);
+                dbscanEpsLabel.setJustificationType(juce::Justification::centredLeft);
+                addAndMakeVisible(dbscanEpsLabel);
+                
+                dbscanEpsSlider.setRange(5, 100, 1);
+                dbscanEpsSlider.setValue(currentDBScanEps);
+                dbscanEpsSlider.onValueChange = [this] {
+                    if (onDBScanEpsChangedCallback)
+                        onDBScanEpsChangedCallback(static_cast<int>(dbscanEpsSlider.getValue()));
+                };
+                addAndMakeVisible(dbscanEpsSlider);
+                
+                dbscanMinPtsLabel.setText("MinPts:", juce::dontSendNotification);
+                dbscanMinPtsLabel.setJustificationType(juce::Justification::centredLeft);
+                addAndMakeVisible(dbscanMinPtsLabel);
+                
+                dbscanMinPtsSlider.setRange(3, 20, 1);
+                dbscanMinPtsSlider.setValue(currentDBScanMinPts);
+                dbscanMinPtsSlider.onValueChange = [this] {
+                    if (onDBScanMinPtsChangedCallback)
+                        onDBScanMinPtsChangedCallback(static_cast<int>(dbscanMinPtsSlider.getValue()));
+                };
+                addAndMakeVisible(dbscanMinPtsSlider);
             }
             
             // Gradio section (only if callback provided)
@@ -335,6 +393,23 @@ private:
                 bounds.removeFromTop(20);
             }
             
+            // DBScan section (if visible)
+            if (dbscanLabel.isVisible())
+            {
+                dbscanLabel.setBounds(bounds.removeFromTop(25));
+                bounds.removeFromTop(10);
+                
+                dbscanEpsLabel.setBounds(bounds.removeFromTop(20));
+                bounds.removeFromTop(5);
+                dbscanEpsSlider.setBounds(bounds.removeFromTop(30));
+                bounds.removeFromTop(10);
+                
+                dbscanMinPtsLabel.setBounds(bounds.removeFromTop(20));
+                bounds.removeFromTop(5);
+                dbscanMinPtsSlider.setBounds(bounds.removeFromTop(30));
+                bounds.removeFromTop(20);
+            }
+            
             // MIDI section (if visible)
             if (midiLabel.isVisible())
             {
@@ -354,6 +429,8 @@ private:
         std::function<void(const juce::String&)> onGradioUrlChangedCallback;
         std::function<void(const juce::String&)> onTrajectoryDirChangedCallback;
         std::function<void(float)> onCLEATGainPowerChangedCallback;
+        std::function<void(int)> onDBScanEpsChangedCallback;
+        std::function<void(int)> onDBScanMinPtsChangedCallback;
         Shared::MidiLearnManager* midiLearnManagerPtr;
         
         juce::Label pannerLabel;
@@ -369,6 +446,12 @@ private:
         juce::Label trajectoryLabel;
         juce::Label trajectoryDirLabel;
         juce::TextEditor trajectoryDirEditor;
+        
+        juce::Label dbscanLabel;
+        juce::Label dbscanEpsLabel;
+        juce::Slider dbscanEpsSlider;
+        juce::Label dbscanMinPtsLabel;
+        juce::Slider dbscanMinPtsSlider;
         
         juce::Label midiLabel;
         juce::TextEditor midiInfoEditor;

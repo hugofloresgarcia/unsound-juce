@@ -1,0 +1,44 @@
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+name: Rtsne comparison
+
+jobs:
+  build:
+    name: Compare to Rtsne reference
+    runs-on: ubuntu-latest
+    container: bioconductor/bioconductor_docker:devel
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Get latest CMake
+      uses: lukka/get-cmake@latest
+
+    - name: Prebuild stuff
+      run: cmake -S . -B build -DQDTSNE_TESTS=OFF
+
+    - name: Set the package directory
+      run: echo "R_PKG_DIR=${R_HOME}/site-library" >> $GITHUB_ENV
+
+    - name: Restore the package directory
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.R_PKG_DIR }}
+        key: preinstalled-packages
+
+    - name: Install packages
+      shell: Rscript {0}
+      run: |
+        BiocManager::install(c("Rtsne", "BiocNeighbors", "Rcpp", "testthat"))
+
+    - name: Install binding package
+      run: R CMD INSTALL tests/R/package
+
+    - name: Run the comparisons
+      shell: Rscript {0}
+      run: |
+        setwd("tests/R/package/tests")
+        source("testthat.R")
