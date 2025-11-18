@@ -16,6 +16,9 @@ add_subdirectory(libs)
 # Add apps
 add_subdirectory(apps)
 
+# Add plugins
+add_subdirectory(plugins)
+
 # Test runner executable
 juce_add_console_app(PannerTestsRunner
     COMPANY_NAME "Unsound"
