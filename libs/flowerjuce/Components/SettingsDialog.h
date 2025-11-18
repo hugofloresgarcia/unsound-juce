@@ -25,7 +25,9 @@ public:
                    int currentDBScanEps = 15,
                    std::function<void(int)> onDBScanEpsChanged = nullptr,
                    int currentDBScanMinPts = 3,
-                   std::function<void(int)> onDBScanMinPtsChanged = nullptr)
+                   std::function<void(int)> onDBScanMinPtsChanged = nullptr,
+                   bool currentGenerateTriggersNewPath = false,
+                   std::function<void(bool)> onGenerateTriggersNewPathChanged = nullptr)
         : juce::DialogWindow("Settings",
                            juce::Colours::darkgrey,
                            true),
@@ -35,6 +37,7 @@ public:
           onCLEATGainPowerChangedCallback(onCLEATGainPowerChanged),
           onDBScanEpsChangedCallback(onDBScanEpsChanged),
           onDBScanMinPtsChangedCallback(onDBScanMinPtsChanged),
+          onGenerateTriggersNewPathChangedCallback(onGenerateTriggersNewPathChanged),
           midiLearnManagerPtr(midiLearnManager)
     {
         auto* content = new ContentComponent(currentSmoothingTime,
@@ -67,6 +70,11 @@ public:
             [this](int minPts) {
                 if (onDBScanMinPtsChangedCallback)
                     onDBScanMinPtsChangedCallback(minPts);
+            },
+            currentGenerateTriggersNewPath,
+            [this](bool enabled) {
+                if (onGenerateTriggersNewPathChangedCallback)
+                    onGenerateTriggersNewPathChangedCallback(enabled);
             });
         
         setContentOwned(content, true);
@@ -109,6 +117,12 @@ public:
         if (auto* content = dynamic_cast<ContentComponent*>(getContentComponent()))
             content->refreshMidiInfo();
     }
+    
+    void updateGenerateTriggersNewPath(bool enabled)
+    {
+        if (auto* content = dynamic_cast<ContentComponent*>(getContentComponent()))
+            content->updateGenerateTriggersNewPath(enabled);
+    }
 
 private:
     std::function<void(double)> onSmoothingTimeChangedCallback;
@@ -117,6 +131,7 @@ private:
     std::function<void(float)> onCLEATGainPowerChangedCallback;
     std::function<void(int)> onDBScanEpsChangedCallback;
     std::function<void(int)> onDBScanMinPtsChangedCallback;
+    std::function<void(bool)> onGenerateTriggersNewPathChangedCallback;
     Shared::MidiLearnManager* midiLearnManagerPtr;
 
     class ContentComponent : public juce::Component
@@ -134,13 +149,16 @@ private:
                         int currentDBScanEps,
                         std::function<void(int)> onDBScanEpsChanged,
                         int currentDBScanMinPts,
-                        std::function<void(int)> onDBScanMinPtsChanged)
-            : onSmoothingTimeChangedCallback(onSmoothingTimeChanged),
+                        std::function<void(int)> onDBScanMinPtsChanged,
+                        bool currentGenerateTriggersNewPath,
+                        std::function<void(bool)> onGenerateTriggersNewPathChanged)
+            :               onSmoothingTimeChangedCallback(onSmoothingTimeChanged),
               onGradioUrlChangedCallback(onGradioUrlChanged),
               onTrajectoryDirChangedCallback(onTrajectoryDirChanged),
               onCLEATGainPowerChangedCallback(onCLEATGainPowerChanged),
               onDBScanEpsChangedCallback(onDBScanEpsChanged),
               onDBScanMinPtsChangedCallback(onDBScanMinPtsChanged),
+              onGenerateTriggersNewPathChangedCallback(onGenerateTriggersNewPathChanged),
               midiLearnManagerPtr(midiLearnManager),
               smoothingTimeSlider(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight),
               cleatGainPowerSlider(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight),
@@ -271,6 +289,24 @@ private:
                 addAndMakeVisible(trajectoryDirEditor);
             }
             
+            // Generate triggers new path option (only if callback provided)
+            if (onGenerateTriggersNewPathChangedCallback)
+            {
+                generateTriggersNewPathToggle.setToggleState(currentGenerateTriggersNewPath, juce::dontSendNotification);
+                generateTriggersNewPathToggle.onClick = [this] {
+                    if (onGenerateTriggersNewPathChangedCallback)
+                    {
+                        onGenerateTriggersNewPathChangedCallback(generateTriggersNewPathToggle.getToggleState());
+                    }
+                };
+                addAndMakeVisible(generateTriggersNewPathToggle);
+                
+                generateTriggersNewPathLabel.setText("Generate triggers new path", juce::dontSendNotification);
+                generateTriggersNewPathLabel.setJustificationType(juce::Justification::centredLeft);
+                generateTriggersNewPathLabel.attachToComponent(&generateTriggersNewPathToggle, true);
+                addAndMakeVisible(generateTriggersNewPathLabel);
+            }
+            
             // MIDI section (only if manager provided)
             if (midiLearnManagerPtr != nullptr)
             {
@@ -318,6 +354,12 @@ private:
         {
             if (cleatGainPowerSlider.isVisible())
                 cleatGainPowerSlider.setValue(gainPower, juce::dontSendNotification);
+        }
+        
+        void updateGenerateTriggersNewPath(bool enabled)
+        {
+            if (generateTriggersNewPathToggle.isVisible())
+                generateTriggersNewPathToggle.setToggleState(enabled, juce::dontSendNotification);
         }
         
         void refreshMidiInfo()
@@ -393,6 +435,13 @@ private:
                 bounds.removeFromTop(20);
             }
             
+            // Generate triggers new path option (if visible)
+            if (generateTriggersNewPathToggle.isVisible())
+            {
+                generateTriggersNewPathToggle.setBounds(bounds.removeFromTop(20));
+                bounds.removeFromTop(20);
+            }
+            
             // DBScan section (if visible)
             if (dbscanLabel.isVisible())
             {
@@ -431,6 +480,7 @@ private:
         std::function<void(float)> onCLEATGainPowerChangedCallback;
         std::function<void(int)> onDBScanEpsChangedCallback;
         std::function<void(int)> onDBScanMinPtsChangedCallback;
+        std::function<void(bool)> onGenerateTriggersNewPathChangedCallback;
         Shared::MidiLearnManager* midiLearnManagerPtr;
         
         juce::Label pannerLabel;
@@ -446,6 +496,9 @@ private:
         juce::Label trajectoryLabel;
         juce::Label trajectoryDirLabel;
         juce::TextEditor trajectoryDirEditor;
+        
+        juce::ToggleButton generateTriggersNewPathToggle;
+        juce::Label generateTriggersNewPathLabel;
         
         juce::Label dbscanLabel;
         juce::Label dbscanEpsLabel;

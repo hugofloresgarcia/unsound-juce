@@ -298,6 +298,109 @@ juce::Result GradioClient::processRequestMultiple(const juce::File& inputAudioFi
     return juce::Result::ok();
 }
 
+juce::Result GradioClient::processRequestGenerateAudio(const juce::String& textPrompt,
+                                                        int durationSeconds,
+                                                        juce::Array<juce::File>& outputFiles)
+{
+    // Step 1: Prepare the JSON payload
+    // API signature: [textPrompt (string), durationSeconds (number)]
+    juce::Array<juce::var> dataItems;
+    dataItems.add(juce::var(textPrompt));
+    dataItems.add(juce::var(durationSeconds));
+    
+    juce::DynamicObject::Ptr payloadObj = new juce::DynamicObject();
+    payloadObj->setProperty("data", juce::var(dataItems));
+    
+    juce::String jsonBody = juce::JSON::toString(juce::var(payloadObj), false);
+    
+    DBG("GradioClient: POST payload for generate_audio: " + jsonBody);
+
+    // Step 2: Make POST request to get event ID
+    juce::String eventId;
+    auto postResult = makePostRequestForEventID("generate_audio", eventId, jsonBody);
+    if (postResult.failed())
+    {
+        return juce::Result::fail("Failed to make POST request: " + postResult.getErrorMessage());
+    }
+
+    DBG("GradioClient: Got event ID: " + eventId);
+
+    // Step 3: Poll for response
+    juce::String response;
+    auto getResult = getResponseFromEventID("generate_audio", eventId, response);
+    if (getResult.failed())
+    {
+        return juce::Result::fail("Failed to get response: " + getResult.getErrorMessage());
+    }
+
+    DBG("GradioClient: Got response: " + response);
+
+    // Step 4: Extract data from response
+    juce::String responseData;
+    auto extractResult = extractKeyFromResponse(response, responseData, "data: ");
+    if (extractResult.failed())
+    {
+        return juce::Result::fail("Failed to extract data from response: " + extractResult.getErrorMessage());
+    }
+
+    // Step 5: Parse JSON and extract file URLs
+    juce::var parsedData;
+    auto parseResult = juce::JSON::parse(responseData, parsedData);
+    if (parseResult.failed())
+    {
+        return juce::Result::fail("Failed to parse JSON response: " + parseResult.getErrorMessage());
+    }
+
+    if (!parsedData.isArray())
+    {
+        return juce::Result::fail("Parsed data field should be an array.");
+    }
+
+    juce::Array<juce::var>* dataArray = parsedData.getArray();
+    if (dataArray == nullptr)
+    {
+        return juce::Result::fail("The data array is empty.");
+    }
+
+    // Extract first 4 elements as audio files (ignore the 5th element which is status string)
+    outputFiles.clear();
+    int maxFiles = juce::jmin(4, dataArray->size() - 1); // -1 to skip status string
+    
+    for (int i = 0; i < maxFiles; ++i)
+    {
+        juce::var element = (*dataArray)[i];
+        if (element.isObject())
+        {
+            juce::DynamicObject* fileObj = element.getDynamicObject();
+            if (fileObj != nullptr && fileObj->hasProperty("url"))
+            {
+                juce::String fileURL = fileObj->getProperty("url").toString();
+                DBG("GradioClient: Found output file URL [" + juce::String(i) + "]: " + fileURL);
+                
+                juce::File outputFile;
+                juce::URL outputURL(fileURL);
+                auto downloadResult = downloadFileFromURL(outputURL, outputFile);
+                if (!downloadResult.failed())
+                {
+                    outputFiles.add(outputFile);
+                }
+                else
+                {
+                    DBG("GradioClient: Failed to download file [" + juce::String(i) + "]: " + downloadResult.getErrorMessage());
+                }
+            }
+        }
+    }
+
+    if (outputFiles.isEmpty())
+    {
+        return juce::Result::fail("No valid output files found in response");
+    }
+
+    DBG("GradioClient: Successfully downloaded " + juce::String(outputFiles.size()) + " audio variation(s)");
+    return juce::Result::ok();
+}
+
 juce::Result GradioClient::makePostRequestForEventID(const juce::String& endpoint,
                                                      juce::String& eventID,
                                                      const juce::String& jsonBody,

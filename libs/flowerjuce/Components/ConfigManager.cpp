@@ -112,6 +112,26 @@ double ConfigManager::loadDoubleValue(const juce::String& frontendName, const ju
     return xml->getDoubleAttribute(key, defaultValue);
 }
 
+bool ConfigManager::saveBoolValue(const juce::String& frontendName, const juce::String& key, bool value)
+{
+    auto xml = loadConfigXml(frontendName);
+    if (xml == nullptr)
+        return false;
+    
+    xml->setAttribute(key, value ? "1" : "0");
+    return saveConfigXml(frontendName, xml.get());
+}
+
+bool ConfigManager::loadBoolValue(const juce::String& frontendName, const juce::String& key, bool defaultValue)
+{
+    auto xml = loadConfigXml(frontendName);
+    if (xml == nullptr)
+        return defaultValue;
+    
+    juce::String valueStr = xml->getStringAttribute(key, defaultValue ? "1" : "0");
+    return valueStr == "1" || valueStr.equalsIgnoreCase("true");
+}
+
 bool ConfigManager::removeValue(const juce::String& frontendName, const juce::String& key)
 {
     auto xml = loadConfigXml(frontendName);

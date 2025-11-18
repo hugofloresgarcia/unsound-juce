@@ -77,6 +77,24 @@ public:
     static double loadDoubleValue(const juce::String& frontendName, const juce::String& key, double defaultValue = 0.0);
     
     /**
+     * Save a boolean value to the config file.
+     * @param frontendName Name of the frontend
+     * @param key Key name for the setting
+     * @param value Value to save
+     * @return true if successful, false otherwise
+     */
+    static bool saveBoolValue(const juce::String& frontendName, const juce::String& key, bool value);
+    
+    /**
+     * Load a boolean value from the config file.
+     * @param frontendName Name of the frontend
+     * @param key Key name for the setting
+     * @param defaultValue Default value to return if key doesn't exist
+     * @return The loaded value or defaultValue if not found
+     */
+    static bool loadBoolValue(const juce::String& frontendName, const juce::String& key, bool defaultValue = false);
+    
+    /**
      * Remove a key from the config file.
      * @param frontendName Name of the frontend
      * @param key Key name to remove

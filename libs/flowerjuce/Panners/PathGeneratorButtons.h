@@ -31,6 +31,9 @@ public:
     
     // Reset all buttons to off state
     void resetAllButtons();
+    
+    // Trigger a random path (programmatically activate a random button)
+    void triggerRandomPath();
 
 private:
     juce::ToggleButton circlePathButton;

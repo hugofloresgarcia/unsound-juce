@@ -109,6 +109,68 @@ void PathGeneratorButtons::resetAllButtons()
     repaint();
 }
 
+void PathGeneratorButtons::triggerRandomPath()
+{
+    DBG("PathGeneratorButtons: Triggering random path");
+    
+    // Array of all path types
+    juce::Array<juce::String> pathTypes = {
+        "circle", "random", "wander", "swirls", 
+        "bounce", "spiral", "hl", "vl"
+    };
+    
+    // Pick a random path type
+    int randomIndex = juce::Random::getSystemRandom().nextInt(pathTypes.size());
+    juce::String selectedPathType = pathTypes[randomIndex];
+    
+    DBG("PathGeneratorButtons: Selected random path: " + selectedPathType);
+    
+    // Reset all buttons first
+    resetAllButtons();
+    
+    // Activate the selected button and trigger its callback
+    if (selectedPathType == "circle")
+    {
+        circlePathButton.setToggleState(true, juce::dontSendNotification);
+        handleButtonToggle(circlePathButton, "circle");
+    }
+    else if (selectedPathType == "random")
+    {
+        randomPathButton.setToggleState(true, juce::dontSendNotification);
+        handleButtonToggle(randomPathButton, "random");
+    }
+    else if (selectedPathType == "wander")
+    {
+        wanderPathButton.setToggleState(true, juce::dontSendNotification);
+        handleButtonToggle(wanderPathButton, "wander");
+    }
+    else if (selectedPathType == "swirls")
+    {
+        swirlsPathButton.setToggleState(true, juce::dontSendNotification);
+        handleButtonToggle(swirlsPathButton, "swirls");
+    }
+    else if (selectedPathType == "bounce")
+    {
+        bouncePathButton.setToggleState(true, juce::dontSendNotification);
+        handleButtonToggle(bouncePathButton, "bounce");
+    }
+    else if (selectedPathType == "spiral")
+    {
+        spiralPathButton.setToggleState(true, juce::dontSendNotification);
+        handleButtonToggle(spiralPathButton, "spiral");
+    }
+    else if (selectedPathType == "hl")
+    {
+        horizontalLinePathButton.setToggleState(true, juce::dontSendNotification);
+        handleButtonToggle(horizontalLinePathButton, "hl");
+    }
+    else if (selectedPathType == "vl")
+    {
+        verticalLinePathButton.setToggleState(true, juce::dontSendNotification);
+        handleButtonToggle(verticalLinePathButton, "vl");
+    }
+}
+
 PathGeneratorButtons::~PathGeneratorButtons()
 {
     // Remove look and feel from buttons before destruction

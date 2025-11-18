@@ -31,7 +31,7 @@ if [[ -z "$VERSION" ]]; then
 fi
 
 # Build configuration
-BUILD_TYPE="Release"
+BUILD_TYPE="DEBUG"
 ARCHITECTURE="arm64"  # Change to "x86_64" or "universal" as needed
 
 # Signing configuration (set these environment variables or modify here)
