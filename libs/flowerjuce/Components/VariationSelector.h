@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <functional>
+#include <set>
 
 namespace Shared
 {
@@ -26,12 +27,20 @@ public:
     // Get the currently selected variation
     int getSelectedVariation() const { return selectedVariation; }
     
+    // Enable/disable a variation (command-click to toggle)
+    void setVariationEnabled(int variationIndex, bool enabled);
+    bool isVariationEnabled(int variationIndex) const;
+    
+    // Get next enabled variation index (for cycling)
+    int getNextEnabledVariation(int currentIndex) const;
+    
     // Callback when a variation is clicked
     std::function<void(int variationIndex)> onVariationSelected;
 
 private:
     int numVariations = 2;
     int selectedVariation = 0;
+    std::set<int> disabledVariations; // Set of disabled variation indices
     
     static constexpr int boxWidth = 35;
     static constexpr int boxHeight = 25;

@@ -131,7 +131,6 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
       transportControls(midiManager, "track" + juce::String(index)),
       parameterKnobs(midiManager, "track" + juce::String(index)),
       levelControl(engine, index, midiManager, "track" + juce::String(index)),
-      inputSelector(),
       trackLabel("Track", "track " + juce::String(index + 1)),
       resetButton("x"),
       generateButton("generate"),
@@ -269,7 +268,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     // Setup text prompt editor
     textPromptEditor.setMultiLine(false);
     textPromptEditor.setReturnKeyStartsNewLine(false);
-    textPromptEditor.setTextToShowWhenEmpty("enter text prompt...", juce::Colours::grey);
+    textPromptEditor.setTextToShowWhenEmpty("enter text query...", juce::Colours::grey);
     textPromptEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colours::black);
     textPromptEditor.onReturnKey = [this]() {
         // Pressing Enter triggers generate
@@ -375,16 +374,6 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     autogenToggle.setButtonText("autogen");
     autogenToggle.setToggleState(false, juce::dontSendNotification);
     addAndMakeVisible(autogenToggle);
-    
-    // Setup input selector
-    inputSelector.onChannelChange = [this](int channel) {
-        looperEngine.get_track(trackIndex).m_write_head.set_input_channel(channel);
-    };
-    addAndMakeVisible(inputSelector);
-    
-    // Initialize channel selector (will show "all" if device not ready yet)
-    // It will be updated again after device is initialized via updateChannelSelectors()
-    inputSelector.updateChannels(looperEngine.get_audio_device_manager());
     
     // Setup panner based on type
     auto pannerTypeLower = pannerType.toLowerCase();
@@ -685,7 +674,6 @@ void LooperTrack::resized()
     const int textPromptHeight = 30;
     const int buttonHeight = 30;
     const int generateButtonHeight = 30;
-    const int channelSelectorHeight = 30;
     const int knobAreaHeight = 210; // Increased to fit 3 knobs (speed, duration, cutoff)
     const int controlsHeight = 230; // Increased to accommodate level control + 3 knobs + autogen toggle
     const int cutoffKnobSize = 50; // Smaller to match path control knobs
@@ -697,7 +685,6 @@ void LooperTrack::resized()
     const int pannerHeight = 150; // 2D panner height
     const int totalBottomHeight = textPromptLabelHeight + spacingSmall +
                                   textPromptHeight + spacingSmall +
-                                  channelSelectorHeight + spacingSmall +
                                   controlsHeight + spacingSmall +
                                   generateButtonHeight + spacingSmall +
                                   buttonHeight + spacingSmall +
@@ -716,10 +703,6 @@ void LooperTrack::resized()
     trackLabel.setBounds(trackLabelArea);
     bounds.removeFromTop(spacingSmall);
     
-    // Input selector
-    auto channelSelectorArea = bounds.removeFromTop(channelSelectorHeight);
-    inputSelector.setBounds(channelSelectorArea);
-    bounds.removeFromTop(spacingSmall);
     
     // Calculate extra space available (beyond minimum required)
     const int minRequiredHeight = totalBottomHeight + maxWaveformHeight + variationSelectorHeight + spacingSmall;
@@ -1619,11 +1602,6 @@ void LooperTrack::handleAsyncUpdate()
     repaint();
 }
 
-void LooperTrack::updateChannelSelectors()
-{
-    // Update channel selector based on current audio device
-    inputSelector.updateChannels(looperEngine.get_audio_device_manager());
-}
 
 void LooperTrack::loadVariationFromFile(int variationIndex, const juce::File& audioFile)
 {
@@ -1820,6 +1798,11 @@ void LooperTrack::cycleToNextVariation()
     if (!autoCycleVariations || variations.empty())
         return;
     
-    int nextIndex = (currentVariationIndex + 1) % static_cast<int>(variations.size());
-    switchToVariation(nextIndex);
+    // Use VariationSelector's method to get next enabled variation
+    int nextIndex = variationSelector.getNextEnabledVariation(currentVariationIndex);
+    if (nextIndex >= 0)
+    {
+        switchToVariation(nextIndex);
+    }
+    // If no enabled variation found, don't cycle (stay on current)
 }
