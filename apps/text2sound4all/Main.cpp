@@ -6,12 +6,12 @@
 #include "MainComponent.h"
 #include <flowerjuce/CustomLookAndFeel.h>
 
-class Text2SoundApplication : public juce::JUCEApplication
+class Text2Sound4AllApplication : public juce::JUCEApplication
 {
 public:
-    Text2SoundApplication() {}
+    Text2Sound4AllApplication() {}
 
-    const juce::String getApplicationName() override { return "Text2Sound Tape Looper"; }
+    const juce::String getApplicationName() override { return "Text2Sound4All Tape Looper"; }
     const juce::String getApplicationVersion() override { return "1.0.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
@@ -207,5 +207,5 @@ private:
     std::unique_ptr<MainWindow> mainWindow;
 };
 
-START_JUCE_APPLICATION(Text2SoundApplication)
+START_JUCE_APPLICATION(Text2Sound4AllApplication)
 

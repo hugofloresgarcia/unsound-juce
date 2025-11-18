@@ -82,7 +82,7 @@ private:
     juce::Label titleLabel;
     juce::Label audioDeviceDebugLabel;
     CustomLookAndFeel customLookAndFeel;
-    juce::String gradioUrl { "https://opensound-ezaudio-controlnet.hf.space/" };
+    juce::String gradioUrl { "https://hugggof-saos.hf.space/" };
     mutable juce::CriticalSection gradioSettingsLock;
     
     // Trajectory directory for saving trajectories

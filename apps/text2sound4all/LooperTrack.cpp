@@ -52,7 +52,7 @@ void GradioWorkerThread::run()
 
     // Step 2: Set up Gradio space info
     GradioClient::SpaceInfo spaceInfo;
-    const juce::String defaultUrl = "https://opensound-ezaudio-controlnet.hf.space/";
+    const juce::String defaultUrl = "https://hugggof-saos.hf.space/";
     juce::String configuredUrl = defaultUrl;
 
     if (gradioUrlProvider)
@@ -65,21 +65,16 @@ void GradioWorkerThread::run()
     spaceInfo.gradio = configuredUrl;
     gradioClient.setSpaceInfo(spaceInfo);
 
-    // Step 3: Upload file (if we have audio)
-    if (isSentinel && tempAudioFile.existsAsFile())
-    {
-        // Notify status update: uploading
-        DBG("GradioWorkerThread: Status update - Uploading...");
-        juce::MessageManager::callAsync([this]()
-        {
-            if (onStatusUpdate)
-                onStatusUpdate("Uploading...");
-        });
-    }
-
-    // Step 4: Process request on background thread (get all variations)
-    // Ensure we have valid params (use defaults if customParams is invalid)
+    // Step 3: Extract duration from params (new API only needs text prompt and duration)
     juce::var paramsToUse = customParams.isObject() ? customParams : Text2Sound::LooperTrack::getDefaultText2SoundParams();
+    int durationSeconds = 11; // Default duration
+    auto* obj = paramsToUse.getDynamicObject();
+    if (obj != nullptr && obj->hasProperty("duration"))
+    {
+        durationSeconds = static_cast<int>(obj->getProperty("duration"));
+        // Clamp to valid range (1-11 seconds for stable-audio-open-small)
+        durationSeconds = juce::jlimit(1, 11, durationSeconds);
+    }
     
     juce::Array<juce::File> outputFiles;
     
@@ -91,7 +86,8 @@ void GradioWorkerThread::run()
             onStatusUpdate("Processing...");
     });
     
-    auto result = gradioClient.processRequestMultiple(tempAudioFile, textPrompt, outputFiles, paramsToUse);
+    // Use new generate_audio API: [textPrompt, durationSeconds]
+    auto result = gradioClient.processRequestGenerateAudio(textPrompt, durationSeconds, outputFiles);
 
     // Step 5: Download variations (if successful)
     if (!result.failed() && outputFiles.size() > 0)

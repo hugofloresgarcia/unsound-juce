@@ -1,23 +1,23 @@
-# Text2Sound app
+# Text2Sound4All app
 
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../Resources/icon.png)
-    juce_add_gui_app(Text2SoundApp
+    juce_add_gui_app(Text2Sound4AllApp
         COMPANY_NAME "Unsound"
-        PRODUCT_NAME "Text2Sound Tape Looper"
+        PRODUCT_NAME "Text2Sound4All Tape Looper"
         VERSION 1.0.0
         ICON_BIG ${CMAKE_CURRENT_SOURCE_DIR}/../Resources/icon.png
         ICON_SMALL ${CMAKE_CURRENT_SOURCE_DIR}/../Resources/icon.png
     )
 else()
-    juce_add_gui_app(Text2SoundApp
+    juce_add_gui_app(Text2Sound4AllApp
         COMPANY_NAME "Unsound"
-        PRODUCT_NAME "Text2Sound Tape Looper"
+        PRODUCT_NAME "Text2Sound4All Tape Looper"
         VERSION 1.0.0
     )
 endif()
 
 # App source files
-target_sources(Text2SoundApp PRIVATE
+target_sources(Text2Sound4AllApp PRIVATE
     Main.cpp
     StartupDialog.cpp
     StartupDialog.h
@@ -30,12 +30,12 @@ target_sources(Text2SoundApp PRIVATE
 )
 
 # Link flowerjuce library
-target_link_libraries(Text2SoundApp PRIVATE
+target_link_libraries(Text2Sound4AllApp PRIVATE
     flowerjuce
 )
 
 # Link JUCE modules
-target_link_libraries(Text2SoundApp PRIVATE
+target_link_libraries(Text2Sound4AllApp PRIVATE
     juce::juce_audio_basics
     juce::juce_audio_devices
     juce::juce_audio_formats
@@ -58,9 +58,9 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../Resources/icon.png)
 endif()
 
 if(BINARY_DATA_SOURCES)
-    juce_add_binary_data(Text2SoundAppBinaryData
+    juce_add_binary_data(Text2Sound4AllAppBinaryData
         SOURCES ${BINARY_DATA_SOURCES}
     )
-    target_link_libraries(Text2SoundApp PRIVATE Text2SoundAppBinaryData)
+    target_link_libraries(Text2Sound4AllApp PRIVATE Text2Sound4AllAppBinaryData)
 endif()
 

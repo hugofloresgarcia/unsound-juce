@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Build, notarize, and create release package for Unsound4All
+# Build, notarize, and create release package for Text2Sound4All
 # 
 # Prerequisites:
 # - Apple Developer account with signing certificate
@@ -18,8 +18,8 @@ set -e  # Exit on error
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUILD_DIR="${PROJECT_ROOT}/build"
-APP_NAME="Unsound4All Tape Looper"
-BUNDLE_ID="com.unsound.unsound4all"
+APP_NAME="Text2Sound4All Tape Looper"
+BUNDLE_ID="com.unsound.text2sound4all"
 
 # Extract version from CMakeLists.txt (single source of truth)
 # Looks for: project(TapeLooper VERSION X.Y.Z)
@@ -186,9 +186,9 @@ build_app() {
     
     cmake .. "${cmake_args[@]}"
     
-    # Build only the Unsound4AllApp target
-    log_info "Building Unsound4AllApp..."
-    cmake --build . --config "${BUILD_TYPE}" --target Unsound4AllApp -j$(sysctl -n hw.ncpu)
+    # Build only the Text2Sound4AllApp target
+    log_info "Building Text2Sound4AllApp..."
+    cmake --build . --config "${BUILD_TYPE}" --target Text2Sound4AllApp -j$(sysctl -n hw.ncpu)
     
     log_info "Build completed successfully."
 }
@@ -199,9 +199,9 @@ find_app_bundle() {
     
     # Try common locations
     local possible_paths=(
-        "${BUILD_DIR}/apps/unsound4all/${APP_NAME}.app"
-        "${BUILD_DIR}/apps/unsound4all/Unsound4AllApp_artefacts/${BUILD_TYPE}/${APP_NAME}.app"
-        "${BUILD_DIR}/apps/unsound4all/${BUILD_TYPE}/${APP_NAME}.app"
+        "${BUILD_DIR}/apps/text2sound4all/${APP_NAME}.app"
+        "${BUILD_DIR}/apps/text2sound4all/Text2Sound4AllApp_artefacts/${BUILD_TYPE}/${APP_NAME}.app"
+        "${BUILD_DIR}/apps/text2sound4all/${BUILD_TYPE}/${APP_NAME}.app"
     )
     
     for path in "${possible_paths[@]}"; do
