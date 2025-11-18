@@ -798,15 +798,17 @@ void LooperTrack::generateButtonClicked()
         DBG("LooperTrack: Using record buffer as input, hasAudio=" + juce::String(hasAudio ? "YES" : "NO"));
     }
 
-    if (hasAudio)
+    // If there's no audio, don't proceed with generation
+    if (!hasAudio)
     {
-        audioFile = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("has_audio");
-        DBG("LooperTrack: Has audio - passing sentinel file");
+        DBG("LooperTrack: No audio - aborting generation");
+        generateButton.setEnabled(true);
+        generateButton.setButtonText("generate");
+        return;
     }
-    else
-    {
-        DBG("LooperTrack: No audio - passing empty file");
-    }
+
+    audioFile = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("has_audio");
+    DBG("LooperTrack: Has audio - passing sentinel file");
 
     // Create and start background worker thread
     vampNetWorkerThread = std::make_unique<VampNetWorkerThread>(looperEngine,
