@@ -2,7 +2,7 @@
 
 #include <juce_core/juce_core.h>
 #include <juce_events/juce_events.h>
-#include <flowerjuce/Engine/MultiTrackLooperEngine.h>
+#include <flowerjuce/LooperEngine/MultiTrackLooperEngine.h>
 #include "ONNXModelManager.h"
 #include "SoundPaletteManager.h"
 #include <functional>

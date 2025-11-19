@@ -2,12 +2,14 @@
 
 #include <juce_core/juce_core.h>
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "../Engine/MultiTrackLooperEngine.h"
+#include "../LooperEngine/MultiTrackLooperEngine.h"
 
 namespace Shared
 {
 
 // DualWaveformDisplay shows both record buffer and output buffer waveforms for VampNet tracks
+// Commented out since VampNetTrackEngine doesn't exist
+/*
 class DualWaveformDisplay : public juce::Component
 {
 public:
@@ -26,6 +28,7 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DualWaveformDisplay)
 };
+*/
 
 } // namespace Shared
 

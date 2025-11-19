@@ -167,12 +167,6 @@ public:
                 DBG_SEGFAULT("EXIT: audioDeviceIOCallbackWithContext");
     }
 
-    auto& get_track(int track_index)
-    {
-        jassert(track_index >= 0 && track_index < m_track_engines.size());
-        return m_track_engines[track_index].get_track_state();
-    }
-
     TrackEngineType& get_track_engine(int track_index)
     {
         jassert(track_index >= 0 && track_index < m_track_engines.size());
@@ -310,8 +304,8 @@ public:
     }
 
     // Get channel levels for visualization (16 channels)
-    std::array<std::atomic<float>, 16>& getChannelLevels() { return m_channel_meter.get_channel_levels(); }
-    const std::array<std::atomic<float>, 16>& getChannelLevels() const { return m_channel_meter.get_channel_levels(); }
+    std::array<std::atomic<float>, 16>& get_channel_levels() { return m_channel_meter.get_channel_levels(); }
+    const std::array<std::atomic<float>, 16>& get_channel_levels() const { return m_channel_meter.get_channel_levels(); }
 
 private:
     static constexpr int m_num_tracks = 8;
@@ -327,8 +321,8 @@ private:
 
 // Include track engine headers for type aliases
 #include "LooperTrackEngine.h"
-#include "VampNetTrackEngine.h"
+// #include "VampNetTrackEngine.h"  // File doesn't exist
 
 // Type aliases for convenience
 using MultiTrackLooperEngine = MultiTrackLooperEngineTemplate<LooperTrackEngine>;
-using VampNetMultiTrackLooperEngine = MultiTrackLooperEngineTemplate<VampNetTrackEngine>;
+// using VampNetMultiTrackLooperEngine = MultiTrackLooperEngineTemplate<VampNetTrackEngine>;  // VampNetTrackEngine doesn't exist

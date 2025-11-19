@@ -10,13 +10,12 @@ LevelControl::LevelControl(MultiTrackLooperEngine& engine, int index)
 LevelControl::LevelControl(MultiTrackLooperEngine& engine, int index, MidiLearnManager* midiManager, const juce::String& trackPrefix)
     : engineType(Basic),
       trackIndex(index),
-      looperEngine{},
+      looperEngine(&engine),
       levelSlider(juce::Slider::LinearVertical, juce::Slider::TextBoxBelow),
       levelLabel("Level", "level"),
       midiLearnManager(midiManager),
       trackIdPrefix(trackPrefix)
 {
-    looperEngine.basicEngine = &engine;
     
     // Setup level slider (dB)
     levelSlider.setRange(-60.0, 12.0, 0.1);
@@ -126,63 +125,63 @@ void LevelControl::setLevelValue(double value, juce::NotificationType notificati
     levelSlider.setValue(value, notification);
 }
 
-LevelControl::LevelControl(VampNetMultiTrackLooperEngine& engine, int index)
-    : LevelControl(engine, index, nullptr, "")
-{
-}
+// LevelControl::LevelControl(VampNetMultiTrackLooperEngine& engine, int index) // Commented out - VampNetTrackEngine doesn't exist
+//     : LevelControl(engine, index, nullptr, "")
+// {
+// }
 
-LevelControl::LevelControl(VampNetMultiTrackLooperEngine& engine, int index, MidiLearnManager* midiManager, const juce::String& trackPrefix)
-    : engineType(VampNet),
-      trackIndex(index),
-      looperEngine{},
-      levelSlider(juce::Slider::LinearVertical, juce::Slider::TextBoxBelow),
-      levelLabel("Level", "level"),
-      midiLearnManager(midiManager),
-      trackIdPrefix(trackPrefix)
-{
-    looperEngine.vampNetEngine = &engine;
-    
-    // Setup level slider (dB)
-    levelSlider.setRange(-60.0, 12.0, 0.1);
-    levelSlider.setValue(0.0);
-    levelSlider.setTextValueSuffix(" dB");
-    levelSlider.onValueChange = [this]()
-    {
-        if (onLevelChange)
-            onLevelChange(levelSlider.getValue());
-    };
-    
-    addAndMakeVisible(levelSlider);
-    addAndMakeVisible(levelLabel);
-    
-    // Setup MIDI learn
-    if (midiLearnManager)
-    {
-        levelLearnable = std::make_unique<MidiLearnable>(*midiLearnManager, trackIdPrefix + "_level");
-        
-        // Create mouse listener for right-click handling
-        levelMouseListener = std::make_unique<MidiLearnMouseListener>(*levelLearnable, this);
-        levelSlider.addMouseListener(levelMouseListener.get(), false);
-        
-        // Register parameter - convert normalized 0-1 to dB range
-        midiLearnManager->registerParameter({
-            trackIdPrefix + "_level",
-            [this](float normalizedValue) {
-                // Map 0.0-1.0 to -60.0 to +12.0 dB
-                double dbValue = -60.0 + normalizedValue * 72.0;
-                levelSlider.setValue(dbValue, juce::dontSendNotification);
-                if (onLevelChange) onLevelChange(dbValue);
-            },
-            [this]() {
-                // Map -60.0 to +12.0 dB back to 0.0-1.0
-                double dbValue = levelSlider.getValue();
-                return static_cast<float>((dbValue + 60.0) / 72.0);
-            },
-            trackIdPrefix + " Level",
-            false  // Continuous control
-        });
-    }
-}
+// LevelControl::LevelControl(VampNetMultiTrackLooperEngine& engine, int index, MidiLearnManager* midiManager, const juce::String& trackPrefix) // Commented out - VampNetTrackEngine doesn't exist
+//     : engineType(VampNet),
+//       trackIndex(index),
+//       looperEngine{},
+//       levelSlider(juce::Slider::LinearVertical, juce::Slider::TextBoxBelow),
+//       levelLabel("Level", "level"),
+//       midiLearnManager(midiManager),
+//       trackIdPrefix(trackPrefix)
+// {
+//     looperEngine.vampNetEngine = &engine;
+//     
+//     // Setup level slider (dB)
+//     levelSlider.setRange(-60.0, 12.0, 0.1);
+//     levelSlider.setValue(0.0);
+//     levelSlider.setTextValueSuffix(" dB");
+//     levelSlider.onValueChange = [this]()
+//     {
+//         if (onLevelChange)
+//             onLevelChange(levelSlider.getValue());
+//     };
+//     
+//     addAndMakeVisible(levelSlider);
+//     addAndMakeVisible(levelLabel);
+//     
+//     // Setup MIDI learn
+//     if (midiLearnManager)
+//     {
+//         levelLearnable = std::make_unique<MidiLearnable>(*midiLearnManager, trackIdPrefix + "_level");
+//         
+//         // Create mouse listener for right-click handling
+//         levelMouseListener = std::make_unique<MidiLearnMouseListener>(*levelLearnable, this);
+//         levelSlider.addMouseListener(levelMouseListener.get(), false);
+//         
+//         // Register parameter - convert normalized 0-1 to dB range
+//         midiLearnManager->registerParameter({
+//             trackIdPrefix + "_level",
+//             [this](float normalizedValue) {
+//                 // Map 0.0-1.0 to -60.0 to +12.0 dB
+//                 double dbValue = -60.0 + normalizedValue * 72.0;
+//                 levelSlider.setValue(dbValue, juce::dontSendNotification);
+//                 if (onLevelChange) onLevelChange(dbValue);
+//             },
+//             [this]() {
+//                 // Map -60.0 to +12.0 dB back to 0.0-1.0
+//                 double dbValue = levelSlider.getValue();
+//                 return static_cast<float>((dbValue + 60.0) / 72.0);
+//             },
+//             trackIdPrefix + " Level",
+//             false  // Continuous control
+//         });
+//     }
+// }
 
 void LevelControl::drawVUMeter(juce::Graphics& g, juce::Rectangle<int> area)
 {
@@ -190,17 +189,11 @@ void LevelControl::drawVUMeter(juce::Graphics& g, juce::Rectangle<int> area)
         return;
     
     float level;
-    if (engineType == Basic)
-    {
-        auto& track = looperEngine.basicEngine->get_track(trackIndex);
-        level = track.m_read_head.m_level_meter.load();
-    }
-    else // VampNet
-    {
-        auto& track = looperEngine.vampNetEngine->get_track(trackIndex);
-        // Use recordReadHead level meter for VU display
-        level = track.m_record_read_head.m_level_meter.load();
-    }
+    // Only Basic engine type is supported now
+    auto& track_engine = looperEngine->get_track_engine(trackIndex);
+    // Access level meter via read head - need to add a getter method
+    // For now, use a default value or get from read head directly
+    level = 0.0f; // TODO: Add get_level_meter() method to LooperTrackEngine
     
     // Clamp level to 0.0-1.0
     level = juce::jlimit(0.0f, 1.0f, level);

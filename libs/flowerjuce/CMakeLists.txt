@@ -4,43 +4,47 @@ add_library(flowerjuce STATIC)
 
 # Engine source files
 target_sources(flowerjuce PRIVATE
-    Engine/LooperTrackEngine.cpp
-    Engine/VampNetTrackEngine.cpp
-    Engine/TapeLoop.cpp
-    Engine/LooperWriteHead.cpp
-    Engine/LooperReadHead.cpp
+    LooperEngine/LooperTrackEngine.cpp
+    LooperEngine/TapeLoop.cpp
+    LooperEngine/LooperWriteHead.cpp
+    LooperEngine/LooperReadHead.cpp
 )
 
 # Engine headers
 target_sources(flowerjuce PRIVATE
-    Engine/LooperTrackEngine.h
-    Engine/MultiTrackLooperEngine.h
-    Engine/VampNetTrackEngine.h
-    Engine/TapeLoop.h
-    Engine/LooperWriteHead.h
-    Engine/LooperReadHead.h
-    Engine/OutputBus.h
+    LooperEngine/LooperTrackEngine.h
+    LooperEngine/MultiTrackLooperEngine.h
+    LooperEngine/TapeLoop.h
+    LooperEngine/LooperWriteHead.h
+    LooperEngine/LooperReadHead.h
+    LooperEngine/OutputBus.h
 )
 
 # DSP source files
 target_sources(flowerjuce PRIVATE
     DSP/OnsetDetector.cpp
+    DSP/LowPassFilter.cpp
+    DSP/MultiChannelLoudnessMeter.cpp
+    DSP/PeakMeter.cpp
 )
 
 # DSP headers
 target_sources(flowerjuce PRIVATE
     DSP/OnsetDetector.h
+    DSP/LowPassFilter.h
+    DSP/MultiChannelLoudnessMeter.h
+    DSP/PeakMeter.h
 )
 
-# Utils source files
-target_sources(flowerjuce PRIVATE
-    Utils/Utils.cpp
-)
+# Utils source files (removed - Utils directory doesn't exist)
+# target_sources(flowerjuce PRIVATE
+#     Utils/Utils.cpp
+# )
 
-# Utils headers
-target_sources(flowerjuce PRIVATE
-    Utils/Utils.h
-)
+# Utils headers (removed - Utils directory doesn't exist)
+# target_sources(flowerjuce PRIVATE
+#     Utils/Utils.h
+# )
 
 # GradioClient source files
 target_sources(flowerjuce PRIVATE
@@ -60,7 +64,6 @@ target_sources(flowerjuce PRIVATE
     Panners/CLEATPanner.cpp
     Panners/Panner2DComponent.cpp
     Panners/PathGeneratorButtons.cpp
-    Panners/PannerTests.cpp
 )
 
 # Panners headers
@@ -72,7 +75,6 @@ target_sources(flowerjuce PRIVATE
     Panners/CLEATPanner.h
     Panners/Panner2DComponent.h
     Panners/PathGeneratorButtons.h
-    Panners/PannerTests.h
 )
 
 # Components source files (renamed from Shared)
@@ -83,7 +85,6 @@ target_sources(flowerjuce PRIVATE
     Components/ParameterKnobs.cpp
     Components/LevelControl.cpp
     Components/InputSelector.cpp
-    Components/OutputSelector.cpp
     Components/GradioUtilities.cpp
     Components/MidiLearnManager.cpp
     Components/ConfigManager.cpp
@@ -99,7 +100,6 @@ target_sources(flowerjuce PRIVATE
     Components/ParameterKnobs.h
     Components/LevelControl.h
     Components/InputSelector.h
-    Components/OutputSelector.h
     Components/GradioUtilities.h
     Components/MidiLearnManager.h
     Components/MidiLearnComponent.h
@@ -116,15 +116,15 @@ target_sources(flowerjuce PRIVATE
     CustomLookAndFeel.h
 )
 
-# ClickSynth and Sampler (needed by VampNetTrackEngine)
-target_sources(flowerjuce PRIVATE
-    ClickSynth.cpp
-    ClickSynth.h
-    Sampler.cpp
-    Sampler.h
-)
+# ClickSynth and Sampler (removed - files don't exist, needed by VampNetTrackEngine which also doesn't exist)
+# target_sources(flowerjuce PRIVATE
+#     ClickSynth.cpp
+#     ClickSynth.h
+#     Sampler.cpp
+#     Sampler.h
+# )
 
-# Set include directories - this allows includes like <flowerjuce/Engine/...>
+# Set include directories - this allows includes like <flowerjuce/LooperEngine/...>
 # From libs/flowerjuce/, we need to go up to root, then include libs/ so flowerjuce/ resolves correctly
 get_filename_component(PROJECT_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../.. ABSOLUTE)
 target_include_directories(flowerjuce PUBLIC

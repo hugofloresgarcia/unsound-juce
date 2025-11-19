@@ -80,7 +80,7 @@ private:
     std::atomic<double> m_sample_rate{44100.0}; // Current sample rate
     std::atomic<bool> m_direction_fwd{true};
     std::atomic<float> m_loop_start{0.0};
-    std::atomic<float> m_loop_end{1.0}
+    std::atomic<float> m_loop_end{1.0};
     
     juce::SmoothedValue<float> m_mute_gain{1.0f}; // Smooth mute ramp (10ms)
     

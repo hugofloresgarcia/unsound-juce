@@ -4,7 +4,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_events/juce_events.h>
-#include <flowerjuce/Engine/MultiTrackLooperEngine.h>
+#include <flowerjuce/LooperEngine/MultiTrackLooperEngine.h>
 #include <flowerjuce/GradioClient/GradioClient.h>
 #include <flowerjuce/Components/WaveformDisplay.h>
 #include <flowerjuce/Components/TransportControls.h>
@@ -13,7 +13,7 @@
 #include <flowerjuce/Components/MidiLearnManager.h>
 #include <flowerjuce/Components/MidiLearnComponent.h>
 #include <flowerjuce/Components/VariationSelector.h>
-#include <flowerjuce/Engine/TapeLoop.h>
+#include <flowerjuce/LooperEngine/TapeLoop.h>
 #include <flowerjuce/Panners/Panner.h>
 #include <flowerjuce/Panners/StereoPanner.h>
 #include <flowerjuce/Panners/QuadPanner.h>

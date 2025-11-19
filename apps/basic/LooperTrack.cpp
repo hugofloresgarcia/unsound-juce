@@ -50,7 +50,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, Shared::Midi
         0.25, 4.0, 1.0, 0.01,
         "x",
         [this](double value) {
-            looperEngine.get_track(trackIndex).m_read_head.set_speed(static_cast<float>(value));
+            looperEngine.get_track_engine(trackIndex).set_speed(static_cast<float>(value));
         },
         ""  // parameterId - will be auto-generated
     });
@@ -60,7 +60,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, Shared::Midi
         0.0, 1.0, 0.5, 0.01,
         "",
         [this](double value) {
-            looperEngine.get_track(trackIndex).m_write_head.set_overdub_mix(static_cast<float>(value));
+            looperEngine.get_track_engine(trackIndex).set_overdub_mix(static_cast<float>(value));
         },
         ""  // parameterId - will be auto-generated
     });
@@ -68,13 +68,13 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, Shared::Midi
     
     // Setup level control
     levelControl.onLevelChange = [this](double value) {
-        looperEngine.get_track(trackIndex).m_read_head.set_level_db(static_cast<float>(value));
+        looperEngine.get_track_engine(trackIndex).set_level_db(static_cast<float>(value));
     };
     addAndMakeVisible(levelControl);
     
     // Setup input selector
     inputSelector.onChannelChange = [this](int channel) {
-        looperEngine.get_track(trackIndex).m_write_head.set_input_channel(channel);
+        looperEngine.get_track_engine(trackIndex).set_input_channel(channel);
     };
     addAndMakeVisible(inputSelector);
     
@@ -160,7 +160,7 @@ void LooperTrack::applyLookAndFeel()
 
 void LooperTrack::paint(juce::Graphics& g)
 {
-    auto& track = looperEngine.get_track(trackIndex);
+    auto& track = looperEngine.get_track_engine(trackIndex);
     
     // Background - pitch black
     g.fillAll(juce::Colours::black);
@@ -170,12 +170,12 @@ void LooperTrack::paint(juce::Graphics& g)
     g.drawRect(getLocalBounds(), 1);
 
     // Visual indicator for recording/playing
-    if (track.m_write_head.get_record_enable())
+    if (track.get_record_enable())
     {
         g.setColour(juce::Colour(0xfff04e36).withAlpha(0.2f)); // Red-orange
         g.fillRect(getLocalBounds());
     }
-    else if (track.m_is_playing.load() && track.m_tape_loop.m_has_recorded.load())
+    else if (track.get_playing() && track.has_recorded())
     {
         g.setColour(juce::Colour(0xff1eb19d).withAlpha(0.15f)); // Teal
         g.fillRect(getLocalBounds());
@@ -265,35 +265,31 @@ void LooperTrack::resized()
 
 void LooperTrack::recordEnableButtonToggled(bool enabled)
 {
-    auto& track = looperEngine.get_track(trackIndex);
-    track.m_write_head.set_record_enable(enabled);
+    auto& track = looperEngine.get_track_engine(trackIndex);
+    track.set_record_enable(enabled);
     repaint();
 }
 
 void LooperTrack::playButtonClicked(bool shouldPlay)
 {
-    auto& track = looperEngine.get_track(trackIndex);
+    auto& track = looperEngine.get_track_engine(trackIndex);
     
     if (shouldPlay)
     {
-        track.m_is_playing.store(true);
-        track.m_read_head.set_playing(true);
+        track.set_playing(true);
         
-        if (track.m_write_head.get_record_enable() && !track.m_tape_loop.m_has_recorded.load())
+        if (track.get_record_enable() && !track.has_recorded())
         {
-            const juce::ScopedLock sl(track.m_tape_loop.m_lock);
-            track.m_tape_loop.clear_buffer();
-            track.m_write_head.reset();
-            track.m_read_head.reset();
+            track.clear_buffer();
+            track.reset();
         }
     }
     else
     {
-        track.m_is_playing.store(false);
-        track.m_read_head.set_playing(false);
-        if (track.m_write_head.get_record_enable())
+        track.set_playing(false);
+        if (track.get_record_enable())
         {
-            track.m_write_head.finalize_recording(track.m_write_head.get_pos());
+            track.finalize_recording(track.get_write_pos());
             juce::Logger::writeToLog("~~~ Playback just stopped, finalized recording");
         }
     }
@@ -303,41 +299,41 @@ void LooperTrack::playButtonClicked(bool shouldPlay)
 
 void LooperTrack::muteButtonToggled(bool muted)
 {
-    auto& track = looperEngine.get_track(trackIndex);
-    track.m_read_head.set_muted(muted);
+    auto& track = looperEngine.get_track_engine(trackIndex);
+    track.set_muted(muted);
 }
 
 void LooperTrack::resetButtonClicked()
 {
-    auto& track = looperEngine.get_track(trackIndex);
+    auto& track = looperEngine.get_track_engine(trackIndex);
     
     // Stop playback
-    track.m_is_playing.store(false);
-    track.m_read_head.set_playing(false);
+    track.set_playing(false);
+    track.set_playing(false);
     transportControls.setPlayState(false);
     
     // Disable recording
-    track.m_write_head.set_record_enable(false);
+    track.set_record_enable(false);
     transportControls.setRecordState(false);
     
     // Clear buffer
-    const juce::ScopedLock sl(track.m_tape_loop.m_lock);
-    track.m_tape_loop.clear_buffer();
-    track.m_write_head.reset();
-    track.m_read_head.reset();
+    const juce::ScopedLock sl(track.get_buffer_lock());
+    track.clear_buffer();
+    track.reset();
+    track.reset();
     
     // Reset controls to defaults
     parameterKnobs.setKnobValue(0, 1.0, juce::dontSendNotification); // speed
-    track.m_read_head.set_speed(1.0f);
+    track.set_speed(1.0f);
     
     parameterKnobs.setKnobValue(1, 0.5, juce::dontSendNotification); // overdub
-    track.m_write_head.set_overdub_mix(0.5f);
+    track.set_overdub_mix(0.5f);
     
     levelControl.setLevelValue(0.0, juce::dontSendNotification);
-    track.m_read_head.set_level_db(0.0f);
+    track.set_level_db(0.0f);
     
     // Unmute
-    track.m_read_head.set_muted(false);
+    track.set_muted(false);
     transportControls.setMuteState(false);
     
     repaint();
@@ -351,7 +347,7 @@ LooperTrack::~LooperTrack()
 void LooperTrack::set_playback_speed(float speed)
 {
     parameterKnobs.setKnobValue(0, speed, juce::dontSendNotification);
-    looperEngine.get_track(trackIndex).m_read_head.set_speed(speed);
+    looperEngine.get_track_engine(trackIndex).set_speed(speed);
 }
 
 float LooperTrack::get_playback_speed() const
@@ -362,12 +358,12 @@ float LooperTrack::get_playback_speed() const
 void LooperTrack::timerCallback()
 {
     // Sync button states with model state
-    auto& track = looperEngine.get_track(trackIndex);
+    auto& track = looperEngine.get_track_engine(trackIndex);
     
-    bool model_record_enable = track.m_write_head.get_record_enable();
+    bool model_record_enable = track.get_record_enable();
     transportControls.setRecordState(model_record_enable);
     
-    bool model_is_playing = track.m_is_playing.load();
+    bool model_is_playing = track.get_playing();
     transportControls.setPlayState(model_is_playing);
     
     // Update displays

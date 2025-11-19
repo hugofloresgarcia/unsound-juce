@@ -242,7 +242,7 @@ void VizWindow::timerCallback()
         }
         
         // Update with new peak from engine if higher
-        float rawLevel = looperEngine.get_track_engine(i).getMonoOutputLevel();
+        float rawLevel = looperEngine.get_track_engine(i).get_mono_output_level();
         float decayedLevel = trackLevels[i].load();
         if (rawLevel > decayedLevel)
         {

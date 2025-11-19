@@ -407,7 +407,7 @@ void MainComponent::sinksButtonClicked()
         }
         
         // Create sinks component (without CLEAT panner, so no pink boxes)
-        const auto& channelLevels = looperEngine.getChannelLevels();
+        const auto& channelLevels = looperEngine.get_channel_levels();
         sinksComponent = std::make_unique<flowerjuce::SinksWindow>(channelLevels);
         
         // Set LookAndFeel on sinks component before transferring ownership

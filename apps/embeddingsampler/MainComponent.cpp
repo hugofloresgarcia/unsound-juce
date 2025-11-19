@@ -330,7 +330,7 @@ void MainComponent::sinksButtonClicked()
             sinksComponent = nullptr;
         }
         
-        const auto& channelLevels = looperEngine.getChannelLevels();
+        const auto& channelLevels = looperEngine.get_channel_levels();
         sinksComponent = std::make_unique<flowerjuce::SinksWindow>(channelLevels);
         
         sinksWindow = std::make_unique<SinksDialogWindow>(

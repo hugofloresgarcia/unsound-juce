@@ -5,7 +5,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_events/juce_events.h>
-#include <flowerjuce/Engine/MultiTrackLooperEngine.h>
+#include <flowerjuce/LooperEngine/MultiTrackLooperEngine.h>
 #include "SamplerVoice.h"
 #include <flowerjuce/Components/LevelControl.h>
 #include <flowerjuce/Components/MidiLearnManager.h>

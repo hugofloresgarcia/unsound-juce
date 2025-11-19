@@ -44,9 +44,17 @@ void LooperTrackEngine::set_filter_cutoff(float cutoff_hz)
     m_low_pass_filter.set_cutoff(cutoff_hz);
 }
 
+void LooperTrackEngine::set_loop_end(size_t loop_end)
+{
+    // Update both read and write heads to keep them synchronized
+    m_track_state.m_write_head.set_loop_end(loop_end);
+    m_track_state.m_read_head.set_loop_end(static_cast<float>(loop_end));
+}
+
 void LooperTrackEngine::reset()
 {
     m_track_state.m_read_head.reset();
+    m_track_state.m_write_head.reset();
 }
 
 bool LooperTrackEngine::load_from_file(const juce::File& audio_file)
@@ -123,7 +131,7 @@ bool LooperTrackEngine::load_from_file(const juce::File& audio_file)
 
     // Update wrapPos to reflect the loaded audio length
     size_t loaded_length = static_cast<size_t>(num_samples_to_read);
-    m_track_state.m_write_head.set_loop_end(loaded_length);
+    set_loop_end(loaded_length);
     m_track_state.m_write_head.set_pos(loaded_length);
     
     // Update TapeLoop metadata
@@ -280,9 +288,6 @@ bool LooperTrackEngine::process_block(const float* const* input_channel_data,
                 m_audio_sample_callback(raw_sample_value);
             }
             
-            // Update loop end before processing
-            track.m_read_head.set_loop_end(static_cast<float>(track.m_write_head.get_loop_end()));
-            
             // Playback (read head processes the sample AND advances) - applies level gain and mute
             bool wrapped = false;
             float sample_value = process_playback(track, wrapped, is_first_call && sample == 0);
@@ -308,7 +313,7 @@ bool LooperTrackEngine::process_block(const float* const* input_channel_data,
         m_peak_meter.process_block(mono_buffer.getData(), num_samples);
         
 
-        jassert(track.m_panner != nullptr)
+        jassert(track.m_panner != nullptr);
         // Use panner to distribute mono audio to all output channels with proper gains
         track.m_panner->process_block(mono_input_channel_data, 1, output_channel_data, num_output_channels, num_samples);
         
@@ -327,7 +332,7 @@ bool LooperTrackEngine::process_block(const float* const* input_channel_data,
         {
             // finalize recording if we were recording and playback just stopped
             track.m_write_head.set_record_enable(false); // Stop recording and update UI
-            track.m_write_head.set_loop_end(track.m_write_head.get_pos());
+            set_loop_end(track.m_write_head.get_pos());
             recording_finalized = true;
             // Record enable is on but playback just stopped - prepare for new recording
             juce::Logger::writeToLog("WARNING: ActuallyRecording but not playing.");

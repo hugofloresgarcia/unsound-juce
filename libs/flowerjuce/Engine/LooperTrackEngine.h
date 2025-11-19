@@ -8,6 +8,8 @@
 #include "LooperReadHead.h"
 #include "OutputBus.h"
 #include <flowerjuce/Panners/Panner.h>
+#include <flowerjuce/DSP/LowPassFilter.h>
+#include <flowerjuce/DSP/PeakMeter.h>
 #include <atomic>
 #include <functional>
 
@@ -75,13 +77,13 @@ public:
     void set_filter_cutoff(float cutoff_hz);
     
     // Get mono output level (for visualization)
-    float getMonoOutputLevel() const { return m_mono_output_level.load(); }
+    float getMonoOutputLevel() const { return m_peak_meter.get_peak(); }
 
 protected:
     // Helper methods factored out for reuse by VampNetTrackEngine
     void process_recording(TrackState& track, const float* const* input_channel_data, 
                          int num_input_channels, float current_position, int sample, bool is_first_call);
-    float process_playback(TrackState& track, bool is_first_call);
+    float process_playback(TrackState& track, bool& wrapped, bool is_first_call);
     bool finalize_recording_if_needed(TrackState& track, bool was_recording, bool is_playing, 
                                    bool has_existing_audio, bool& recording_finalized);
 
@@ -94,13 +96,10 @@ private:
     juce::AudioFormatManager m_format_manager;
     std::function<void(float)> m_audio_sample_callback; // Callback for audio samples (for onset detection)
     
-    // Mono output level tracking (for visualization)
-    std::atomic<float> m_mono_output_level{0.0f};
+    // Low pass filter UGen
+    LowPassFilter m_low_pass_filter;
     
-    // Low pass filter
-    juce::dsp::IIR::Filter<float> m_low_pass_filter;
-    juce::dsp::IIR::Coefficients<float>::Ptr m_filter_coefficients;
-    std::atomic<float> m_filter_cutoff{20000.0f}; // Default to 20kHz (no filtering)
-    double m_current_sample_rate{44100.0};
+    // Peak meter UGen
+    PeakMeter m_peak_meter;
 };
 

@@ -1,5 +1,5 @@
 #include "GradioUtilities.h"
-#include "../Engine/MultiTrackLooperEngine.h"
+#include "../LooperEngine/MultiTrackLooperEngine.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 
 namespace Shared
@@ -11,10 +11,10 @@ juce::Result saveTrackBufferToWavFile(
     juce::File& outputFile,
     const juce::String& filePrefix)
 {
-    auto& track = engine.get_track(trackIndex);
+    auto& track_engine = engine.get_track_engine(trackIndex);
     
-    const juce::ScopedLock sl(track.m_tape_loop.m_lock);
-    const auto& buffer = track.m_tape_loop.get_buffer();
+    const juce::ScopedLock sl(track_engine.get_buffer_lock());
+    const auto& buffer = track_engine.get_buffer();
     
     if (buffer.empty())
     {
@@ -22,26 +22,26 @@ juce::Result saveTrackBufferToWavFile(
     }
 
     // Get wrapPos to determine how much to save
-    size_t wrap_pos = track.m_write_head.get_wrap_pos();
-    if (wrap_pos == 0)
+    size_t loop_end = track_engine.get_loop_end();
+    if (loop_end == 0)
     {
-        wrap_pos = track.m_tape_loop.m_recorded_length.load();
+        loop_end = track_engine.get_recorded_length();
     }
-    if (wrap_pos == 0)
+    if (loop_end == 0)
     {
-        wrap_pos = buffer.size(); // Fallback to full buffer
+        loop_end = buffer.size(); // Fallback to full buffer
     }
     
     // Clamp wrapPos to buffer size
-    wrap_pos = juce::jmin(wrap_pos, buffer.size());
+    loop_end = juce::jmin(loop_end, buffer.size());
     
-    if (wrap_pos == 0)
+    if (loop_end == 0)
     {
         return juce::Result::fail("No audio data to save");
     }
 
     // Get sample rate
-    double sample_rate = track.m_write_head.get_sample_rate();
+    double sample_rate = track_engine.get_sample_rate();
     if (sample_rate <= 0)
     {
         sample_rate = 44100.0; // Default sample rate
@@ -82,11 +82,11 @@ juce::Result saveTrackBufferToWavFile(
 
     // Write audio data (cropped to wrapPos)
     // Convert float buffer to AudioBuffer for writing
-    juce::AudioBuffer<float> audioBuffer(1, static_cast<int>(wrap_pos));
+    juce::AudioBuffer<float> audioBuffer(1, static_cast<int>(loop_end));
     const float* source = buffer.data();
     float* dest = audioBuffer.getWritePointer(0);
     
-    for (size_t i = 0; i < wrap_pos; ++i)
+    for (size_t i = 0; i < loop_end; ++i)
     {
         dest[i] = source[i];
     }
@@ -100,11 +100,12 @@ juce::Result saveTrackBufferToWavFile(
     // Writer will flush and close when destroyed
     writer.reset();
 
-    DBG("GradioUtilities: Saved " + juce::String(wrap_pos) + " samples to " + outputFile.getFullPathName());
+    DBG("GradioUtilities: Saved " + juce::String(loop_end) + " samples to " + outputFile.getFullPathName());
     return juce::Result::ok();
 }
 
-// Overload for VampNetMultiTrackLooperEngine
+// Overload for VampNetMultiTrackLooperEngine - commented out since VampNetTrackEngine doesn't exist
+/*
 juce::Result saveTrackBufferToWavFile(
     VampNetMultiTrackLooperEngine& engine,
     int trackIndex,
@@ -122,26 +123,26 @@ juce::Result saveTrackBufferToWavFile(
     }
 
     // Get wrapPos to determine how much to save
-    size_t wrap_pos = track.m_write_head.get_wrap_pos();
-    if (wrap_pos == 0)
+    size_t loop_end = track.m_write_head.get_loop_end();
+    if (loop_end == 0)
     {
-        wrap_pos = track.m_record_buffer.m_recorded_length.load();
+        loop_end = track.m_record_buffer.m_recorded_length.load();
     }
-    if (wrap_pos == 0)
+    if (loop_end == 0)
     {
-        wrap_pos = buffer.size(); // Fallback to full buffer
+        loop_end = buffer.size(); // Fallback to full buffer
     }
     
     // Clamp wrapPos to buffer size
-    wrap_pos = juce::jmin(wrap_pos, buffer.size());
+    loop_end = juce::jmin(loop_end, buffer.size());
     
-    if (wrap_pos == 0)
+    if (loop_end == 0)
     {
         return juce::Result::fail("No audio data to save");
     }
 
     // Get sample rate
-    double sample_rate = track.m_write_head.get_sample_rate();
+    double sample_rate = track_engine.get_sample_rate();
     if (sample_rate <= 0)
     {
         sample_rate = 44100.0; // Default sample rate
@@ -182,11 +183,11 @@ juce::Result saveTrackBufferToWavFile(
 
     // Write audio data (cropped to wrapPos)
     // Convert float buffer to AudioBuffer for writing
-    juce::AudioBuffer<float> audioBuffer(1, static_cast<int>(wrap_pos));
+    juce::AudioBuffer<float> audioBuffer(1, static_cast<int>(loop_end));
     const float* source = buffer.data();
     float* dest = audioBuffer.getWritePointer(0);
     
-    for (size_t i = 0; i < wrap_pos; ++i)
+    for (size_t i = 0; i < loop_end; ++i)
     {
         dest[i] = source[i];
     }
@@ -200,11 +201,13 @@ juce::Result saveTrackBufferToWavFile(
     // Writer will flush and close when destroyed
     writer.reset();
 
-    DBG("GradioUtilities: Saved " + juce::String(wrap_pos) + " samples to " + outputFile.getFullPathName());
+    DBG("GradioUtilities: Saved " + juce::String(loop_end) + " samples to " + outputFile.getFullPathName());
     return juce::Result::ok();
 }
+*/
 
-// Save VampNet output buffer to WAV file
+// Save VampNet output buffer to WAV file - commented out since VampNetTrackEngine doesn't exist
+/*
 juce::Result saveVampNetOutputBufferToWavFile(
     VampNetMultiTrackLooperEngine& engine,
     int trackIndex,
@@ -299,6 +302,7 @@ juce::Result saveVampNetOutputBufferToWavFile(
     DBG("GradioUtilities: Saved " + juce::String(recorded_length) + " samples from output buffer to " + outputFile.getFullPathName());
     return juce::Result::ok();
 }
+*/
 
 juce::Result parseSSEStream(
     juce::InputStream* stream,

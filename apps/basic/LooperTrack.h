@@ -3,7 +3,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
-#include <flowerjuce/Engine/MultiTrackLooperEngine.h>
+#include <flowerjuce/LooperEngine/MultiTrackLooperEngine.h>
 #include <flowerjuce/Components/WaveformDisplay.h>
 #include <flowerjuce/Components/TransportControls.h>
 #include <flowerjuce/Components/ParameterKnobs.h>

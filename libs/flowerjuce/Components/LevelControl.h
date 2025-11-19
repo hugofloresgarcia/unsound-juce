@@ -2,7 +2,7 @@
 
 #include <juce_core/juce_core.h>
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "../Engine/MultiTrackLooperEngine.h"
+#include "../LooperEngine/MultiTrackLooperEngine.h"
 #include "MidiLearnManager.h"
 #include "MidiLearnComponent.h"
 #include <functional>
@@ -15,8 +15,6 @@ class LevelControl : public juce::Component
 public:
     LevelControl(MultiTrackLooperEngine& engine, int trackIndex);
     LevelControl(MultiTrackLooperEngine& engine, int trackIndex, MidiLearnManager* midiManager, const juce::String& trackPrefix);
-    LevelControl(VampNetMultiTrackLooperEngine& engine, int trackIndex);
-    LevelControl(VampNetMultiTrackLooperEngine& engine, int trackIndex, MidiLearnManager* midiManager, const juce::String& trackPrefix);
     ~LevelControl() override;
 
     void paint(juce::Graphics& g) override;
@@ -30,12 +28,13 @@ public:
     void setLevelValue(double value, juce::NotificationType notification);
 
 private:
-    enum EngineType { Basic, VampNet };
+    enum EngineType { Basic }; // Removed VampNet since it doesn't exist
     EngineType engineType;
-    union {
-        MultiTrackLooperEngine* basicEngine;
-        VampNetMultiTrackLooperEngine* vampNetEngine;
-    } looperEngine;
+    MultiTrackLooperEngine* looperEngine; // Simplified - no union needed
+    // union {
+    //     MultiTrackLooperEngine* basicEngine;
+    //     VampNetMultiTrackLooperEngine* vampNetEngine;
+    // } looperEngine;
     int trackIndex;
 
     juce::Slider levelSlider;

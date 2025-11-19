@@ -23,33 +23,3 @@ add_subdirectory(apps)
 
 # Add plugins
 # add_subdirectory(plugins)
-
-# Test runner executable
-juce_add_console_app(PannerTestsRunner
-    COMPANY_NAME "Unsound"
-    PRODUCT_NAME "Panner Tests Runner"
-    VERSION ${PROJECT_VERSION}
-)
-
-target_sources(PannerTestsRunner PRIVATE
-    libs/flowerjuce/Panners/RunPannerTests.cpp
-    libs/flowerjuce/Panners/PannerTests.cpp
-    libs/flowerjuce/Panners/PannerTests.h
-    libs/flowerjuce/Panners/PanningUtils.cpp
-    libs/flowerjuce/Panners/PanningUtils.h
-    libs/flowerjuce/Panners/StereoPanner.cpp
-    libs/flowerjuce/Panners/StereoPanner.h
-    libs/flowerjuce/Panners/QuadPanner.cpp
-    libs/flowerjuce/Panners/QuadPanner.h
-    libs/flowerjuce/Panners/CLEATPanner.cpp
-    libs/flowerjuce/Panners/CLEATPanner.h
-    libs/flowerjuce/Panners/Panner.h
-)
-
-target_link_libraries(PannerTestsRunner PRIVATE
-    flowerjuce
-    juce::juce_core
-    juce::juce_dsp
-    juce::juce_graphics
-    juce::juce_gui_basics
-)

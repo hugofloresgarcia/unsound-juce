@@ -85,8 +85,8 @@ SamplerTrack::SamplerTrack(MultiTrackLooperEngine& engine, int track_index, Shar
     
     if (panner != nullptr)
     {
-        auto& track = looper_engine.get_track(track_index);
-        double sample_rate = track.m_write_head.get_sample_rate();
+        auto& track = looper_engine.get_track_engine(track_index);
+        double sample_rate = track.get_sample_rate();
         if (sample_rate <= 0.0)
             sample_rate = 44100.0;
         
@@ -444,8 +444,8 @@ void SamplerTrack::pan_slider_value_changed()
 
 void SamplerTrack::mute_button_toggled(bool muted)
 {
-    auto& track = looper_engine.get_track(track_index);
-    track.m_read_head.set_muted(muted);
+    auto& track = looper_engine.get_track_engine(track_index);
+    track.set_muted(muted);
 }
 
 void SamplerTrack::timerCallback()

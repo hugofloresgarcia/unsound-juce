@@ -2,7 +2,7 @@
 
 #include <juce_core/juce_core.h>
 #include <juce_gui_basics/juce_gui_basics.h>
-#include <flowerjuce/Engine/MultiTrackLooperEngine.h>
+#include <flowerjuce/LooperEngine/MultiTrackLooperEngine.h>
 #include "LooperTrack.h"
 #include <array>
 #include <vector>

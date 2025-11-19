@@ -2,7 +2,7 @@
 
 #include <juce_core/juce_core.h>
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "../Engine/MultiTrackLooperEngine.h"
+#include "../LooperEngine/MultiTrackLooperEngine.h"
 
 namespace Shared
 {
@@ -11,19 +11,20 @@ class WaveformDisplay : public juce::Component
 {
 public:
     WaveformDisplay(MultiTrackLooperEngine& engine, int trackIndex);
-    WaveformDisplay(VampNetMultiTrackLooperEngine& engine, int trackIndex);
+    // WaveformDisplay(VampNetMultiTrackLooperEngine& engine, int trackIndex); // Commented out - VampNetTrackEngine doesn't exist
     ~WaveformDisplay() override = default;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
 
 private:
-    enum EngineType { Basic, VampNet };
+    enum EngineType { Basic }; // Removed VampNet since it doesn't exist
     EngineType engineType;
-    union {
-        MultiTrackLooperEngine* basicEngine;
-        VampNetMultiTrackLooperEngine* vampNetEngine;
-    } looperEngine;
+    MultiTrackLooperEngine* looperEngine; // Simplified - no union needed
+    // union {
+    //     MultiTrackLooperEngine* basicEngine;
+    //     VampNetMultiTrackLooperEngine* vampNetEngine;
+    // } looperEngine;
     int trackIndex;
 
     void drawWaveform(juce::Graphics& g, juce::Rectangle<int> area);
