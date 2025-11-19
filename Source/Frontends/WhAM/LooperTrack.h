@@ -119,7 +119,7 @@ public:
     void setMicEnabled(bool enabled);
     void updateMicButtonAvailability();
 
-    bool isAutogenEnabled() const { return autogenToggle.getToggleState(); }
+    bool isAutogenEnabled() const { return loopModeButton.getToggleState(); }
     void setAutogenEnabled(bool enabled);
 
     bool isUseOutputAsInputEnabled() const { return useOutputAsInputToggle.getToggleState(); }
@@ -165,7 +165,7 @@ private:
     juce::TextButton generateButton;
     juce::TextButton configureParamsButton;
     juce::ToggleButton useOutputAsInputToggle;
-    juce::ToggleButton autogenToggle;
+    juce::DrawableButton loopModeButton;
     
     // Panner
     juce::String pannerType;
@@ -223,6 +223,7 @@ private:
     const Shared::ParameterKnobs* getModelParameterKnobComponent() const;
     void showModelParamsPopup();
     void hideModelParamsPopup();
+    void updateGenerateButtonMode();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LooperTrack)
 };

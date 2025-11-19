@@ -33,6 +33,42 @@ std::unique_ptr<juce::Drawable> createMicDrawable(juce::Colour fill, juce::Colou
     drawablePath->setStrokeThickness(1.6f);
     return drawable;
 }
+
+std::unique_ptr<juce::Drawable> createLoopDrawable(juce::Colour colour)
+{
+    auto drawable = std::make_unique<juce::DrawablePath>();
+
+    const float centre = 16.0f;
+    const float radius = 11.0f;
+    const float thickness = 2.0f;
+
+    juce::Path arcPath;
+    arcPath.addCentredArc(centre, centre, radius, radius, 0.0f,
+                          juce::degreesToRadians(30.0f),
+                          juce::degreesToRadians(330.0f), true);
+
+    juce::Path stroked;
+    juce::PathStrokeType(thickness, juce::PathStrokeType::curved, juce::PathStrokeType::rounded)
+        .createStrokedPath(stroked, arcPath);
+
+    // Arrowheads
+    juce::Path arrows;
+    arrows.addTriangle(centre + radius - 3.0f, centre - 5.0f,
+                       centre + radius + 5.0f, centre,
+                       centre + radius - 3.0f, centre + 5.0f);
+
+    arrows.addTriangle(centre - radius + 3.0f, centre + 5.0f,
+                       centre - radius - 5.0f, centre,
+                       centre - radius + 3.0f, centre - 5.0f);
+
+    stroked.addPath(arrows);
+
+    auto drawablePath = static_cast<juce::DrawablePath*>(drawable.get());
+    drawablePath->setPath(stroked);
+    drawablePath->setFill(colour);
+    drawablePath->setStrokeThickness(0.0f);
+    return drawable;
+}
 } // namespace
 
 // VampNetWorkerThread implementation
@@ -342,7 +378,7 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
       resetButton("x"),
       generateButton("generate"),
       useOutputAsInputToggle("use o as i"),
-      autogenToggle("autogen"),
+      loopModeButton("loopMode", juce::DrawableButton::ImageOnButtonBackgroundOriginalSize),
       gradioUrlProvider(std::move(gradioUrlGetter)),
       midiLearnManager(midiManager),
       trackIdPrefix("track" + juce::String(index)),
@@ -492,6 +528,20 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     };
     addAndMakeVisible(levelControl);
 
+    auto loopOffIcon = createLoopDrawable(juce::Colour(0xff4a4a4a));
+    auto loopOnIcon = createLoopDrawable(juce::Colour(0xff1eb19d));
+    loopModeButton.setClickingTogglesState(true);
+    loopModeButton.setWantsKeyboardFocus(false);
+    loopModeButton.setTooltip("loop generate");
+    loopModeButton.setColour(juce::DrawableButton::backgroundColourId, juce::Colour(0x00111111));
+    loopModeButton.setColour(juce::DrawableButton::backgroundOnColourId, juce::Colour(0x00111111));
+    loopModeButton.setImages(loopOffIcon.release(), nullptr, nullptr, nullptr,
+                             loopOnIcon.release(), nullptr, nullptr, nullptr);
+    loopModeButton.onClick = [this]() { updateGenerateButtonMode(); };
+    loopModeButton.setToggleState(false, juce::dontSendNotification);
+    addAndMakeVisible(loopModeButton);
+    updateGenerateButtonMode();
+
     auto micOffIcon = createMicDrawable(juce::Colour(0xff4a4a4a), juce::Colour(0xffe0e0e0));
     auto micOnIcon = createMicDrawable(juce::Colour(0xfff5a623), juce::Colour(0xff000000));
     micIconButton.setClickingTogglesState(true);
@@ -510,11 +560,6 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     useOutputAsInputToggle.setButtonText("use o as i");
     useOutputAsInputToggle.setToggleState(false, juce::dontSendNotification);
     addAndMakeVisible(useOutputAsInputToggle);
-
-    // Setup "autogen" toggle
-    autogenToggle.setButtonText("autogen");
-    autogenToggle.setToggleState(false, juce::dontSendNotification);
-    addAndMakeVisible(autogenToggle);
 
     // Setup input selector
     inputSelector.onChannelChange = [this](int channel) {
@@ -599,7 +644,6 @@ void LooperTrack::applyLookAndFeel()
         generateButton.setLookAndFeel(&laf);
         configureParamsButton.setLookAndFeel(&laf);
         useOutputAsInputToggle.setLookAndFeel(&laf);
-        autogenToggle.setLookAndFeel(&laf);
     }
 }
 
@@ -737,8 +781,11 @@ void LooperTrack::resized()
     configureParamsButton.setBounds(configureArea);
     removeBottomSpacing();
 
-    // Generate button
+    // Generate row with loop toggle
     auto generateArea = remainingArea.removeFromBottom(generateButtonHeight);
+    const int loopButtonSize = 36;
+    auto loopArea = generateArea.removeFromRight(loopButtonSize);
+    loopModeButton.setBounds(loopArea.reduced(2));
     generateButton.setBounds(generateArea);
     removeBottomSpacing();
 
@@ -754,11 +801,9 @@ void LooperTrack::resized()
     micIconButton.setBounds(micBounds);
     controlsArea.removeFromLeft(spacingSmall);
 
-    // Stack toggles vertically: autogen on top, use o as i below
-    auto toggleArea = controlsArea.removeFromLeft(100); // Toggle button width
-    autogenToggle.setBounds(toggleArea.removeFromTop(30)); // First toggle
-    toggleArea.removeFromTop(spacingSmall);
-    useOutputAsInputToggle.setBounds(toggleArea.removeFromTop(30)); // Second toggle
+    // Use output as input toggle
+    auto toggleArea = controlsArea.removeFromLeft(120);
+    useOutputAsInputToggle.setBounds(toggleArea.removeFromTop(30));
     removeBottomSpacing();
 
     // Knob array (all VampNet controls)
@@ -960,7 +1005,7 @@ void LooperTrack::onVampNetComplete(juce::Result result, juce::File outputFile)
         repaint(); // Refresh waveform display
 
         // Check if autogen is enabled - if so, automatically trigger next generation
-        if (autogenToggle.getToggleState())
+        if (loopModeButton.getToggleState())
         {
             DBG("LooperTrack: Autogen enabled - automatically triggering next generation");
             // Use a short delay to ensure the UI updates and the file is fully loaded
@@ -1101,7 +1146,17 @@ void LooperTrack::setCustomParams(const juce::var& params, juce::NotificationTyp
 
 void LooperTrack::setAutogenEnabled(bool enabled)
 {
-    autogenToggle.setToggleState(enabled, juce::dontSendNotification);
+    loopModeButton.setToggleState(enabled, juce::dontSendNotification);
+    updateGenerateButtonMode();
+}
+
+void LooperTrack::updateGenerateButtonMode()
+{
+    bool loopEnabled = loopModeButton.getToggleState();
+    generateButton.setClickingTogglesState(loopEnabled);
+
+    if (!loopEnabled)
+        generateButton.setToggleState(false, juce::dontSendNotification);
 }
 
 void LooperTrack::setUseOutputAsInputEnabled(bool enabled)
