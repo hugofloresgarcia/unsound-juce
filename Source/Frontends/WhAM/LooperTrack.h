@@ -118,6 +118,16 @@ public:
     bool isMicEnabled() const;
     void setMicEnabled(bool enabled);
     void updateMicButtonAvailability();
+    int getSelectedInputChannel() const;
+    void setSelectedInputChannel(int channel);
+    int getSelectedOutputChannel() const;
+    void setSelectedOutputChannel(int channel);
+    bool hasInputAudio() const;
+    bool hasOutputAudio() const;
+    juce::Result loadInputAudioFromFile(const juce::File& file);
+    juce::Result loadOutputAudioFromFile(const juce::File& file);
+    juce::Result saveInputAudioToFile(const juce::File& file) const;
+    juce::Result saveOutputAudioToFile(const juce::File& file) const;
 
     bool isAutogenEnabled() const { return loopModeButton.getToggleState(); }
     void setAutogenEnabled(bool enabled);
@@ -166,6 +176,8 @@ private:
     juce::TextButton configureParamsButton;
     juce::ToggleButton useOutputAsInputToggle;
     juce::DrawableButton loopModeButton;
+    RightClickSafeTextButton loadInputButton;
+    RightClickSafeTextButton saveOutputButton;
     
     // Panner
     juce::String pannerType;
@@ -192,6 +204,8 @@ private:
     void resetButtonClicked();
     void generateButtonClicked();
     void configureParamsButtonClicked();
+    void loadInputButtonClicked();
+    void saveOutputButtonClicked();
     
     void onVampNetComplete(juce::Result result, juce::File outputFile);
     
@@ -218,6 +232,8 @@ private:
     std::unique_ptr<Shared::MidiLearnable> micToggleLearnable;
     std::unique_ptr<Shared::MidiLearnMouseListener> micToggleMouseListener;
     juce::String trackIdPrefix;
+    juce::String lastLoadedInputPath;
+    juce::String lastSavedOutputPath;
 
     Shared::ParameterKnobs* getModelParameterKnobComponent();
     const Shared::ParameterKnobs* getModelParameterKnobComponent() const;

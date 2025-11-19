@@ -188,6 +188,79 @@ bool VampNetTrackEngine::loadFromFile(const juce::File& audioFile)
     return true;
 }
 
+bool VampNetTrackEngine::loadInputFromFile(const juce::File& audioFile)
+{
+    if (!audioFile.existsAsFile())
+    {
+        DBG("Audio file does not exist: " << audioFile.getFullPathName());
+        return false;
+    }
+
+    std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(audioFile));
+    if (reader == nullptr)
+    {
+        DBG("Could not create reader for file: " << audioFile.getFullPathName());
+        return false;
+    }
+
+    const juce::ScopedLock sl(trackState.recordBuffer.lock);
+    auto& buffer = trackState.recordBuffer.getBuffer();
+
+    if (buffer.empty())
+    {
+        DBG("Record buffer not allocated. Call initialize() first.");
+        return false;
+    }
+
+    trackState.recordBuffer.clearBuffer();
+
+    juce::int64 numSamplesToRead = juce::jmin(reader->lengthInSamples, static_cast<juce::int64>(buffer.size()));
+    if (numSamplesToRead <= 0)
+    {
+        DBG("Audio file has no samples or buffer is empty");
+        return false;
+    }
+
+    juce::AudioBuffer<float> tempBuffer(static_cast<int>(reader->numChannels), static_cast<int>(numSamplesToRead));
+    if (!reader->read(&tempBuffer, 0, static_cast<int>(numSamplesToRead), 0, true, true))
+    {
+        DBG("Failed to read audio data from file");
+        return false;
+    }
+
+    if (tempBuffer.getNumChannels() == 1)
+    {
+        const float* source = tempBuffer.getReadPointer(0);
+        for (int i = 0; i < static_cast<int>(numSamplesToRead); ++i)
+            buffer[i] = source[i];
+    }
+    else
+    {
+        for (int i = 0; i < static_cast<int>(numSamplesToRead); ++i)
+        {
+            float sum = 0.0f;
+            for (int channel = 0; channel < tempBuffer.getNumChannels(); ++channel)
+                sum += tempBuffer.getSample(channel, i);
+            buffer[i] = sum / static_cast<float>(tempBuffer.getNumChannels());
+        }
+    }
+
+    size_t loadedLength = static_cast<size_t>(numSamplesToRead);
+    trackState.writeHead.setWrapPos(loadedLength);
+    trackState.writeHead.setPos(loadedLength);
+
+    trackState.recordBuffer.recordedLength.store(loadedLength);
+    trackState.recordBuffer.hasRecorded.store(true);
+
+    trackState.recordReadHead.reset();
+    trackState.recordReadHead.setPos(0.0f);
+
+    DBG("Loaded input audio file: " << audioFile.getFileName()
+        << " (" << numSamplesToRead << " samples, "
+        << (numSamplesToRead / reader->sampleRate) << " seconds)");
+    return true;
+}
+
 bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
                                      int numInputChannels,
                                      float* const* outputChannelData,

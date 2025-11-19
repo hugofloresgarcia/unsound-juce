@@ -379,6 +379,8 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
       generateButton("generate"),
       useOutputAsInputToggle("use o as i"),
       loopModeButton("loopMode", juce::DrawableButton::ImageOnButtonBackgroundOriginalSize),
+      loadInputButton("load input"),
+      saveOutputButton("save output"),
       gradioUrlProvider(std::move(gradioUrlGetter)),
       midiLearnManager(midiManager),
       trackIdPrefix("track" + juce::String(index)),
@@ -542,6 +544,14 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     addAndMakeVisible(loopModeButton);
     updateGenerateButtonMode();
 
+    loadInputButton.onLeftClick = [this] { loadInputButtonClicked(); };
+    loadInputButton.setTooltip("Load audio into this track's input buffer");
+    addAndMakeVisible(loadInputButton);
+
+    saveOutputButton.onLeftClick = [this] { saveOutputButtonClicked(); };
+    saveOutputButton.setTooltip("Export generated audio");
+    addAndMakeVisible(saveOutputButton);
+
     auto micOffIcon = createMicDrawable(juce::Colour(0xff4a4a4a), juce::Colour(0xffe0e0e0));
     auto micOnIcon = createMicDrawable(juce::Colour(0xfff5a623), juce::Colour(0xff000000));
     micIconButton.setClickingTogglesState(true);
@@ -644,6 +654,8 @@ void LooperTrack::applyLookAndFeel()
         generateButton.setLookAndFeel(&laf);
         configureParamsButton.setLookAndFeel(&laf);
         useOutputAsInputToggle.setLookAndFeel(&laf);
+        loadInputButton.setLookAndFeel(&laf);
+        saveOutputButton.setLookAndFeel(&laf);
     }
 }
 
@@ -728,7 +740,13 @@ void LooperTrack::resized()
     outputSelector.setBounds(channelSelectorArea.removeFromLeft(selectorWidth));
     bounds.removeFromTop(spacingSmall);
 
-    // Leave a spacer before the waveform/controls block
+    // Load/save buttons for audio files
+    const int fileButtonHeight = 30;
+    auto fileButtonArea = bounds.removeFromTop(fileButtonHeight);
+    const int fileButtonWidth = 120;
+    loadInputButton.setBounds(fileButtonArea.removeFromLeft(fileButtonWidth));
+    fileButtonArea.removeFromLeft(spacingSmall);
+    saveOutputButton.setBounds(fileButtonArea.removeFromLeft(fileButtonWidth));
     bounds.removeFromTop(spacingSmall);
 
     // Remaining area now contains waveform + lower controls
@@ -945,6 +963,63 @@ void LooperTrack::configureParamsButtonClicked()
         showModelParamsPopup();
     else
         hideModelParamsPopup();
+}
+
+void LooperTrack::loadInputButtonClicked()
+{
+    juce::File initial = lastLoadedInputPath.isNotEmpty()
+                             ? juce::File(lastLoadedInputPath)
+                             : juce::File();
+
+    juce::FileChooser chooser("Load input audio...", initial,
+                              "*.wav;*.aif;*.aiff;*.mp3;*.flac;*.ogg");
+
+    if (!chooser.browseForFileToOpen())
+        return;
+
+    auto file = chooser.getResult();
+    auto result = loadInputAudioFromFile(file);
+    if (result.failed())
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "load failed",
+                                               result.getErrorMessage());
+        return;
+    }
+
+    lastLoadedInputPath = file.getFullPathName();
+    repaint();
+}
+
+void LooperTrack::saveOutputButtonClicked()
+{
+    if (!hasOutputAudio())
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
+                                               "nothing to save",
+                                               "This track has no generated audio yet.");
+        return;
+    }
+
+    juce::File initial = lastSavedOutputPath.isNotEmpty()
+                             ? juce::File(lastSavedOutputPath)
+                             : juce::File();
+
+    juce::FileChooser chooser("Save output audio...", initial, "*.wav");
+    if (!chooser.browseForFileToSave(true))
+        return;
+
+    auto file = chooser.getResult();
+    auto result = saveOutputAudioToFile(file);
+    if (result.failed())
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "save failed",
+                                               result.getErrorMessage());
+        return;
+    }
+
+    lastSavedOutputPath = file.getParentDirectory().getFullPathName();
 }
 
 juce::var LooperTrack::getDefaultVampNetParams()
@@ -1175,6 +1250,110 @@ void LooperTrack::setMicEnabled(bool enabled)
     auto& track = looperEngine.getTrack(trackIndex);
     track.micEnabled.store(enabled);
     micIconButton.setToggleState(enabled, juce::dontSendNotification);
+}
+
+int LooperTrack::getSelectedInputChannel() const
+{
+    return inputSelector.getSelectedChannel();
+}
+
+void LooperTrack::setSelectedInputChannel(int channel)
+{
+    inputSelector.setSelectedChannel(channel, juce::sendNotificationSync);
+}
+
+int LooperTrack::getSelectedOutputChannel() const
+{
+    return outputSelector.getSelectedChannel();
+}
+
+void LooperTrack::setSelectedOutputChannel(int channel)
+{
+    outputSelector.setSelectedChannel(channel, juce::sendNotificationSync);
+}
+
+bool LooperTrack::hasInputAudio() const
+{
+    const auto& track = looperEngine.getTrack(trackIndex);
+    return track.recordBuffer.hasRecorded.load();
+}
+
+bool LooperTrack::hasOutputAudio() const
+{
+    const auto& track = looperEngine.getTrack(trackIndex);
+    return track.outputBuffer.hasRecorded.load();
+}
+
+juce::Result LooperTrack::loadInputAudioFromFile(const juce::File& file)
+{
+    if (!file.existsAsFile())
+        return juce::Result::fail("File does not exist: " + file.getFullPathName());
+
+    auto& trackEngine = looperEngine.getTrackEngine(trackIndex);
+    if (!trackEngine.loadInputFromFile(file))
+        return juce::Result::fail("Failed to load audio into input buffer");
+
+    repaint();
+    return juce::Result::ok();
+}
+
+juce::Result LooperTrack::loadOutputAudioFromFile(const juce::File& file)
+{
+    if (!file.existsAsFile())
+        return juce::Result::fail("File does not exist: " + file.getFullPathName());
+
+    auto& trackEngine = looperEngine.getTrackEngine(trackIndex);
+    if (!trackEngine.loadFromFile(file))
+        return juce::Result::fail("Failed to load audio into output buffer");
+
+    repaint();
+    return juce::Result::ok();
+}
+
+juce::Result LooperTrack::saveInputAudioToFile(const juce::File& file) const
+{
+    if (!hasInputAudio())
+        return juce::Result::fail("No input audio to save");
+
+    juce::File destination = file;
+    auto parent = destination.getParentDirectory();
+    if (!parent.exists())
+        parent.createDirectory();
+
+    juce::File tempFile;
+    auto result = Shared::saveTrackBufferToWavFile(looperEngine, trackIndex, tempFile, "wham_input");
+    if (result.failed())
+        return result;
+
+    destination.deleteFile();
+    if (!tempFile.copyFileTo(destination))
+        return juce::Result::fail("Failed to write audio file: " + destination.getFullPathName());
+
+    tempFile.deleteFile();
+    return juce::Result::ok();
+}
+
+juce::Result LooperTrack::saveOutputAudioToFile(const juce::File& file) const
+{
+    if (!hasOutputAudio())
+        return juce::Result::fail("No output audio to save");
+
+    juce::File destination = file;
+    auto parent = destination.getParentDirectory();
+    if (!parent.exists())
+        parent.createDirectory();
+
+    juce::File tempFile;
+    auto result = Shared::saveVampNetOutputBufferToWavFile(looperEngine, trackIndex, tempFile, "wham_output");
+    if (result.failed())
+        return result;
+
+    destination.deleteFile();
+    if (!tempFile.copyFileTo(destination))
+        return juce::Result::fail("Failed to write audio file: " + destination.getFullPathName());
+
+    tempFile.deleteFile();
+    return juce::Result::ok();
 }
 
 void LooperTrack::updateMicButtonAvailability()

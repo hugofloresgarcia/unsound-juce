@@ -1,27 +1,20 @@
 # WhAM TODOs by Difficulty
 
-## Minor Changes
+## Minor Changes _(✅ Completed)_
 
-### Mic icon
-Right now it is "m..." which is weird. Can we just use an actual microphone icon instead? We can move it next to the Level slider, which is going to be cleared up.
-
-### "record" should be "input" above the "output"
-This is referring to each track, at the top right above the tape control knobs.
-
-### Remove "These knobs feed VampNet's advanced controls" text in Model Params
-It's redundant.
-
-### Rename "MIDI Learn" to "Midi Bind"
-It's just a better name. Do this everywhere. Rename "Clear MIDI Mapping" to "Unbind".
-
-### Give the .exe the icon from Assets/wham.png
+- Mic icon now uses the mic graphic next to the level slider.
+- “record” label renamed to “input” everywhere above the tape controls.
+- Removed the redundant “These knobs feed VampNet's advanced controls” copy.
+- Rebranded “MIDI Learn” → “Midi Bind” and “Clear MIDI Mapping” → “Unbind”.
+- Windows build now ships with the `Assets/wham.png` application icon.
 
 ## Medium Changes
 
 #### QA baseline
 Let's add some unit tests for the basic functionality. In particular, before implementing the following many features. In addition to unit tests, you can create a Markdown with GUI tests which I will carry out for you after you make the following changes (let's do the tests one feature at a time to make sure we're not diverging too much at once from the current version, which works well.)
 
-### Load input from file
+### Load input from file _(✅ Completed)_
+Tracks can import audio into their input buffers via the new “load input” button (also used by session save/load).
 
 ### Different colors for each track
 That way we can color code the controller with corresponding play buttons.
@@ -29,11 +22,11 @@ That way we can color code the controller with corresponding play buttons.
 ### Finalize Viz GUI (move WhAM to middle)
 For now, have a narrow rounded rectangle in the middle that says "WhAM", and remove the current WhAM logo from the top. I'll ask Meghan for a nicer long-rectangular Asset.
 
-### Change "Save/load config" to just "Save/load"
-Have it also save current input and output tracks, and as much other configuration as is easy to save.
+### Change "Save/load config" to just "Save/load" _(✅ Completed)_
+Buttons/menus now say “save”/“load”, and sessions persist routing, mic state, synth config, MIDI mappings, and the actual track audio into sidecar WAVs.
 
-### Move "autogen" checkbox
-A logical place right now is to narrow the Generate button a bit and use the space (on the same horizontal line) to add a checkbox with a "loop" icon that determines whether the Generate button acts as a momentary or a toggle (toggle being the same behavior as "autogen" currently).
+### Move "autogen" checkbox _(✅ Completed)_
+Replaced with a loop-mode icon next to the Generate button; it toggles the button between momentary and latched behavior.
 
 ## Large Changes
 
@@ -72,8 +65,8 @@ Essentially, if there are multiple tracks of different lengths but we want to lo
 ## What's with the "in" and "out" dropdowns?
 I'm not sure what these are supposed to do. Right now there's only one option in each, and that's "all". Instead, we can have a single drop down "in". This has the option of (some name for the normal behavior, i.e. synths, audio in=mic), or one for each other track input and output. So for example, when working with three tracks, Track 1 will have the default (idk what to call it, maybe "Rec"?), then "Track 2 in", "Track 2 out", "Track 3 in" and "Track 3 out". This allows us to merge tracks together on the fly. If this requires significant architectural changes then we can defer this feature and instead, for now, just remove the "in" and "out" dropdowns which seem useless.
 
-## Save track output button
-Per track. Allows you to save the track output to file.
+## Save track output button _(✅ Completed)_
+Each track has “save output” plus “load input” controls; session save/load reuses these audio assets.
 
 # Demo flow (for reference)
 For the five-minute demo at ECDD25.

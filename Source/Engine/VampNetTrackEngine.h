@@ -74,6 +74,7 @@ public:
     // Load audio file into the output buffer
     // Returns true if successful, false otherwise
     bool loadFromFile(const juce::File& audioFile);
+    bool loadInputFromFile(const juce::File& audioFile);
 
     // Access to track state
     TrackState& getTrackState() { return trackState; }

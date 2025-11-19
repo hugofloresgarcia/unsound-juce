@@ -18,12 +18,18 @@ struct SessionConfig
         bool useOutputAsInput = false;
         double levelDb = 0.0;
         juce::var pannerState;
+        int inputChannel = -1;
+        int outputChannel = -1;
+        bool micEnabled = true;
+        juce::String inputAudioFile;
+        juce::String outputAudioFile;
     };
 
     juce::String gradioUrl;
     std::vector<TrackState> tracks;
     std::vector<Shared::MidiMapping> midiMappings;
     juce::var synthState; // Synths (click + sampler) configuration
+    juce::File audioDirectory;
 
     juce::var toVar() const;
     static juce::Result fromVar(const juce::var& data, SessionConfig& out);

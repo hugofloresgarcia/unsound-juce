@@ -140,11 +140,11 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     vizButton.onClick = [this] { showVizWindow(); };
     addAndMakeVisible(vizButton);
     
-    saveConfigButton.setButtonText("save config");
+    saveConfigButton.setButtonText("save");
     saveConfigButton.onClick = [this]() { saveConfigButtonClicked(); };
     addAndMakeVisible(saveConfigButton);
 
-    loadConfigButton.setButtonText("load config");
+    loadConfigButton.setButtonText("load");
     loadConfigButton.onClick = [this]() { loadConfigButtonClicked(); };
     addAndMakeVisible(loadConfigButton);
     
@@ -213,8 +213,8 @@ void MainComponent::resized()
         {&syncButton, 120},
         {&settingsButton, 100},
         {&synthsButton, 100},
-        {&saveConfigButton, 130},
-        {&loadConfigButton, 130}
+        {&saveConfigButton, 90},
+        {&loadConfigButton, 90}
     };
 
     int availableWidth = controlArea.getWidth();
@@ -611,8 +611,8 @@ void MainComponent::showOverflowMenu()
         {&syncButton, "sync all", 2},
         {&settingsButton, "settings", 3},
         {&synthsButton, "synths", 4},
-        {&saveConfigButton, "save config", 5},
-        {&loadConfigButton, "load config", 6}
+        {&saveConfigButton, "save", 5},
+        {&loadConfigButton, "load", 6}
     };
     
     // Add buttons to menu if they're outside the visible control area
@@ -721,6 +721,8 @@ void MainComponent::saveConfigButtonClicked()
         return;
 
     auto file = chooser.getResult();
+    config.audioDirectory = file.getParentDirectory();
+    writeSessionAudioAssets(config, file);
     auto result = config.saveToFile(file);
     if (result.failed())
     {
@@ -730,7 +732,7 @@ void MainComponent::saveConfigButtonClicked()
         return;
     }
 
-    juce::AlertWindow prompt("config saved",
+    juce::AlertWindow prompt("session saved",
                              "Config saved to:\n" + file.getFullPathName(),
                              juce::AlertWindow::NoIcon);
     auto* toggle = new juce::ToggleButton("Set as default");
@@ -758,8 +760,9 @@ void MainComponent::loadConfigButtonClicked()
                                                result.getErrorMessage());
         return;
     }
+    config.audioDirectory = file.getParentDirectory();
 
-    juce::AlertWindow prompt("load config",
+    juce::AlertWindow prompt("load session",
                              "Load this config?\n" + file.getFullPathName(),
                              juce::AlertWindow::NoIcon);
     auto* toggle = new juce::ToggleButton("Set as default");
@@ -808,6 +811,9 @@ SessionConfig MainComponent::buildSessionConfig() const
         state.useOutputAsInput = trackPtr->isUseOutputAsInputEnabled();
         state.levelDb = trackPtr->getLevelDb();
         state.pannerState = trackPtr->getPannerState();
+        state.inputChannel = trackPtr->getSelectedInputChannel();
+        state.outputChannel = trackPtr->getSelectedOutputChannel();
+        state.micEnabled = trackPtr->isMicEnabled();
         config.tracks.push_back(state);
     }
 
@@ -844,6 +850,38 @@ void MainComponent::applySessionConfig(const SessionConfig& config, bool showErr
         track->setUseOutputAsInputEnabled(trackState.useOutputAsInput);
         track->setLevelDb(trackState.levelDb, juce::sendNotificationSync);
         track->applyPannerState(trackState.pannerState);
+        track->setSelectedInputChannel(trackState.inputChannel);
+        track->setSelectedOutputChannel(trackState.outputChannel);
+        track->setMicEnabled(trackState.micEnabled);
+
+        if (config.audioDirectory.exists())
+        {
+            if (trackState.inputAudioFile.isNotEmpty())
+            {
+                auto inputFile = config.audioDirectory.getChildFile(trackState.inputAudioFile);
+                if (inputFile.existsAsFile())
+                {
+                    auto result = track->loadInputAudioFromFile(inputFile);
+                    if (result.failed() && showErrorsOnFailure)
+                        juce::Logger::writeToLog("Failed to load input audio for track "
+                                                 + juce::String(trackState.trackIndex + 1) + ": "
+                                                 + result.getErrorMessage());
+                }
+            }
+
+            if (trackState.outputAudioFile.isNotEmpty())
+            {
+                auto outputFile = config.audioDirectory.getChildFile(trackState.outputAudioFile);
+                if (outputFile.existsAsFile())
+                {
+                    auto result = track->loadOutputAudioFromFile(outputFile);
+                    if (result.failed() && showErrorsOnFailure)
+                        juce::Logger::writeToLog("Failed to load output audio for track "
+                                                 + juce::String(trackState.trackIndex + 1) + ": "
+                                                 + result.getErrorMessage());
+                }
+            }
+        }
     }
 
     if (config.synthState.isObject())
@@ -859,6 +897,67 @@ void MainComponent::applySessionConfig(const SessionConfig& config, bool showErr
 
     if (!config.midiMappings.empty())
         midiLearnManager.applyMappings(config.midiMappings);
+}
+
+void MainComponent::writeSessionAudioAssets(SessionConfig& config, const juce::File& sessionFile)
+{
+    auto folder = sessionFile.getParentDirectory();
+    if (!folder.exists())
+        folder.createDirectory();
+
+    config.audioDirectory = folder;
+    auto baseName = sessionFile.getFileNameWithoutExtension();
+
+    for (auto& trackState : config.tracks)
+    {
+        int idx = trackState.trackIndex;
+        if (idx < 0 || idx >= static_cast<int>(tracks.size()))
+            continue;
+
+        auto* trackComponent = tracks[idx].get();
+        if (trackComponent == nullptr)
+            continue;
+
+        juce::String suffix = "_track" + juce::String(idx + 1);
+
+        if (trackComponent->hasInputAudio())
+        {
+            juce::File inputFile = folder.getChildFile(baseName + suffix + "_input.wav");
+            auto inputResult = trackComponent->saveInputAudioToFile(inputFile);
+            if (inputResult.wasOk())
+                trackState.inputAudioFile = inputFile.getFileName();
+            else
+            {
+                trackState.inputAudioFile.clear();
+                if (inputResult.getErrorMessage().isNotEmpty())
+                    juce::Logger::writeToLog("Failed to save input audio for track "
+                                             + juce::String(idx + 1) + ": " + inputResult.getErrorMessage());
+            }
+        }
+        else
+        {
+            trackState.inputAudioFile.clear();
+        }
+
+        if (trackComponent->hasOutputAudio())
+        {
+            juce::File outputFile = folder.getChildFile(baseName + suffix + "_output.wav");
+            auto outputResult = trackComponent->saveOutputAudioToFile(outputFile);
+            if (outputResult.wasOk())
+                trackState.outputAudioFile = outputFile.getFileName();
+            else
+            {
+                trackState.outputAudioFile.clear();
+                if (outputResult.getErrorMessage().isNotEmpty())
+                    juce::Logger::writeToLog("Failed to save output audio for track "
+                                             + juce::String(idx + 1) + ": " + outputResult.getErrorMessage());
+            }
+        }
+        else
+        {
+            trackState.outputAudioFile.clear();
+        }
+    }
 }
 
 juce::File MainComponent::getConfigDirectory() const

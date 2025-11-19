@@ -47,6 +47,11 @@ juce::var SessionConfig::toVar() const
         trackObj->setProperty("useOutputAsInput", track.useOutputAsInput);
         trackObj->setProperty("levelDb", track.levelDb);
         trackObj->setProperty("panner", track.pannerState);
+        trackObj->setProperty("inputChannel", track.inputChannel);
+        trackObj->setProperty("outputChannel", track.outputChannel);
+        trackObj->setProperty("micEnabled", track.micEnabled);
+        trackObj->setProperty("inputAudio", track.inputAudioFile);
+        trackObj->setProperty("outputAudio", track.outputAudioFile);
         trackArray.add(juce::var(trackObj));
     }
     root->setProperty("tracks", juce::var(trackArray));
@@ -104,6 +109,16 @@ juce::Result SessionConfig::fromVar(const juce::var& data, SessionConfig& out)
             state.useOutputAsInput = obj->getProperty("useOutputAsInput");
             state.levelDb = static_cast<double>(obj->getProperty("levelDb"));
             state.pannerState = obj->getProperty("panner");
+            auto inputVar = obj->getProperty("inputChannel");
+            state.inputChannel = inputVar.isVoid() ? -1 : static_cast<int>(inputVar);
+
+            auto outputVar = obj->getProperty("outputChannel");
+            state.outputChannel = outputVar.isVoid() ? -1 : static_cast<int>(outputVar);
+
+            auto micVar = obj->getProperty("micEnabled");
+            state.micEnabled = micVar.isVoid() ? true : static_cast<bool>(micVar);
+            state.inputAudioFile = obj->getProperty("inputAudio").toString();
+            state.outputAudioFile = obj->getProperty("outputAudio").toString();
             config.tracks.push_back(state);
         }
     }
@@ -154,7 +169,10 @@ juce::Result SessionConfig::loadFromFile(const juce::File& file, SessionConfig& 
     if (parsed.isVoid())
         return juce::Result::fail("Unable to parse config JSON");
 
-    return fromVar(parsed, out);
+    auto result = fromVar(parsed, out);
+    if (result.wasOk())
+        out.audioDirectory = file.getParentDirectory();
+    return result;
 }
 
 } // namespace WhAM

@@ -86,6 +86,7 @@ private:
     void loadDefaultSessionConfig();
     SessionConfig buildSessionConfig() const;
     void applySessionConfig(const SessionConfig& config, bool showErrorsOnFailure);
+    void writeSessionAudioAssets(SessionConfig& config, const juce::File& sessionFile);
     juce::File getConfigDirectory() const;
     juce::File getDefaultConfigFile() const;
     void layoutTracks();
