@@ -1,38 +1,56 @@
-# QA
+# WhAM TODOs by Difficulty
+
+## Minor Changes
+
+### Mic icon
+Right now it is "m..." which is weird. Can we just use an actual microphone icon instead? We can move it next to the Level slider, which is going to be cleared up.
+
+### "record" should be "input" above the "output"
+This is referring to each track, at the top right above the tape control knobs.
+
+### Remove "These knobs feed VampNet's advanced controls" text in Model Params
+It's redundant.
+
+### Rename "MIDI Learn" to "Midi Bind"
+It's just a better name. Do this everywhere. Rename "Clear MIDI Mapping" to "Unbind".
+
+### Give the .exe the icon from Assets/wham.png
+
+## Medium Changes
+
+#### QA baseline
 Let's add some unit tests for the basic functionality. In particular, before implementing the following many features. In addition to unit tests, you can create a Markdown with GUI tests which I will carry out for you after you make the following changes (let's do the tests one feature at a time to make sure we're not diverging too much at once from the current version, which works well.)
 
-# Features
+### Load input from file
 
-## Load input from file
-
-## Different colors for each track
+### Different colors for each track
 That way we can color code the controller with corresponding play buttons.
 
-## Finalize Viz GUI (move WhAM to middle)
+### Finalize Viz GUI (move WhAM to middle)
 For now, have a narrow rounded rectangle in the middle that says "WhAM", and remove the current WhAM logo from the top. I'll ask Meghan for a nicer long-rectangular Asset.
 
-## Change "Save/load config" to just "Save/load"
+### Change "Save/load config" to just "Save/load"
 Have it also save current input and output tracks, and as much other configuration as is easy to save.
 
-## Add high/low pass filters
-Perhaps instead of "Overdub"? These knobs should go in the Tape Control knob section.
-
-## Give the .exe the icon from Assets/wham.png
-
-## Move "autogen" checkbox
+### Move "autogen" checkbox
 A logical place right now is to narrow the Generate button a bit and use the space (on the same horizontal line) to add a checkbox with a "loop" icon that determines whether the Generate button acts as a momentary or a toggle (toggle being the same behavior as "autogen" currently).
 
-## Header redesign
-### Top left
+## Large Changes
+
+### Add high/low pass filters
+Perhaps instead of "Overdub"? These knobs should go in the Tape Control knob section.
+
+### Header redesign
+#### Top left
 Right now it has a button which shows Git info. Instead, put the WhAM icon (roughly the same size as it currently is in Viz). The icon can be clicked on, and it says "Whale Acoustics Model tape looper interface. Early alpha, CETI internal. (Then some boilerplate for strict licensing, namely, this software cannot be used by anyone except for CETI or the WhAM team.)" Then below that you can put the Git info.
 
-### Top middle
+#### Top middle
 Right now it says "tape looper - wham" this can be removed
 
-### Top right
+#### Top right
 Right now it has info about the input and output. This info will be moved into Settings. See next item.
 
-## Settings small redesign
+### Settings small redesign
 Have the settings have three tabs: (1) Gradio, (2) MIDI Binds, (3) I/O. Tabs should be implemented as currently done in the "Synths" menu (there there are two tabs: Sampler and Beep.)
 
 (1) Most importantly, as currently, allows to set the Gradio URL. But use the new real-estate to list whatever info you can find from Gradio. In particular, args.conf is a useful parameter because it tells me what checkpoint the model is running. But no worries if it's too much hassle to figure out what Gradio exposes.
@@ -40,19 +58,6 @@ Have the settings have three tabs: (1) Gradio, (2) MIDI Binds, (3) I/O. Tabs sho
 (2) The MIDI Binds tab should as currently list all the current binds, but have a button to unbind each. And have a button to Unbind All.
 
 (3) I/O just lists the info which if currently in the top right.
-
-## Rename "MIDI Learn" to "Midi Bind"
-IT's just a better name. Do this everywhere. Rename "Clear MIDI Mapping" to "Unbind"
-
-# Bugs
-## Mic icon
-Right now it is "m..." which is weird. Can we just use an actual microphone icon instead? We can move it next to the Level slider, which is going to be cleared up.
-
-## "record" should be "input" above the "output"
-This is referring to each track, at the top right above the tape control knobs.
-
-## Remove "These knobs feed VampNet's advanced controls" text in Model Params
-It's redundant.
 
 # Future features (for reference)
 ## WhAM logo animation on generate

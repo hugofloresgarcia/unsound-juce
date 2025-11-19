@@ -23,7 +23,7 @@ class TransportControls : public juce::Component
 {
 public:
     TransportControls();
-    TransportControls(MidiLearnManager* midiManager, const juce::String& trackPrefix);
+    TransportControls(MidiLearnManager* midiManager, const juce::String& trackPrefix, bool includeMicButton = true);
     ~TransportControls() override;
 
     void paint(juce::Graphics& g) override;
@@ -64,6 +64,7 @@ private:
     std::unique_ptr<MidiLearnMouseListener> playMouseListener;
     std::unique_ptr<MidiLearnMouseListener> muteMouseListener;
     std::unique_ptr<MidiLearnMouseListener> micMouseListener;
+    bool micButtonAvailable = true;
 
     void drawCustomToggleButton(juce::Graphics& g, juce::ToggleButton& button, 
                                 const juce::String& letter, juce::Rectangle<int> bounds,

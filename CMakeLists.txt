@@ -11,13 +11,20 @@ add_compile_definitions(JUCE_MODAL_LOOPS_PERMITTED)
 add_subdirectory(JUCE)
 
 # Create the executable
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon.png)
+set(APP_ICON_PATH "")
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Assets/wham.png)
+    set(APP_ICON_PATH ${CMAKE_CURRENT_SOURCE_DIR}/Assets/wham.png)
+elseif(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon.png)
+    set(APP_ICON_PATH ${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon.png)
+endif()
+
+if(APP_ICON_PATH)
     juce_add_gui_app(TapeLooper
         COMPANY_NAME "Unsound"
         PRODUCT_NAME "Tape Looper"
         VERSION ${PROJECT_VERSION}
-        ICON_BIG ${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon.png
-        ICON_SMALL ${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon.png
+        ICON_BIG ${APP_ICON_PATH}
+        ICON_SMALL ${APP_ICON_PATH}
     )
 else()
     juce_add_gui_app(TapeLooper

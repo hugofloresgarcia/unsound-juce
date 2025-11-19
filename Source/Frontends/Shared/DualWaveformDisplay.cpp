@@ -37,7 +37,7 @@ void DualWaveformDisplay::paint(juce::Graphics& g)
     // Draw labels
     g.setColour(juce::Colour(0xfff3d430));
     g.setFont(juce::Font(juce::FontOptions().withHeight(10.0f)));
-    g.drawText("record", recordArea.reduced(5), juce::Justification::topLeft);
+    g.drawText("input", recordArea.reduced(5), juce::Justification::topLeft);
     g.drawText("output", outputArea.reduced(5), juce::Justification::topLeft);
 }
 

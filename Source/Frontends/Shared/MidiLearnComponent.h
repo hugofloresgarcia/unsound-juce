@@ -7,8 +7,8 @@ namespace Shared
 {
 
 /**
- * A mixin class that adds MIDI learn functionality to any Component.
- * Right-click on a component to show a menu with MIDI Learn option.
+ * A mixin class that adds MIDI bind functionality to any Component.
+ * Right-click on a component to show a menu with Midi Bind option.
  */
 class MidiLearnable
 {
@@ -44,19 +44,19 @@ public:
                 
                 if (supportsToggleMode)
                 {
-                    menu.addItem(1, "MIDI Learn (momentary)..." + mappingLabel);
-                    menu.addItem(3, "MIDI Learn (toggle)..." + mappingLabel);
+                    menu.addItem(1, "Midi Bind (momentary)..." + mappingLabel);
+                    menu.addItem(3, "Midi Bind (toggle)..." + mappingLabel);
                 }
                 else
                 {
-                    menu.addItem(1, "MIDI Learn..." + mappingLabel);
+                    menu.addItem(1, "Midi Bind..." + mappingLabel);
                 }
             };
             
             addLearnItems(currentMapping.number >= 0);
             
             if (currentMapping.number >= 0)
-                menu.addItem(2, "Clear MIDI Mapping");
+                menu.addItem(2, "Unbind");
             
             menu.showMenuAsync(juce::PopupMenu::Options(),
                 [this, component](int result)
@@ -160,7 +160,7 @@ public:
         g.setColour(juce::Colours::white);
         g.setFont(juce::Font(juce::FontOptions().withHeight(24.0f)));
         
-        juce::String text = "MIDI LEARN MODE\n\nMove a MIDI controller for:\n\"" + 
+        juce::String text = "MIDI BIND MODE\n\nMove a MIDI controller for:\n\"" + 
                            midiLearnManager.getLearningParameterId() + 
                            "\"\n\n(Click anywhere or press ESC to cancel)";
         

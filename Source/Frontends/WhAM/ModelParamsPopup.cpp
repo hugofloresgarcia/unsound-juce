@@ -27,11 +27,6 @@ public:
         titleLabel.setFont(juce::FontOptions(16.0f, juce::Font::bold));
         addAndMakeVisible(titleLabel);
 
-        subtitleLabel.setText("These knobs feed VampNet's advanced controls.", juce::dontSendNotification);
-        subtitleLabel.setJustificationType(juce::Justification::centredLeft);
-        subtitleLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
-        addAndMakeVisible(subtitleLabel);
-
         closeButton.setButtonText("close");
         closeButton.onClick = [this]()
         {
@@ -59,7 +54,6 @@ public:
         closeButton.setBounds(headerArea.removeFromRight(80));
         headerArea.removeFromRight(10);
         titleLabel.setBounds(headerArea.removeFromTop(24));
-        subtitleLabel.setBounds(headerArea.removeFromTop(20));
         bounds.removeFromTop(10);
 
         parameterKnobs.setBounds(bounds);
@@ -68,7 +62,6 @@ public:
 private:
     Shared::ParameterKnobs parameterKnobs;
     juce::Label titleLabel;
-    juce::Label subtitleLabel;
     juce::TextButton closeButton;
     std::function<void()> onCloseClicked;
 

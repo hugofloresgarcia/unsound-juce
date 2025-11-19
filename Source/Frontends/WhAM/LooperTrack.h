@@ -155,6 +155,7 @@ private:
     Shared::TransportControls transportControls;
     Shared::ParameterKnobs parameterKnobs;
     Shared::LevelControl levelControl;
+    juce::DrawableButton micIconButton;
     Shared::InputSelector inputSelector;
     Shared::OutputSelector outputSelector;
     
@@ -214,6 +215,8 @@ private:
     std::unique_ptr<Shared::MidiLearnMouseListener> generateButtonMouseListener;
     std::unique_ptr<Shared::MidiLearnable> resetButtonLearnable;
     std::unique_ptr<Shared::MidiLearnMouseListener> resetButtonMouseListener;
+    std::unique_ptr<Shared::MidiLearnable> micToggleLearnable;
+    std::unique_ptr<Shared::MidiLearnMouseListener> micToggleMouseListener;
     juce::String trackIdPrefix;
 
     Shared::ParameterKnobs* getModelParameterKnobComponent();

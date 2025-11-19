@@ -3,18 +3,19 @@
 using namespace Shared;
 
 TransportControls::TransportControls()
-    : TransportControls(nullptr, "")
+    : TransportControls(nullptr, "", true)
 {
 }
 
-TransportControls::TransportControls(MidiLearnManager* midiManager, const juce::String& trackPrefix)
+TransportControls::TransportControls(MidiLearnManager* midiManager, const juce::String& trackPrefix, bool includeMicButton)
     : recordEnableButton(""),
       playButton(""),
       muteButton(""),
       micButton(""),
       resetButton("x"),
       midiLearnManager(midiManager),
-      trackIdPrefix(trackPrefix)
+      trackIdPrefix(trackPrefix),
+      micButtonAvailable(includeMicButton)
 {
     // Setup buttons
     recordEnableButton.onClick = [this]
@@ -35,11 +36,14 @@ TransportControls::TransportControls(MidiLearnManager* midiManager, const juce::
             onMuteToggle(muteButton.getToggleState());
     };
 
-    micButton.onClick = [this]
+    if (micButtonAvailable)
     {
-        if (onMicToggle)
-            onMicToggle(micButton.getToggleState());
-    };
+        micButton.onClick = [this]
+        {
+            if (onMicToggle)
+                onMicToggle(micButton.getToggleState());
+        };
+    }
 
     resetButton.onClick = [this]
     {
@@ -51,16 +55,19 @@ TransportControls::TransportControls(MidiLearnManager* midiManager, const juce::
     recordEnableButton.setLookAndFeel(&emptyToggleLookAndFeel);
     playButton.setLookAndFeel(&emptyToggleLookAndFeel);
     muteButton.setLookAndFeel(&emptyToggleLookAndFeel);
-    micButton.setLookAndFeel(&emptyToggleLookAndFeel);
+    if (micButtonAvailable)
+        micButton.setLookAndFeel(&emptyToggleLookAndFeel);
 
     addAndMakeVisible(recordEnableButton);
     addAndMakeVisible(playButton);
     addAndMakeVisible(muteButton);
-    addAndMakeVisible(micButton);
+    if (micButtonAvailable)
+        addAndMakeVisible(micButton);
     addAndMakeVisible(resetButton);
 
     // By default, hide the mic button; frontends can enable it explicitly
-    micButton.setVisible(false);
+    if (micButtonAvailable)
+        micButton.setVisible(false);
 
     // Setup MIDI learn for buttons
     if (midiLearnManager)
@@ -68,19 +75,22 @@ TransportControls::TransportControls(MidiLearnManager* midiManager, const juce::
         recordLearnable = std::make_unique<MidiLearnable>(*midiLearnManager, trackIdPrefix + "_record", true);
         playLearnable = std::make_unique<MidiLearnable>(*midiLearnManager, trackIdPrefix + "_play", true);
         muteLearnable = std::make_unique<MidiLearnable>(*midiLearnManager, trackIdPrefix + "_mute", true);
-        micLearnable = std::make_unique<MidiLearnable>(*midiLearnManager, trackIdPrefix + "_mic", true);
+        if (micButtonAvailable)
+            micLearnable = std::make_unique<MidiLearnable>(*midiLearnManager, trackIdPrefix + "_mic", true);
 
         // Create mouse listeners for right-click handling
         recordMouseListener = std::make_unique<MidiLearnMouseListener>(*recordLearnable, this);
         playMouseListener = std::make_unique<MidiLearnMouseListener>(*playLearnable, this);
         muteMouseListener = std::make_unique<MidiLearnMouseListener>(*muteLearnable, this);
-        micMouseListener = std::make_unique<MidiLearnMouseListener>(*micLearnable, this);
+        if (micButtonAvailable)
+            micMouseListener = std::make_unique<MidiLearnMouseListener>(*micLearnable, this);
 
         // Add mouse listeners to the actual buttons
         recordEnableButton.addMouseListener(recordMouseListener.get(), false);
         playButton.addMouseListener(playMouseListener.get(), false);
         muteButton.addMouseListener(muteMouseListener.get(), false);
-        micButton.addMouseListener(micMouseListener.get(), false);
+        if (micButtonAvailable)
+            micButton.addMouseListener(micMouseListener.get(), false);
 
         // Register parameters
         midiLearnManager->registerParameter({
@@ -119,17 +129,20 @@ TransportControls::TransportControls(MidiLearnManager* midiManager, const juce::
             true
         });
 
-        midiLearnManager->registerParameter({
-            trackIdPrefix + "_mic",
-            [this](float value) {
-                bool state = value > 0.5f;
-                micButton.setToggleState(state, juce::dontSendNotification);
-                if (onMicToggle) onMicToggle(state);
-            },
-            [this]() { return micButton.getToggleState() ? 1.0f : 0.0f; },
-            trackIdPrefix + " Mic",
-            true
-        });
+        if (micButtonAvailable)
+        {
+            midiLearnManager->registerParameter({
+                trackIdPrefix + "_mic",
+                [this](float value) {
+                    bool state = value > 0.5f;
+                    micButton.setToggleState(state, juce::dontSendNotification);
+                    if (onMicToggle) onMicToggle(state);
+                },
+                [this]() { return micButton.getToggleState() ? 1.0f : 0.0f; },
+                trackIdPrefix + " Mic",
+                true
+            });
+        }
     }
 }
 
@@ -142,13 +155,14 @@ TransportControls::~TransportControls()
         playButton.removeMouseListener(playMouseListener.get());
     if (muteMouseListener)
         muteButton.removeMouseListener(muteMouseListener.get());
-    if (micMouseListener)
+    if (micButtonAvailable && micMouseListener)
         micButton.removeMouseListener(micMouseListener.get());
 
     recordEnableButton.setLookAndFeel(nullptr);
     playButton.setLookAndFeel(nullptr);
     muteButton.setLookAndFeel(nullptr);
-    micButton.setLookAndFeel(nullptr);
+    if (micButtonAvailable)
+        micButton.setLookAndFeel(nullptr);
 
     // Unregister MIDI parameters
     if (midiLearnManager)
@@ -156,7 +170,8 @@ TransportControls::~TransportControls()
         midiLearnManager->unregisterParameter(trackIdPrefix + "_record");
         midiLearnManager->unregisterParameter(trackIdPrefix + "_play");
         midiLearnManager->unregisterParameter(trackIdPrefix + "_mute");
-        midiLearnManager->unregisterParameter(trackIdPrefix + "_mic");
+        if (micButtonAvailable)
+            midiLearnManager->unregisterParameter(trackIdPrefix + "_mic");
     }
 }
 
@@ -169,9 +184,12 @@ void TransportControls::paint(juce::Graphics& g)
                           juce::Colour(0xfff04e36), juce::Colour(0xfff04e36), recordHasMidi);
 
     // Mic button: Orange
-    bool micHasMidi = micLearnable && micLearnable->hasMidiMapping();
-    drawCustomToggleButton(g, micButton, "mic", micButton.getBounds(),
-                          juce::Colour(0xfff5a623), juce::Colour(0xfff5a623), micHasMidi);
+    if (micButtonAvailable && micButton.isVisible())
+    {
+        bool micHasMidi = micLearnable && micLearnable->hasMidiMapping();
+        drawCustomToggleButton(g, micButton, "mic", micButton.getBounds(),
+                              juce::Colour(0xfff5a623), juce::Colour(0xfff5a623), micHasMidi);
+    }
 
     // Play button: Gray when on (playing), Green when off (idle)
     bool isPlaying = playButton.getToggleState();
@@ -198,7 +216,7 @@ void TransportControls::resized()
     recordEnableButton.setBounds(bounds.removeFromLeft(buttonWidth));
     bounds.removeFromLeft(buttonSpacing);
 
-    if (micButton.isVisible())
+    if (micButtonAvailable && micButton.isVisible())
     {
         micButton.setBounds(bounds.removeFromLeft(buttonWidth));
         bounds.removeFromLeft(buttonSpacing);
@@ -233,12 +251,18 @@ void TransportControls::setMuteState(bool muted)
 
 void TransportControls::setMicState(bool enabled)
 {
+    if (!micButtonAvailable)
+        return;
+
     micButton.setToggleState(enabled, juce::dontSendNotification);
     repaint();
 }
 
 void TransportControls::setMicButtonVisible(bool visible)
 {
+    if (!micButtonAvailable)
+        return;
+
     micButton.setVisible(visible);
     resized();
     repaint();
@@ -246,6 +270,9 @@ void TransportControls::setMicButtonVisible(bool visible)
 
 void TransportControls::setMicEnabled(bool enabled)
 {
+    if (!micButtonAvailable)
+        return;
+
     micButton.setEnabled(enabled);
 }
 

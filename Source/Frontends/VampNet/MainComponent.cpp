@@ -439,11 +439,11 @@ void MainComponent::showMidiSettings()
     
     juce::AlertWindow::showMessageBoxAsync(
         juce::AlertWindow::InfoIcon,
-        "MIDI Learn",
-        "MIDI Learn is enabled!\n\n"
+        "Midi Bind",
+        "Midi Bind is enabled!\n\n"
         "How to use:\n"
         "1. Right-click any control (transport, level, knobs, generate)\n"
-        "2. Select 'MIDI Learn...' from the menu\n"
+        "2. Select 'Midi Bind...' from the menu\n"
         "3. Move a MIDI controller to assign it\n"
         "   (or click/press ESC to cancel)\n\n"
         "Available MIDI devices:\n" + 

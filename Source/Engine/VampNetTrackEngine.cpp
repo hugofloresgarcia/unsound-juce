@@ -321,10 +321,12 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
 
         // OPTIMIZATION: Pre-cache values that don't change during the block
         float wrapPos = static_cast<float>(track.writeHead.getWrapPos());
-        bool isRecording = track.writeHead.getRecordEnable() && micEnabled && hasInputChannelsFlag;
-        int inputChannel = track.writeHead.getInputChannel();
         bool clickActive = clickSynth->isClickActive();
         bool samplerActive = sampler->isPlaying();
+        bool hasVirtualInput = clickActive || samplerActive;
+        bool hasHardwareInput = micEnabled && hasInputChannelsFlag;
+        bool isRecording = track.writeHead.getRecordEnable() && (hasHardwareInput || hasVirtualInput);
+        int inputChannel = track.writeHead.getInputChannel();
         double sampleRate = track.writeHead.getSampleRate();
         float mix = track.dryWetMix.load();
 
@@ -354,16 +356,20 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
                 if (isRecording)
                 {
                     float inputSample = 0.0f;
-                    // Get input sample from selected channel
-                    if (inputChannel == -1)
+                    
+                    if (hasHardwareInput)
                     {
-                        // All channels: use channel 0 (mono sum could be added later)
-                        if (inputChannelData[0] != nullptr)
-                            inputSample = inputChannelData[0][sample];
-                    }
-                    else if (inputChannel >= 0 && inputChannel < numInputChannels && inputChannelData[inputChannel] != nullptr)
-                    {
-                        inputSample = inputChannelData[inputChannel][sample];
+                        // Get input sample from selected channel
+                        if (inputChannel == -1)
+                        {
+                            // All channels: use channel 0 (mono sum could be added later)
+                            if (inputChannelData[0] != nullptr)
+                                inputSample = inputChannelData[0][sample];
+                        }
+                        else if (inputChannel >= 0 && inputChannel < numInputChannels && inputChannelData[inputChannel] != nullptr)
+                        {
+                            inputSample = inputChannelData[inputChannel][sample];
+                        }
                     }
                     
                     // Mix in click audio if click synth is active

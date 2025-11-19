@@ -4,6 +4,37 @@
 
 using namespace WhAM;
 
+namespace
+{
+std::unique_ptr<juce::Drawable> createMicDrawable(juce::Colour fill, juce::Colour stroke)
+{
+    auto drawable = std::make_unique<juce::DrawablePath>();
+    juce::Path micPath;
+
+    // Capsule body
+    micPath.addRoundedRectangle(11.0f, 4.0f, 12.0f, 18.0f, 6.0f);
+
+    // Stem
+    micPath.addRectangle(16.5f, 20.0f, 1.5f, 6.0f);
+
+    // Base
+    micPath.addRoundedRectangle(9.0f, 26.0f, 16.0f, 3.0f, 1.0f);
+
+    // Simple U-shaped arm
+    juce::Path armPath;
+    armPath.startNewSubPath(9.5f, 13.0f);
+    armPath.cubicTo(9.5f, 23.0f, 23.5f, 23.0f, 23.5f, 13.0f);
+    micPath.addPath(armPath);
+
+    auto drawablePath = static_cast<juce::DrawablePath*>(drawable.get());
+    drawablePath->setPath(micPath);
+    drawablePath->setFill(fill);
+    drawablePath->setStrokeFill(stroke);
+    drawablePath->setStrokeThickness(1.6f);
+    return drawable;
+}
+} // namespace
+
 // VampNetWorkerThread implementation
 void VampNetWorkerThread::run()
 {
@@ -301,9 +332,10 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     : looperEngine(engine),
       trackIndex(index),
       waveformDisplay(engine, index),
-      transportControls(midiManager, "track" + juce::String(index)),
+      transportControls(midiManager, "track" + juce::String(index), false),
       parameterKnobs(midiManager, "track" + juce::String(index)),
       levelControl(engine, index, midiManager, "track" + juce::String(index)),
+      micIconButton("micToggle", juce::DrawableButton::ImageOnButtonBackgroundOriginalSize),
       inputSelector(),
       outputSelector(),
       trackLabel("Track", "track " + juce::String(index + 1)),
@@ -382,6 +414,21 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
             trackIdPrefix + " Clear",
             true
         });
+
+        micToggleLearnable = std::make_unique<Shared::MidiLearnable>(*midiLearnManager, trackIdPrefix + "_mic", true);
+        micToggleMouseListener = std::make_unique<Shared::MidiLearnMouseListener>(*micToggleLearnable, this);
+        micIconButton.addMouseListener(micToggleMouseListener.get(), false);
+
+        midiLearnManager->registerParameter({
+            trackIdPrefix + "_mic",
+            [this](float value) {
+                bool enabled = value > 0.5f;
+                setMicEnabled(enabled);
+            },
+            [this]() { return micIconButton.getToggleState() ? 1.0f : 0.0f; },
+            trackIdPrefix + " Mic",
+            true
+        });
     }
 
     // Setup configure params button
@@ -398,12 +445,8 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     transportControls.onRecordToggle = [this](bool enabled) { recordEnableButtonToggled(enabled); };
     transportControls.onPlayToggle = [this](bool shouldPlay) { playButtonClicked(shouldPlay); };
     transportControls.onMuteToggle = [this](bool muted) { muteButtonToggled(muted); };
-    transportControls.onMicToggle = [this](bool enabled) { setMicEnabled(enabled); };
     transportControls.onReset = [this]() { resetButtonClicked(); };
     addAndMakeVisible(transportControls);
-
-    // WhAM uses the mic button; it should be visible. Availability will track input channels.
-    transportControls.setMicButtonVisible(true);
 
     // Setup parameter knobs (speed, overdub, dry/wet)
     parameterKnobs.addKnob({
@@ -448,6 +491,20 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
         track.outputReadHead.setLevelDb(static_cast<float>(value));
     };
     addAndMakeVisible(levelControl);
+
+    auto micOffIcon = createMicDrawable(juce::Colour(0xff4a4a4a), juce::Colour(0xffe0e0e0));
+    auto micOnIcon = createMicDrawable(juce::Colour(0xfff5a623), juce::Colour(0xff000000));
+    micIconButton.setClickingTogglesState(true);
+    micIconButton.setWantsKeyboardFocus(false);
+    micIconButton.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    micIconButton.setTooltip("Toggle mic input");
+    micIconButton.setColour(juce::DrawableButton::backgroundColourId, juce::Colour(0xff111111));
+    micIconButton.setColour(juce::DrawableButton::backgroundOnColourId, juce::Colour(0xff111111));
+    micIconButton.setImages(micOffIcon.release(), nullptr, nullptr, nullptr,
+                            micOnIcon.release(), nullptr, nullptr, nullptr);
+    micIconButton.onClick = [this]() { setMicEnabled(micIconButton.getToggleState()); };
+    micIconButton.setToggleState(isMicEnabled(), juce::dontSendNotification);
+    addAndMakeVisible(micIconButton);
 
     // Setup "use o as i" toggle
     useOutputAsInputToggle.setButtonText("use o as i");
@@ -687,8 +744,16 @@ void LooperTrack::resized()
 
     // Level control and toggles
     auto controlsArea = remainingArea.removeFromBottom(controlsHeight);
-    levelControl.setBounds(controlsArea.removeFromLeft(115)); // 80 + 5 + 30
+    auto levelArea = controlsArea.removeFromLeft(115); // 80 + 5 + 30
+    levelControl.setBounds(levelArea);
     controlsArea.removeFromLeft(spacingSmall);
+
+    const int micButtonSize = 36;
+    auto micArea = controlsArea.removeFromLeft(micButtonSize);
+    auto micBounds = micArea.withSizeKeepingCentre(micButtonSize, micButtonSize);
+    micIconButton.setBounds(micBounds);
+    controlsArea.removeFromLeft(spacingSmall);
+
     // Stack toggles vertically: autogen on top, use o as i below
     auto toggleArea = controlsArea.removeFromLeft(100); // Toggle button width
     autogenToggle.setBounds(toggleArea.removeFromTop(30)); // First toggle
@@ -966,12 +1031,15 @@ LooperTrack::~LooperTrack()
         generateButton.removeMouseListener(generateButtonMouseListener.get());
     if (resetButtonMouseListener)
         resetButton.removeMouseListener(resetButtonMouseListener.get());
+    if (micToggleMouseListener)
+        micIconButton.removeMouseListener(micToggleMouseListener.get());
 
     // Unregister MIDI parameters
     if (midiLearnManager)
     {
         midiLearnManager->unregisterParameter(trackIdPrefix + "_generate");
         midiLearnManager->unregisterParameter(trackIdPrefix + "_clear");
+        midiLearnManager->unregisterParameter(trackIdPrefix + "_mic");
     }
 
     // Stop and wait for background thread to finish
@@ -1051,7 +1119,7 @@ void LooperTrack::setMicEnabled(bool enabled)
 {
     auto& track = looperEngine.getTrack(trackIndex);
     track.micEnabled.store(enabled);
-    transportControls.setMicState(enabled);
+    micIconButton.setToggleState(enabled, juce::dontSendNotification);
 }
 
 void LooperTrack::updateMicButtonAvailability()
@@ -1064,22 +1132,21 @@ void LooperTrack::updateMicButtonAvailability()
     // and keep the button enabled so the user can arm it in advance.
     if (!hasInputInitialized)
     {
-        transportControls.setMicEnabled(true);
+        micIconButton.setEnabled(true);
         return;
     }
 
     if (!hasInput)
     {
         // No input channels: force mic off and disable the button so it appears "stuck off".
-        track.micEnabled.store(false);
-        transportControls.setMicState(false);
-        transportControls.setMicEnabled(false);
+        setMicEnabled(false);
+        micIconButton.setEnabled(false);
     }
     else
     {
         // We have input channels: enable the mic button, but don't force its state
         // (the user may want to keep the mic off).
-        transportControls.setMicEnabled(true);
+        micIconButton.setEnabled(true);
     }
 }
 
