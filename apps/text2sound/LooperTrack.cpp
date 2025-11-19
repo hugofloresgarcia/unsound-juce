@@ -366,13 +366,13 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     cutoffKnob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     cutoffKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     cutoffKnob.setRange(20.0, 20000.0, 1.0);
-    cutoffKnob.setValue(2000.0); // Default to 2kHz
-    cutoffKnob.setDoubleClickReturnValue(true, 2000.0);
+    cutoffKnob.setValue(4000.0); // Default to 4kHz
+    cutoffKnob.setDoubleClickReturnValue(true, 4000.0);
     cutoffKnob.onValueChange = [this] {
         looperEngine.get_track_engine(trackIndex).set_filter_cutoff(static_cast<float>(cutoffKnob.getValue()));
     };
     // Initialize filter with default cutoff value
-    looperEngine.get_track_engine(trackIndex).set_filter_cutoff(2000.0f);
+    looperEngine.get_track_engine(trackIndex).set_filter_cutoff(4000.0f);
     addAndMakeVisible(cutoffKnob);
     cutoffLabel.setText("cutoff", juce::dontSendNotification);
     cutoffLabel.setJustificationType(juce::Justification::centred);
@@ -1130,15 +1130,8 @@ void LooperTrack::onGradioComplete(juce::Result result, juce::Array<juce::File> 
         });
     }
     
-    // Check if autogen is enabled - if so, automatically trigger next generation
-    if (autogenToggle.getToggleState())
-    {
-        DBG("LooperTrack: Autogen enabled - automatically triggering next generation");
-        juce::MessageManager::callAsync([this]()
-        {
-            generateButtonClicked();
-        });
-    }
+    // Note: Autogen is now handled in timerCallback when loop wraps
+    // This ensures generation triggers when audio finishes playing, not immediately after completion
 }
 
 void LooperTrack::saveTrajectory()
@@ -1251,8 +1244,8 @@ void LooperTrack::resetButtonClicked()
     track.m_read_head.reset();
     
     // Reset controls to defaults
-    cutoffKnob.setValue(2000.0, juce::dontSendNotification); // cutoff (default 2kHz)
-    looperEngine.get_track_engine(trackIndex).set_filter_cutoff(2000.0f);
+    cutoffKnob.setValue(4000.0, juce::dontSendNotification); // cutoff (default 4kHz)
+    looperEngine.get_track_engine(trackIndex).set_filter_cutoff(4000.0f);
     
     parameterKnobs.setKnobValue(0, 1.0, juce::dontSendNotification); // speed
     track.m_read_head.set_speed(1.0f);
@@ -1584,6 +1577,24 @@ void LooperTrack::timerCallback()
         cycleToNextVariation();
     }
     
+    // Check for autogen - trigger new generation when loop wraps (only if not already generating)
+    if (autogenToggle.getToggleState() && modelIsPlaying && wrapped && !hasPendingVariations)
+    {
+        // Only trigger if generate button is enabled (not currently generating)
+        if (generateButton.isEnabled())
+        {
+            DBG("LooperTrack: Autogen enabled - loop wrapped, triggering next generation");
+            juce::MessageManager::callAsync([this]()
+            {
+                generateButtonClicked();
+            });
+        }
+        else
+        {
+            DBG("LooperTrack: Autogen skipped - generation already in progress");
+        }
+    }
+    
     m_last_read_head_position = current_pos;
     
     // Update onset LED brightness (fade out over time)
@@ -1714,12 +1725,62 @@ void LooperTrack::loadVariationFromFile(int variationIndex, const juce::File& au
         }
     }
     
-    // Update variation metadata
-    size_t loadedLength = static_cast<size_t>(numSamplesToRead);
+    // Trim trailing silence
+    double sampleRate = reader->sampleRate;
+    if (sampleRate <= 0.0)
+        sampleRate = 44100.0; // Default fallback
+    
+    const float silenceThreshold = 0.001f; // -60dB RMS threshold
+    const int windowSize = static_cast<int>(sampleRate * 0.01); // 10ms window for RMS calculation
+    int actualLength = static_cast<int>(numSamplesToRead);
+    
+    // Scan backwards from the end to find where audio becomes non-silent
+    for (int endPos = actualLength - windowSize; endPos >= windowSize; endPos -= windowSize / 2)
+    {
+        // Calculate RMS for this window
+        float sumSquares = 0.0f;
+        int windowStart = juce::jmax(0, endPos - windowSize);
+        int windowEnd = juce::jmin(actualLength, endPos);
+        int windowSamples = windowEnd - windowStart;
+        
+        if (windowSamples <= 0)
+            break;
+        
+        for (int i = windowStart; i < windowEnd; ++i)
+        {
+            float sample = buffer[i];
+            sumSquares += sample * sample;
+        }
+        
+        float rms = std::sqrt(sumSquares / static_cast<float>(windowSamples));
+        
+        // If this window is not silent, we found the end of the audio
+        if (rms >= silenceThreshold)
+        {
+            // Trim to end of this window
+            actualLength = windowEnd;
+            DBG("LooperTrack: Trimmed trailing silence - original: " + juce::String(numSamplesToRead) + 
+                " samples, trimmed: " + juce::String(actualLength) + " samples");
+            break;
+        }
+    }
+    
+    // Clear any samples beyond the trimmed length
+    if (actualLength < static_cast<int>(numSamplesToRead))
+    {
+        for (int i = actualLength; i < static_cast<int>(numSamplesToRead); ++i)
+        {
+            buffer[i] = 0.0f;
+        }
+    }
+    
+    // Update variation metadata with trimmed length
+    size_t loadedLength = static_cast<size_t>(actualLength);
     variation->m_recorded_length.store(loadedLength);
     variation->m_has_recorded.store(true);
     
-    DBG("Loaded variation " + juce::String(variationIndex + 1) + " from file: " + audioFile.getFileName());
+    DBG("Loaded variation " + juce::String(variationIndex + 1) + " from file: " + audioFile.getFileName() + 
+        " (length: " + juce::String(loadedLength) + " samples)");
 }
 
 void LooperTrack::applyVariationsFromFiles(const juce::Array<juce::File>& outputFiles)

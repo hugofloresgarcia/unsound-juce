@@ -229,11 +229,13 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
     cutoffKnob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     cutoffKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     cutoffKnob.setRange(20.0, 20000.0, 1.0);
-    cutoffKnob.setValue(20000.0); // Default to 20kHz (no filtering)
-    cutoffKnob.setDoubleClickReturnValue(true, 20000.0);
+    cutoffKnob.setValue(4000.0); // Default to 4kHz
+    cutoffKnob.setDoubleClickReturnValue(true, 4000.0);
     cutoffKnob.onValueChange = [this] {
         looperEngine.get_track_engine(trackIndex).set_filter_cutoff(static_cast<float>(cutoffKnob.getValue()));
     };
+    // Initialize filter with default cutoff value
+    looperEngine.get_track_engine(trackIndex).set_filter_cutoff(4000.0f);
     addAndMakeVisible(cutoffKnob);
     cutoffLabel.setText("cutoff", juce::dontSendNotification);
     cutoffLabel.setJustificationType(juce::Justification::centred);
@@ -1101,8 +1103,8 @@ void LooperTrack::resetButtonClicked()
     track.m_read_head.reset();
     
     // Reset controls to defaults
-    cutoffKnob.setValue(20000.0, juce::dontSendNotification); // cutoff (default 20kHz = no filtering)
-    looperEngine.get_track_engine(trackIndex).set_filter_cutoff(20000.0f);
+    cutoffKnob.setValue(4000.0, juce::dontSendNotification); // cutoff (default 4kHz)
+    looperEngine.get_track_engine(trackIndex).set_filter_cutoff(4000.0f);
     
     parameterKnobs.setKnobValue(0, 1.0, juce::dontSendNotification); // speed
     track.m_read_head.set_speed(1.0f);
