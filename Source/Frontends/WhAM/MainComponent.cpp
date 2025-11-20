@@ -5,6 +5,7 @@
 #include "../VampNet/ClickSynth.h"
 #include "../VampNet/Sampler.h"
 #include "SettingsComponent.h"
+#include "BinaryData.h"
 
 using namespace WhAM;
 
@@ -29,9 +30,6 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
       synthsButton("synths"),
       vizButton("viz"),
       overflowButton("..."),
-      gitInfoButton("(i)"),
-      titleLabel("Title", "tape looper - wham"),
-      audioDeviceDebugLabel("AudioDebug", ""),
       midiLearnOverlay(midiLearnManager)
 {
     DBG_SEGFAULT("ENTRY: MainComponent::MainComponent, numTracks=" + juce::String(numTracks));
@@ -86,43 +84,35 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     
     setSize(windowWidth, windowHeight);
 
-    // Setup title label (add first so it's behind other components)
-    titleLabel.setJustificationType(juce::Justification::centred);
-    titleLabel.setFont(juce::Font(juce::FontOptions()
-                                  .withName(juce::Font::getDefaultMonospacedFontName())
-                                  .withHeight(20.0f)));
-    addAndMakeVisible(titleLabel);
-    
-    gitInfo = Shared::GitInfoProvider::query();
-    gitInfoButton.setTooltip("show git info");
-    gitInfoButton.onClick = [this]()
-    {
-        juce::String message;
-        if (gitInfo.isValid())
-        {
-            message << "branch: " << gitInfo.branch << "\n"
-                    << "commit: " << gitInfo.commit << "\n"
-                    << "time: " << gitInfo.timestamp;
-        }
-        else
-        {
-            message = gitInfo.error.isNotEmpty() ? gitInfo.error : "git info unavailable";
-        }
+    whamLogoImage = juce::ImageCache::getFromMemory(BinaryData::wham_png, BinaryData::wham_pngSize);
+    if (!whamLogoImage.isValid())
+        whamLogoImage = juce::ImageFileFormat::loadFrom(BinaryData::wham_png, static_cast<size_t>(BinaryData::wham_pngSize));
 
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
-                                               "git info",
-                                               message);
-    };
-    gitInfoButton.setEnabled(gitInfo.isValid());
-    addAndMakeVisible(gitInfoButton);
-    
-    // Setup audio device debug label (top right corner)
-    audioDeviceDebugLabel.setJustificationType(juce::Justification::topRight);
-    audioDeviceDebugLabel.setFont(juce::Font(juce::FontOptions()
-                                             .withName(juce::Font::getDefaultMonospacedFontName())
-                                             .withHeight(11.0f)));
-    audioDeviceDebugLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
-    addAndMakeVisible(audioDeviceDebugLabel);
+    headerLogoButton.setTooltip("about WhAM");
+    headerLogoButton.onClick = [this]() { showAboutDialog(); };
+    if (whamLogoImage.isValid())
+    {
+        headerLogoButton.setImages(false, true, true,
+                                   whamLogoImage, 1.0f, juce::Colours::transparentBlack,
+                                   whamLogoImage, 0.9f, juce::Colours::transparentBlack,
+                                   whamLogoImage, 0.8f, juce::Colours::transparentBlack);
+    }
+    else
+    {
+        headerLogoButton.setButtonText("WhAM");
+    }
+    addAndMakeVisible(headerLogoButton);
+
+    gitInfoLabel.setJustificationType(juce::Justification::centredLeft);
+    gitInfoLabel.setFont(juce::Font(juce::FontOptions()
+                                    .withName(juce::Font::getDefaultMonospacedFontName())
+                                    .withHeight(12.0f)));
+    gitInfoLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
+    gitInfoLabel.setInterceptsMouseClicks(false, false);
+    addAndMakeVisible(gitInfoLabel);
+
+    gitInfo = Shared::GitInfoProvider::query();
+    refreshGitInfoLabel();
 
     // Setup sync button
     syncButton.onClick = [this] { syncButtonClicked(); };
@@ -190,11 +180,22 @@ void MainComponent::resized()
 {
     auto bounds = getLocalBounds().reduced(10);
 
-    // Title + git info
-    auto titleArea = bounds.removeFromTop(40);
-    auto infoArea = titleArea.removeFromLeft(40);
-    gitInfoButton.setBounds(infoArea.reduced(5));
-    titleLabel.setBounds(titleArea);
+    const int headerHeight = 80;
+    auto headerArea = bounds.removeFromTop(headerHeight);
+    auto leftColumnWidth = 160;
+    auto leftColumn = headerArea.removeFromLeft(leftColumnWidth);
+    int logoSize = juce::jmin(leftColumnWidth, headerHeight - 16);
+    juce::Rectangle<int> logoButtonBounds(leftColumn.getX(),
+                                          leftColumn.getY(),
+                                          leftColumnWidth,
+                                          logoSize);
+    logoButtonBounds = logoButtonBounds.withSizeKeepingCentre(logoSize, logoSize);
+    headerLogoButton.setBounds(logoButtonBounds);
+
+    int labelTop = logoButtonBounds.getBottom() + 6;
+    int labelHeight = juce::jmax(0, headerArea.getBottom() - labelTop);
+    gitInfoLabel.setBounds({leftColumn.getX(), labelTop, leftColumnWidth, labelHeight});
+
     bounds.removeFromTop(10);
 
     // Control buttons with overflow logic
@@ -298,9 +299,6 @@ void MainComponent::resized()
     layoutTracks();
 
     midiLearnOverlay.setBounds(getLocalBounds());
-
-    auto debugBounds = getLocalBounds().removeFromTop(60).removeFromRight(300);
-    audioDeviceDebugLabel.setBounds(debugBounds.reduced(10, 5));
 }
 void MainComponent::timerCallback()
 {
@@ -328,13 +326,12 @@ void MainComponent::updateAudioDeviceDebugInfo()
         int numInputChannels = device->getActiveInputChannels().countNumberOfSetBits();
         int numOutputChannels = device->getActiveOutputChannels().countNumberOfSetBits();
         
-        juce::String debugText = "IN: " + deviceName + " (" + juce::String(numInputChannels) + " ch)\n"
-                               + "OUT: " + deviceName + " (" + juce::String(numOutputChannels) + " ch)";
-        audioDeviceDebugLabel.setText(debugText, juce::dontSendNotification);
+        audioDeviceSummary = "IN: " + deviceName + " (" + juce::String(numInputChannels) + " ch)\n"
+                             + "OUT: " + deviceName + " (" + juce::String(numOutputChannels) + " ch)";
     }
     else
     {
-        audioDeviceDebugLabel.setText("No audio device", juce::dontSendNotification);
+        audioDeviceSummary = "No audio device";
     }
 }
 
@@ -346,14 +343,25 @@ void MainComponent::settingsButtonClicked()
 void MainComponent::showSettings()
 {
     auto mappings = midiLearnManager.getAllMappings();
+    auto ioSummary = getAudioDeviceSummary();
 
     auto* settingsComp = new SettingsComponent(
         getGradioUrl(),
-        [](const juce::String&) {}, // will be overridden below
-        mappings);
+        mappings,
+        ioSummary);
 
     // Give the settings dialog a sensible default size so it doesn't open tiny
     settingsComp->setSize(600, 400);
+    settingsComp->setOnUnbindMapping([this](const juce::String& parameterId) {
+        midiLearnManager.clearMapping(parameterId);
+    });
+    settingsComp->setOnUnbindAll([this]() {
+        midiLearnManager.clearAllMappings();
+    });
+    settingsComp->setMappingsProvider([this]() {
+        return midiLearnManager.getAllMappings();
+    });
+    settingsComp->setIoInfoProvider([this]() { return getAudioDeviceSummary(); });
 
     juce::DialogWindow::LaunchOptions options;
     options.content.setOwned(settingsComp);
@@ -368,7 +376,7 @@ void MainComponent::showSettings()
     auto* dialog = options.launchAsync();
     if (dialog != nullptr)
     {
-        settingsComp->setOnApply([this, dialog](const juce::String& url) {
+        settingsComp->setOnApply([this, dialog, settingsComp](const juce::String& url) {
             juce::String newUrl = url.trim();
 
             if (newUrl.isEmpty())
@@ -392,12 +400,14 @@ void MainComponent::showSettings()
                 newUrl += "/";
 
             setGradioUrl(newUrl);
+            settingsComp->refreshIoSummary();
             dialog->closeButtonPressed();
         });
 
         settingsComp->setOnCancel([dialog]() {
             dialog->closeButtonPressed();
         });
+        settingsComp->refreshIoSummary();
     }
 }
 
@@ -975,6 +985,54 @@ juce::File MainComponent::getConfigDirectory() const
 juce::File MainComponent::getDefaultConfigFile() const
 {
     return getConfigDirectory().getChildFile("wham_default_config.json");
+}
+
+void MainComponent::refreshGitInfoLabel()
+{
+    juce::String message;
+    if (gitInfo.isValid())
+    {
+        juce::String shortCommit = gitInfo.commit;
+        if (shortCommit.length() > 7)
+            shortCommit = shortCommit.substring(0, 7);
+
+        message << gitInfo.branch;
+        if (shortCommit.isNotEmpty())
+            message << "\n" << shortCommit;
+
+        if (gitInfo.timestamp.isNotEmpty())
+            message << "\n" << gitInfo.timestamp;
+    }
+    else
+    {
+        message = gitInfo.error.isNotEmpty() ? gitInfo.error : "git info unavailable";
+    }
+
+    gitInfoLabel.setText(message, juce::dontSendNotification);
+}
+
+void MainComponent::showAboutDialog()
+{
+    juce::String message("Whale Acoustics Model tape looper interface.\nEarly alpha, CETI internal.");
+    message << "\n\nThis software is strictly licensed for CETI or the WhAM team only.";
+
+    if (gitInfo.isValid())
+    {
+        message << "\n\nCurrent build:\n"
+                << "branch: " << gitInfo.branch << "\n"
+                << "commit: " << gitInfo.commit;
+
+        if (gitInfo.timestamp.isNotEmpty())
+            message << "\nupdated: " << gitInfo.timestamp;
+    }
+    else if (gitInfo.error.isNotEmpty())
+    {
+        message << "\n\nGit info unavailable: " << gitInfo.error;
+    }
+
+    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
+                                           "WhAM",
+                                           message);
 }
 
 void MainComponent::layoutTracks()

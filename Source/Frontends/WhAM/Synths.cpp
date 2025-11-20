@@ -36,6 +36,7 @@ SynthsWindow::ContentComponent::ContentComponent(VampNetMultiTrackLooperEngine& 
         clickSynthTrackSelector.addItem("Track " + juce::String(i + 1), i + 2);
     }
     clickSynthTrackSelector.setSelectedId(2); // Track 0 by default
+    clickSynthSelectedTrack.store(0);
     clickSynthTrackSelector.onChange = [this] { clickSynthTrackSelectorChanged(); };
     addAndMakeVisible(clickSynthTrackSelector);
     
@@ -112,6 +113,7 @@ SynthsWindow::ContentComponent::ContentComponent(VampNetMultiTrackLooperEngine& 
         samplerTrackSelector.addItem("Track " + juce::String(i + 1), i + 2);
     }
     samplerTrackSelector.setSelectedId(2); // Track 0 by default
+    samplerSelectedTrack.store(0);
     samplerTrackSelector.onChange = [this] { samplerTrackSelectorChanged(); };
     addAndMakeVisible(samplerTrackSelector);
     
@@ -316,14 +318,14 @@ void SynthsWindow::ContentComponent::clickSynthTrackSelectorChanged()
 {
     int selectedId = clickSynthTrackSelector.getSelectedId();
     if (selectedId == 1)
-        selectedTrack.store(-1); // All tracks
+        clickSynthSelectedTrack.store(-1); // All tracks
     else
-        selectedTrack.store(selectedId - 2); // Track index (0-based)
+        clickSynthSelectedTrack.store(selectedId - 2); // Track index (0-based)
 }
 
 void SynthsWindow::ContentComponent::frequencySliderChanged()
 {
-    int trackIdx = selectedTrack.load();
+    int trackIdx = clickSynthSelectedTrack.load();
     if (trackIdx >= 0 && trackIdx < looperEngine.getNumTracks())
     {
         looperEngine.getTrackEngine(trackIdx).getClickSynth().setFrequency(static_cast<float>(frequencySlider.getValue()));
@@ -339,7 +341,7 @@ void SynthsWindow::ContentComponent::frequencySliderChanged()
 
 void SynthsWindow::ContentComponent::durationSliderChanged()
 {
-    int trackIdx = selectedTrack.load();
+    int trackIdx = clickSynthSelectedTrack.load();
     if (trackIdx >= 0 && trackIdx < looperEngine.getNumTracks())
     {
         looperEngine.getTrackEngine(trackIdx).getClickSynth().setDuration(static_cast<float>(durationSlider.getValue()) / 1000.0f);
@@ -355,7 +357,7 @@ void SynthsWindow::ContentComponent::durationSliderChanged()
 
 void SynthsWindow::ContentComponent::amplitudeSliderChanged()
 {
-    int trackIdx = selectedTrack.load();
+    int trackIdx = clickSynthSelectedTrack.load();
     if (trackIdx >= 0 && trackIdx < looperEngine.getNumTracks())
     {
         looperEngine.getTrackEngine(trackIdx).getClickSynth().setAmplitude(static_cast<float>(amplitudeSlider.getValue()));
@@ -374,7 +376,7 @@ void SynthsWindow::ContentComponent::clickSynthTriggerButtonClicked()
     if (!clickSynthEnabled.load())
         return;
     
-    int trackIdx = selectedTrack.load();
+    int trackIdx = clickSynthSelectedTrack.load();
     if (trackIdx >= 0 && trackIdx < looperEngine.getNumTracks())
     {
         looperEngine.getTrackEngine(trackIdx).getClickSynth().triggerClick();
@@ -397,14 +399,14 @@ void SynthsWindow::ContentComponent::samplerTrackSelectorChanged()
 {
     int selectedId = samplerTrackSelector.getSelectedId();
     if (selectedId == 1)
-        selectedTrack.store(-1); // All tracks
+        samplerSelectedTrack.store(-1); // All tracks
     else
-        selectedTrack.store(selectedId - 2); // Track index (0-based)
+        samplerSelectedTrack.store(selectedId - 2); // Track index (0-based)
 }
 
 void SynthsWindow::ContentComponent::loadSampleButtonClicked()
 {
-    int trackIdx = selectedTrack.load();
+    int trackIdx = samplerSelectedTrack.load();
 
     juce::FileChooser chooser("Select audio sample...",
                               juce::File(),
@@ -445,7 +447,7 @@ void SynthsWindow::ContentComponent::samplerTriggerButtonClicked()
     if (!samplerEnabled.load())
         return;
 
-    int trackIdx = selectedTrack.load();
+    int trackIdx = samplerSelectedTrack.load();
     if (trackIdx >= 0 && trackIdx < looperEngine.getNumTracks())
     {
         if (looperEngine.getTrackEngine(trackIdx).getSampler().hasSample())
@@ -467,7 +469,8 @@ void SynthsWindow::ContentComponent::samplerTriggerButtonClicked()
 
 int SynthsWindow::ContentComponent::getSelectedTrack() const
 {
-    return selectedTrack.load();
+    return showingClickSynth.load() ? clickSynthSelectedTrack.load()
+                                    : samplerSelectedTrack.load();
 }
 
 bool SynthsWindow::ContentComponent::isEnabled() const
@@ -547,7 +550,7 @@ void SynthsWindow::ContentComponent::applyState(const juce::var& state)
         juce::File sampleFile(samplePathVar.toString());
         if (sampleFile.existsAsFile())
         {
-            int trackIdx = selectedTrack.load();
+            int trackIdx = samplerSelectedTrack.load();
             if (trackIdx >= 0 && trackIdx < looperEngine.getNumTracks())
             {
                 if (looperEngine.getTrackEngine(trackIdx).getSampler().loadSample(sampleFile))

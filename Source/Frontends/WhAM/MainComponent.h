@@ -56,12 +56,12 @@ private:
     juce::TextButton saveConfigButton;
     juce::TextButton loadConfigButton;
     juce::TextButton overflowButton;  // "..." button for overflow menu
-    juce::TextButton gitInfoButton;
-    juce::Label titleLabel;
-    juce::Label audioDeviceDebugLabel;
+    juce::ImageButton headerLogoButton;
+    juce::Label gitInfoLabel;
     CustomLookAndFeel customLookAndFeel;
     juce::String gradioUrl { "http://127.0.0.1:7860/" };
     mutable juce::CriticalSection gradioSettingsLock;
+    juce::Image whamLogoImage;
 
     Shared::MidiLearnOverlay midiLearnOverlay;
 
@@ -71,6 +71,7 @@ private:
     // Token visualizer window
     std::unique_ptr<TokenVisualizerWindow> vizWindow;
     Shared::GitInfo gitInfo;
+    juce::String audioDeviceSummary { "detecting audio devices..." };
 
     void syncButtonClicked();
     void showSynthsWindow();
@@ -90,6 +91,9 @@ private:
     juce::File getConfigDirectory() const;
     juce::File getDefaultConfigFile() const;
     void layoutTracks();
+    void refreshGitInfoLabel();
+    void showAboutDialog();
+    juce::String getAudioDeviceSummary() const { return audioDeviceSummary; }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

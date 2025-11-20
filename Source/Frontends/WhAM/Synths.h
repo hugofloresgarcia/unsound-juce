@@ -84,7 +84,8 @@ private:
         juce::String samplerParameterId;
         
         // Shared
-        std::atomic<int> selectedTrack{0};
+        std::atomic<int> clickSynthSelectedTrack{0};
+        std::atomic<int> samplerSelectedTrack{0};
         juce::String lastSampleFilePath;
 
         void tabButtonClicked(int tabIndex);
