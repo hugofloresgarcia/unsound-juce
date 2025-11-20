@@ -147,6 +147,7 @@ public:
 
     juce::String getTrackIdPrefix() const { return trackIdPrefix; }
     int getTrackIndex() const { return trackIndex; }
+    juce::Colour getAccentColour() const { return accentColour; }
 
     // Update channel selectors based on current audio device
     void updateChannelSelectors();

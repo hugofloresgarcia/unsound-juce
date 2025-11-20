@@ -1,0 +1,3 @@
+For later (for now just add it as a TODO to this session and we'll get to that after I tested the new stack):
+1. Start by making the logo in the main window (top left) larger.
+2. We're gonna use the assets Assest\ Color Variants as follows. Whenever _any_ track is "Generating" (waiting for response from the model), we're going to "Animate" the top left icon by having it cycle between the different files in the Color Variants folder, and land on a random file (and stay there). You can make it so that before any "Generate" was hit (i.e. the starting mode) is the black variant.

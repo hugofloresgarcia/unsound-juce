@@ -259,6 +259,31 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Assets/wham.png)
     list(APPEND BINARY_DATA_SOURCES Assets/wham.png)
 endif()
 
+set(WHAM_STACK_ASSETS
+    Assets/Stack/WHAM-Stack-1-black.png
+    Assets/Stack/WHAM-Stack-1-color.png
+    Assets/Stack/WHAM-Stack-2-black.png
+    Assets/Stack/WHAM-Stack-2-color.png
+    Assets/Stack/WHAM-Stack-3-black.png
+    Assets/Stack/WHAM-Stack-3-color.png
+    Assets/Stack/WHAM-Stack-4-black.png
+    Assets/Stack/WHAM-Stack-4-color.png
+)
+
+set(MISSING_STACK_ASSETS)
+foreach(stackFile IN LISTS WHAM_STACK_ASSETS)
+    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${stackFile})
+        list(APPEND BINARY_DATA_SOURCES ${stackFile})
+    else()
+        list(APPEND MISSING_STACK_ASSETS ${stackFile})
+    endif()
+endforeach()
+
+if(MISSING_STACK_ASSETS)
+    list(JOIN MISSING_STACK_ASSETS ", " _WHAM_STACK_WARNING_LIST)
+    message(WARNING "Missing WhAM stack asset(s): ${_WHAM_STACK_WARNING_LIST}. The Viz cube stack will fall back to text placeholders.")
+endif()
+
 if(BINARY_DATA_SOURCES)
     juce_add_binary_data(TapeLooperBinaryData
         SOURCES ${BINARY_DATA_SOURCES}
