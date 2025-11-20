@@ -57,11 +57,10 @@ StartupDialog::StartupDialog(juce::AudioDeviceManager& deviceManager)
     // Setup audio device selector
     addAndMakeVisible(audioDeviceSelector);
 
-    // Auto-select MIDI input if only one is available
+    // Enable all available MIDI inputs by default so they appear checked in the selector
     auto midiInputs = juce::MidiInput::getAvailableDevices();
-    if (midiInputs.size() == 1)
+    for (const auto& device : midiInputs)
     {
-        const auto& device = midiInputs.getReference(0);
         audioDeviceManager.setMidiInputDeviceEnabled(device.identifier, true);
     }
     

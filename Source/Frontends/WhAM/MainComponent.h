@@ -62,6 +62,14 @@ private:
     juce::String gradioUrl { "http://127.0.0.1:7860/" };
     mutable juce::CriticalSection gradioSettingsLock;
     juce::Image whamLogoImage;
+    juce::Image trimmedWhamLogoImage;
+    
+    // Logo animation state
+    std::vector<juce::Image> colorVariantImages;
+    int currentAnimationFrame = 0;
+    int animationFrameCounter = 0;
+    int finalVariantIndex = -1;  // -1 means not set yet, will be random when generation completes
+    bool wasGenerating = false;  // Track previous state to detect transitions
 
     Shared::MidiLearnOverlay midiLearnOverlay;
 
@@ -94,6 +102,10 @@ private:
     void refreshGitInfoLabel();
     void showAboutDialog();
     juce::String getAudioDeviceSummary() const { return audioDeviceSummary; }
+    bool isAnyTrackGenerating() const;
+    void loadColorVariantImages();
+    void updateLogoAnimation();
+    void updateLogoButtonImage(int variantIndex);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

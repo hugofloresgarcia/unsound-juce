@@ -284,6 +284,31 @@ if(MISSING_STACK_ASSETS)
     message(WARNING "Missing WhAM stack asset(s): ${_WHAM_STACK_WARNING_LIST}. The Viz cube stack will fall back to text placeholders.")
 endif()
 
+set(WHAM_COLOR_VARIANT_ASSETS
+    "Assets/Color Variants/WHAM-black.png"
+    "Assets/Color Variants/WHAM-ColorVariant-1.png"
+    "Assets/Color Variants/WHAM-ColorVariant-2.png"
+    "Assets/Color Variants/WHAM-ColorVariant-3.png"
+    "Assets/Color Variants/WHAM-ColorVariant-4.png"
+    "Assets/Color Variants/WHAM-ColorVariant-5.png"
+    "Assets/Color Variants/WHAM-ColorVariant-6.png"
+    "Assets/Color Variants/WHAM-ColorVariant-7.png"
+)
+
+set(MISSING_COLOR_VARIANT_ASSETS)
+foreach(colorVariantFile IN LISTS WHAM_COLOR_VARIANT_ASSETS)
+    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${colorVariantFile})
+        list(APPEND BINARY_DATA_SOURCES ${colorVariantFile})
+    else()
+        list(APPEND MISSING_COLOR_VARIANT_ASSETS ${colorVariantFile})
+    endif()
+endforeach()
+
+if(MISSING_COLOR_VARIANT_ASSETS)
+    list(JOIN MISSING_COLOR_VARIANT_ASSETS ", " _WHAM_COLOR_VARIANT_WARNING_LIST)
+    message(WARNING "Missing WhAM color variant asset(s): ${_WHAM_COLOR_VARIANT_WARNING_LIST}. The logo animation will fall back to default.")
+endif()
+
 if(BINARY_DATA_SOURCES)
     juce_add_binary_data(TapeLooperBinaryData
         SOURCES ${BINARY_DATA_SOURCES}

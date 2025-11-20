@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <functional>
+#include <array>
 // Ensure VampNet types are fully defined (they're forward declared in VampNetTrackEngine.h)
 #include "../VampNet/ClickSynth.h"
 #include "../VampNet/Sampler.h"
@@ -23,6 +24,129 @@ using namespace WhAM;
 #else
 #define DBG_SEGFAULT(msg)
 #endif
+
+namespace
+{
+    constexpr int kMaxAssetSearchDepth = 6;
+
+    const std::array<const char*, 8> kColorVariantFilenames = {
+        "WHAM-black.png",
+        "WHAM-ColorVariant-1.png",
+        "WHAM-ColorVariant-2.png",
+        "WHAM-ColorVariant-3.png",
+        "WHAM-ColorVariant-4.png",
+        "WHAM-ColorVariant-5.png",
+        "WHAM-ColorVariant-6.png",
+        "WHAM-ColorVariant-7.png"
+    };
+
+    juce::Image loadEmbeddedColorVariant(const juce::String& fileName)
+    {
+        const juce::String normalisedTarget = juce::File(fileName).getFileName();
+
+        for (int i = 0; i < BinaryData::namedResourceListSize; ++i)
+        {
+            const juce::String originalName = juce::File(BinaryData::originalFilenames[i]).getFileName();
+            if (originalName.equalsIgnoreCase(normalisedTarget))
+            {
+                int dataSize = 0;
+                const char* data = BinaryData::getNamedResource(BinaryData::namedResourceList[i], dataSize);
+                if (data != nullptr && dataSize > 0)
+                    return juce::ImageFileFormat::loadFrom(data, static_cast<size_t>(dataSize));
+            }
+        }
+
+        return {};
+    }
+
+    juce::Image tryLoadVariantFromDirectoryChain(juce::File baseDir, const juce::String& relativePath)
+    {
+        for (int depth = 0; depth < kMaxAssetSearchDepth && baseDir.isDirectory(); ++depth)
+        {
+            auto candidate = baseDir.getChildFile(relativePath);
+            if (candidate.existsAsFile())
+                return juce::ImageFileFormat::loadFrom(candidate);
+
+            baseDir = baseDir.getParentDirectory();
+        }
+
+        return {};
+    }
+
+    juce::Image loadColorVariantFromDisk(const juce::String& fileName)
+    {
+        const juce::String relativePath = "Assets/Color Variants/" + fileName;
+
+        if (auto img = tryLoadVariantFromDirectoryChain(juce::File::getCurrentWorkingDirectory(), relativePath); img.isValid())
+            return img;
+
+        auto trySpecialLocation = [&](juce::File::SpecialLocationType type) -> juce::Image
+        {
+            auto location = juce::File::getSpecialLocation(type);
+            auto directory = location.isDirectory() ? location : location.getParentDirectory();
+            if (directory.isDirectory())
+                return tryLoadVariantFromDirectoryChain(directory, relativePath);
+            return {};
+        };
+
+        if (auto img = trySpecialLocation(juce::File::currentExecutableFile); img.isValid())
+            return img;
+
+        if (auto img = trySpecialLocation(juce::File::invokedExecutableFile); img.isValid())
+            return img;
+
+        return {};
+    }
+
+    juce::Rectangle<int> computeOpaqueBounds(const juce::Image& image, juce::uint8 alphaThreshold = 8)
+    {
+        if (!image.isValid())
+            return {};
+
+        bool found = false;
+        juce::Rectangle<int> bounds;
+        juce::Image::BitmapData data(image, juce::Image::BitmapData::readOnly);
+
+        for (int y = 0; y < data.height; ++y)
+        {
+            for (int x = 0; x < data.width; ++x)
+            {
+                auto alpha = data.getPixelColour(x, y).getAlpha();
+                if (alpha > alphaThreshold)
+                {
+                    juce::Rectangle<int> pixelBounds(x, y, 1, 1);
+                    bounds = found ? bounds.getUnion(pixelBounds) : pixelBounds;
+                    found = true;
+                }
+            }
+        }
+
+        if (!found)
+            return {};
+
+        bounds = bounds.expanded(2);
+        bounds = bounds.getIntersection({ 0, 0, image.getWidth(), image.getHeight() });
+        return bounds;
+    }
+
+    juce::Image trimImageToOpaqueBounds(const juce::Image& source)
+    {
+        if (!source.isValid())
+            return {};
+
+        auto bounds = computeOpaqueBounds(source);
+        if (bounds.isEmpty())
+            return {};
+
+        if (bounds == source.getBounds())
+            return source;
+
+        juce::Image trimmed(source.getFormat(), bounds.getWidth(), bounds.getHeight(), true);
+        juce::Graphics g(trimmed);
+        g.drawImageAt(source, -bounds.getX(), -bounds.getY());
+        return trimmed;
+    }
+}
 
 MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     : syncButton("sync all"),
@@ -88,19 +212,22 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     if (!whamLogoImage.isValid())
         whamLogoImage = juce::ImageFileFormat::loadFrom(BinaryData::wham_png, static_cast<size_t>(BinaryData::wham_pngSize));
 
-    headerLogoButton.setTooltip("about WhAM");
-    headerLogoButton.onClick = [this]() { showAboutDialog(); };
     if (whamLogoImage.isValid())
     {
-        headerLogoButton.setImages(false, true, true,
-                                   whamLogoImage, 1.0f, juce::Colours::transparentBlack,
-                                   whamLogoImage, 0.9f, juce::Colours::transparentBlack,
-                                   whamLogoImage, 0.8f, juce::Colours::transparentBlack);
+        trimmedWhamLogoImage = trimImageToOpaqueBounds(whamLogoImage);
+        if (!trimmedWhamLogoImage.isValid())
+            trimmedWhamLogoImage = whamLogoImage;
     }
-    else
-    {
-        headerLogoButton.setButtonText("WhAM");
-    }
+
+    // Load color variant images for animation
+    loadColorVariantImages();
+
+    headerLogoButton.setTooltip("about WhAM");
+    headerLogoButton.onClick = [this]() { showAboutDialog(); };
+    
+    // Set initial logo (black variant)
+    updateLogoButtonImage(0);  // 0 is black variant
+    
     addAndMakeVisible(headerLogoButton);
 
     gitInfoLabel.setJustificationType(juce::Justification::centredLeft);
@@ -110,6 +237,7 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     gitInfoLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
     gitInfoLabel.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(gitInfoLabel);
+    gitInfoLabel.setVisible(false);
 
     gitInfo = Shared::GitInfoProvider::query();
     refreshGitInfoLabel();
@@ -178,25 +306,17 @@ void MainComponent::paint(juce::Graphics& g)
 
 void MainComponent::resized()
 {
-    auto bounds = getLocalBounds().reduced(10);
+    auto bounds = getLocalBounds().withTrimmedTop(2).reduced(10, 0);
 
-    const int headerHeight = 80;
+    const int headerHeight = 130;
     auto headerArea = bounds.removeFromTop(headerHeight);
-    auto leftColumnWidth = 160;
-    auto leftColumn = headerArea.removeFromLeft(leftColumnWidth);
-    int logoSize = juce::jmin(leftColumnWidth, headerHeight - 16);
-    juce::Rectangle<int> logoButtonBounds(leftColumn.getX(),
-                                          leftColumn.getY(),
-                                          leftColumnWidth,
-                                          logoSize);
-    logoButtonBounds = logoButtonBounds.withSizeKeepingCentre(logoSize, logoSize);
-    headerLogoButton.setBounds(logoButtonBounds);
 
-    int labelTop = logoButtonBounds.getBottom() + 6;
-    int labelHeight = juce::jmax(0, headerArea.getBottom() - labelTop);
-    gitInfoLabel.setBounds({leftColumn.getX(), labelTop, leftColumnWidth, labelHeight});
+    const int logoAreaWidth = juce::jmin(280, headerArea.getWidth());
+    auto logoArea = headerArea.removeFromRight(logoAreaWidth).reduced(6);
+    int logoSize = juce::jmin(logoArea.getWidth(), headerHeight - 6);
+    gitInfoLabel.setBounds({});
 
-    bounds.removeFromTop(10);
+    bounds.removeFromTop(4);
 
     // Control buttons with overflow logic
     auto controlArea = bounds.removeFromTop(40);
@@ -294,6 +414,12 @@ void MainComponent::resized()
         overflowButton.setVisible(false);
     }
 
+    // Align logo vertically with control buttons row
+    int logoX = logoArea.getX() + (logoArea.getWidth() - logoSize) / 2;
+    int logoY = controlArea.getY() + (controlArea.getHeight() - logoSize) / 2 - 20;
+    juce::Rectangle<int> logoButtonBounds(logoX, logoY, logoSize, logoSize);
+    headerLogoButton.setBounds(logoButtonBounds);
+
     bounds.removeFromTop(10);
     trackViewport.setBounds(bounds);
     layoutTracks();
@@ -310,6 +436,9 @@ void MainComponent::timerCallback()
     
     // Update audio device debug info
     updateAudioDeviceDebugInfo();
+    
+    // Update logo animation
+    updateLogoAnimation();
 }
 
 void MainComponent::syncButtonClicked()
@@ -1055,5 +1184,146 @@ void MainComponent::layoutTracks()
         track->setBounds(x, 0, fixedTrackWidth, fixedTrackHeight);
         x += fixedTrackWidth + trackSpacing;
     }
+}
+
+bool MainComponent::isAnyTrackGenerating() const
+{
+    for (const auto& track : tracks)
+    {
+        if (track != nullptr && track->isGenerating())
+            return true;
+    }
+    return false;
+}
+
+void MainComponent::loadColorVariantImages()
+{
+    colorVariantImages.clear();
+    colorVariantImages.reserve(kColorVariantFilenames.size());
+
+    for (const auto* fileName : kColorVariantFilenames)
+    {
+        juce::Image img = loadEmbeddedColorVariant(fileName);
+        if (!img.isValid())
+            img = loadColorVariantFromDisk(fileName);
+
+        if (img.isValid())
+        {
+            auto trimmed = trimImageToOpaqueBounds(img);
+            if (trimmed.isValid())
+                img = trimmed;
+            colorVariantImages.push_back(img);
+        }
+        else if (trimmedWhamLogoImage.isValid())
+        {
+            DBG("WhAM: missing color variant '" + juce::String(fileName) + "', falling back to default logo");
+            colorVariantImages.push_back(trimmedWhamLogoImage);
+        }
+    }
+
+    if (colorVariantImages.empty() && trimmedWhamLogoImage.isValid())
+        colorVariantImages.push_back(trimmedWhamLogoImage);
+
+    currentAnimationFrame = 0;
+    animationFrameCounter = 0;
+    finalVariantIndex = -1;
+    wasGenerating = false;
+}
+
+void MainComponent::updateLogoButtonImage(int variantIndex)
+{
+    juce::Image imgToUse;
+    
+    if (variantIndex >= 0 && variantIndex < static_cast<int>(colorVariantImages.size()))
+    {
+        imgToUse = colorVariantImages[variantIndex];
+    }
+    else if (trimmedWhamLogoImage.isValid())
+    {
+        imgToUse = trimmedWhamLogoImage;
+    }
+    else
+    {
+        headerLogoButton.setButtonText("WhAM");
+        return;
+    }
+    
+    if (imgToUse.isValid())
+    {
+        headerLogoButton.setImages(false, true, true,
+                                   imgToUse, 1.0f, juce::Colours::transparentBlack,
+                                   imgToUse, 0.9f, juce::Colours::transparentBlack,
+                                   imgToUse, 0.8f, juce::Colours::transparentBlack);
+    }
+    else
+    {
+        headerLogoButton.setButtonText("WhAM");
+    }
+}
+
+void MainComponent::updateLogoAnimation()
+{
+    bool currentlyGenerating = isAnyTrackGenerating();
+
+    if (colorVariantImages.empty())
+    {
+        updateLogoButtonImage(0);
+        wasGenerating = currentlyGenerating;
+        return;
+    }
+
+    const int numVariants = static_cast<int>(colorVariantImages.size());
+
+    if (currentlyGenerating)
+    {
+        if (!wasGenerating)
+        {
+            currentAnimationFrame = (numVariants > 1) ? 1 : 0;
+            animationFrameCounter = 0;
+            finalVariantIndex = -1;
+        }
+
+        if (numVariants > 1)
+        {
+            animationFrameCounter++;
+            const int framesPerVariant = 2; // ~100ms per frame (timer is 50ms)
+
+            if (animationFrameCounter >= framesPerVariant)
+            {
+                animationFrameCounter = 0;
+                const int variantRange = numVariants - 1;
+                const int relativeIndex = (currentAnimationFrame <= 0 ? 0 : currentAnimationFrame - 1);
+                currentAnimationFrame = 1 + ((relativeIndex + 1) % variantRange);
+            }
+        }
+        else
+        {
+            currentAnimationFrame = 0;
+        }
+
+        currentAnimationFrame = juce::jlimit(0, numVariants - 1, currentAnimationFrame);
+        updateLogoButtonImage(currentAnimationFrame);
+    }
+    else
+    {
+        if (wasGenerating)
+        {
+            if (numVariants > 1)
+            {
+                auto& random = juce::Random::getSystemRandom();
+                finalVariantIndex = 1 + random.nextInt(numVariants - 1);
+            }
+            else
+            {
+                finalVariantIndex = 0;
+            }
+        }
+
+        int logoIndex = (finalVariantIndex >= 0) ? finalVariantIndex : 0;
+        logoIndex = juce::jlimit(0, numVariants - 1, logoIndex);
+        updateLogoButtonImage(logoIndex);
+    }
+
+    wasGenerating = currentlyGenerating;
 }
 
