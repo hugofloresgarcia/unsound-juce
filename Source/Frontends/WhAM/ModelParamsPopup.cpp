@@ -20,12 +20,32 @@ public:
                      const juce::String& trackPrefix,
                      std::function<void()> onCloseClickedIn)
         : parameterKnobs(midiManager, trackPrefix),
-          onCloseClicked(std::move(onCloseClickedIn))
+          onCloseClicked(std::move(onCloseClickedIn)),
+          hasMidiManager(midiManager != nullptr)
     {
         titleLabel.setText("Model parameters", juce::dontSendNotification);
         titleLabel.setJustificationType(juce::Justification::centredLeft);
         titleLabel.setFont(juce::FontOptions(16.0f, juce::Font::bold));
         addAndMakeVisible(titleLabel);
+
+        bindAllButton.setButtonText("bind all");
+        bindAllButton.onClick = [this]()
+        {
+            if (hasMidiManager)
+                parameterKnobs.bindKnobsSequentially();
+        };
+        bindAllButton.setEnabled(hasMidiManager);
+        bindAllButton.setTooltip("Assign CC 0-15 to these knobs");
+        addAndMakeVisible(bindAllButton);
+
+        unbindAllButton.setButtonText("unbind all");
+        unbindAllButton.onClick = [this]()
+        {
+            if (hasMidiManager)
+                parameterKnobs.clearAllMidiMappings();
+        };
+        unbindAllButton.setEnabled(hasMidiManager);
+        addAndMakeVisible(unbindAllButton);
 
         closeButton.setButtonText("close");
         closeButton.onClick = [this]()
@@ -53,6 +73,12 @@ public:
         auto headerArea = bounds.removeFromTop(kHeaderHeight);
         closeButton.setBounds(headerArea.removeFromRight(80));
         headerArea.removeFromRight(10);
+
+        unbindAllButton.setBounds(headerArea.removeFromRight(100));
+        headerArea.removeFromRight(5);
+        bindAllButton.setBounds(headerArea.removeFromRight(90));
+        headerArea.removeFromRight(10);
+
         titleLabel.setBounds(headerArea.removeFromTop(24));
         bounds.removeFromTop(10);
 
@@ -62,8 +88,11 @@ public:
 private:
     Shared::ParameterKnobs parameterKnobs;
     juce::Label titleLabel;
+    juce::TextButton bindAllButton;
+    juce::TextButton unbindAllButton;
     juce::TextButton closeButton;
     std::function<void()> onCloseClicked;
+    const bool hasMidiManager = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ContentComponent)
 };

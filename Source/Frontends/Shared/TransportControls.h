@@ -43,6 +43,7 @@ public:
     void setMicState(bool enabled);
     void setMicButtonVisible(bool visible);
     void setMicEnabled(bool enabled);
+    void setAccentColour(juce::Colour colour);
 
 private:
     juce::ToggleButton recordEnableButton;
@@ -65,6 +66,7 @@ private:
     std::unique_ptr<MidiLearnMouseListener> muteMouseListener;
     std::unique_ptr<MidiLearnMouseListener> micMouseListener;
     bool micButtonAvailable = true;
+    juce::Colour accentColour { 0xff1eb19d };
 
     void drawCustomToggleButton(juce::Graphics& g, juce::ToggleButton& button, 
                                 const juce::String& letter, juce::Rectangle<int> bounds,

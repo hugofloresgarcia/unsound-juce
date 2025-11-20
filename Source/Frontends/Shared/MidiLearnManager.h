@@ -99,6 +99,10 @@ public:
     
     // Get mapping for a specific parameter (number < 0 if not mapped)
     MidiMapping getMappingForParameter(const juce::String& parameterId) const;
+    void setMapping(const juce::String& parameterId,
+                    MidiMapping::MessageType type,
+                    int number,
+                    MidiMapping::Mode mode);
     
     // Enable/disable MIDI input
     void setMidiInputEnabled(bool enabled);
@@ -135,11 +139,14 @@ private:
     
     juce::String learningParameterId;
     MidiMapping::Mode learningMode = MidiMapping::Mode::Momentary;
-    std::unique_ptr<juce::MidiInput> midiInput;
+    std::vector<std::unique_ptr<juce::MidiInput>> midiInputs;
     bool midiEnabled = false;
     
     juce::CriticalSection mapLock;
     
+    bool openMidiDevice(int deviceIndex);
+    void stopAllMidiInputs();
+    juce::String getActiveMidiDeviceNames() const;
     void processControlChange(int ccNumber, int ccValue);
     void processNoteMessage(int noteNumber, bool isNoteOn);
     void handleToggleForParameter(const juce::String& parameterId);

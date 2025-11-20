@@ -183,18 +183,18 @@ void TransportControls::paint(juce::Graphics& g)
     drawCustomToggleButton(g, recordEnableButton, "r", recordEnableButton.getBounds(),
                           juce::Colour(0xfff04e36), juce::Colour(0xfff04e36), recordHasMidi);
 
-    // Mic button: Orange
+    // Mic button: accent colour
     if (micButtonAvailable && micButton.isVisible())
     {
         bool micHasMidi = micLearnable && micLearnable->hasMidiMapping();
         drawCustomToggleButton(g, micButton, "mic", micButton.getBounds(),
-                              juce::Colour(0xfff5a623), juce::Colour(0xfff5a623), micHasMidi);
+                              accentColour, accentColour, micHasMidi);
     }
 
-    // Play button: Gray when on (playing), Green when off (idle)
+    // Play button: accent gradient
     bool isPlaying = playButton.getToggleState();
-    juce::Colour playOnColor = juce::Colour(0xff808080);  // Gray when playing
-    juce::Colour playOffColor = juce::Colour(0xff00ff00); // Green when idle
+    juce::Colour playOnColor = accentColour.darker(0.4f);
+    juce::Colour playOffColor = accentColour;
     bool playHasMidi = playLearnable && playLearnable->hasMidiMapping();
     drawCustomToggleButton(g, playButton, "p", playButton.getBounds(),
                           playOnColor, playOffColor, playHasMidi);
@@ -274,6 +274,12 @@ void TransportControls::setMicEnabled(bool enabled)
         return;
 
     micButton.setEnabled(enabled);
+}
+
+void TransportControls::setAccentColour(juce::Colour colour)
+{
+    accentColour = colour;
+    repaint();
 }
 
 void TransportControls::drawCustomToggleButton(juce::Graphics& g, juce::ToggleButton& button, 

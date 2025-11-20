@@ -71,6 +71,13 @@ std::unique_ptr<juce::Drawable> createLoopDrawable(juce::Colour colour)
 }
 } // namespace
 
+static const juce::Colour kTrackColours[] = {
+    juce::Colour(0xff1eb19d), // teal
+    juce::Colour(0xffed1683), // magenta
+    juce::Colour(0xfff5a623), // amber
+    juce::Colour(0xff4a90e2)  // blue
+};
+
 // VampNetWorkerThread implementation
 void VampNetWorkerThread::run()
 {
@@ -392,6 +399,11 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     // Initialize custom params with defaults
     customVampNetParams = getDefaultVampNetParams();
 
+    const size_t colourCount = std::size(kTrackColours);
+    accentColour = colourCount > 0 ? kTrackColours[static_cast<size_t>(index) % colourCount]
+                                   : juce::Colour(0xff1eb19d);
+    transportControls.setAccentColour(accentColour);
+
     modelParamsPopup = std::make_unique<ModelParamsPopup>(midiManager, trackIdPrefix);
     modelParamsPopup->onDismissed = [this]()
     {
@@ -400,6 +412,7 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
 
     // Setup track label
     trackLabel.setJustificationType(juce::Justification::centredLeft);
+    trackLabel.setColour(juce::Label::textColourId, accentColour);
     addAndMakeVisible(trackLabel);
 
     // Setup pan label
@@ -416,6 +429,9 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
 
     // Setup generate button
     generateButton.onClick = [this] { generateButtonClicked(); };
+    generateButton.setColour(juce::TextButton::buttonColourId, accentColour.withAlpha(0.35f));
+    generateButton.setColour(juce::TextButton::buttonOnColourId, accentColour);
+    generateButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     addAndMakeVisible(generateButton);
 
     // Setup MIDI learn for generate button
@@ -531,12 +547,12 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     addAndMakeVisible(levelControl);
 
     auto loopOffIcon = createLoopDrawable(juce::Colour(0xff4a4a4a));
-    auto loopOnIcon = createLoopDrawable(juce::Colour(0xff1eb19d));
+    auto loopOnIcon = createLoopDrawable(accentColour);
     loopModeButton.setClickingTogglesState(true);
     loopModeButton.setWantsKeyboardFocus(false);
     loopModeButton.setTooltip("loop generate");
     loopModeButton.setColour(juce::DrawableButton::backgroundColourId, juce::Colour(0x00111111));
-    loopModeButton.setColour(juce::DrawableButton::backgroundOnColourId, juce::Colour(0x00111111));
+    loopModeButton.setColour(juce::DrawableButton::backgroundOnColourId, accentColour.withAlpha(0.2f));
     loopModeButton.setImages(loopOffIcon.release(), nullptr, nullptr, nullptr,
                              loopOnIcon.release(), nullptr, nullptr, nullptr);
     loopModeButton.onClick = [this]() { updateGenerateButtonMode(); };
@@ -546,10 +562,14 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
 
     loadInputButton.onLeftClick = [this] { loadInputButtonClicked(); };
     loadInputButton.setTooltip("Load audio into this track's input buffer");
+    loadInputButton.setColour(juce::TextButton::buttonColourId, accentColour.withAlpha(0.25f));
+    loadInputButton.setColour(juce::TextButton::buttonOnColourId, accentColour);
     addAndMakeVisible(loadInputButton);
 
     saveOutputButton.onLeftClick = [this] { saveOutputButtonClicked(); };
     saveOutputButton.setTooltip("Export generated audio");
+    saveOutputButton.setColour(juce::TextButton::buttonColourId, accentColour.withAlpha(0.25f));
+    saveOutputButton.setColour(juce::TextButton::buttonOnColourId, accentColour);
     addAndMakeVisible(saveOutputButton);
 
     auto micOffIcon = createMicDrawable(juce::Colour(0xff4a4a4a), juce::Colour(0xffe0e0e0));
@@ -569,6 +589,7 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     // Setup "use o as i" toggle
     useOutputAsInputToggle.setButtonText("use o as i");
     useOutputAsInputToggle.setToggleState(false, juce::dontSendNotification);
+    useOutputAsInputToggle.setColour(juce::ToggleButton::textColourId, accentColour);
     addAndMakeVisible(useOutputAsInputToggle);
 
     // Setup input selector
@@ -666,8 +687,8 @@ void LooperTrack::paint(juce::Graphics& g)
     // Background - pitch black
     g.fillAll(juce::Colours::black);
 
-    // Border - use teal color
-    g.setColour(juce::Colour(0xff1eb19d));
+    // Border - use track accent color
+    g.setColour(accentColour);
     g.drawRect(getLocalBounds(), 1);
 
     // Visual indicator for recording/playing
@@ -678,7 +699,7 @@ void LooperTrack::paint(juce::Graphics& g)
     }
     else if (track.isPlaying.load() && track.recordBuffer.hasRecorded.load())
     {
-        g.setColour(juce::Colour(0xff1eb19d).withAlpha(0.15f)); // Teal
+        g.setColour(accentColour.withAlpha(0.15f));
         g.fillRect(getLocalBounds());
     }
 
@@ -1497,7 +1518,7 @@ void LooperTrack::initializeModelParameterKnobs()
     addModelParameterKnob("top_p", "top-p", 0.0, 1.0, 0.01, 0.0, false);
     addModelParameterKnob("mask_dropout", "mask dropout", 0.0, 1.0, 0.01, 0.9, false);
     addModelParameterKnob("time_stretch_factor", "stretch", 1.0, 4.0, 1.0, 1.0, true);
-    addModelParameterKnob("onset_mask_width", "onset width", 1.0, 127.0, 1.0, 5.0, true);
+    addModelParameterKnob("onset_mask_width", "onset width", 0.0, 127.0, 1.0, 5.0, true);
     addModelParameterKnob("typical_filtering", "typical filter", 0.0, 1.0, 1.0, 0.0, true, true);
     addModelParameterKnob("typical_mass", "typical mass", 0.0, 1.0, 0.01, 0.14, false);
     addModelParameterKnob("typical_min_tokens", "min tokens", 1.0, 512.0, 1.0, 64.0, true);

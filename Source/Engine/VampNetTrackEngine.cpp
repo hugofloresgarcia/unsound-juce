@@ -432,16 +432,16 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
                     
                     if (hasHardwareInput)
                     {
-                        // Get input sample from selected channel
-                        if (inputChannel == -1)
-                        {
-                            // All channels: use channel 0 (mono sum could be added later)
-                            if (inputChannelData[0] != nullptr)
-                                inputSample = inputChannelData[0][sample];
-                        }
-                        else if (inputChannel >= 0 && inputChannel < numInputChannels && inputChannelData[inputChannel] != nullptr)
-                        {
-                            inputSample = inputChannelData[inputChannel][sample];
+                    // Get input sample from selected channel
+                    if (inputChannel == -1)
+                    {
+                        // All channels: use channel 0 (mono sum could be added later)
+                        if (inputChannelData[0] != nullptr)
+                            inputSample = inputChannelData[0][sample];
+                    }
+                    else if (inputChannel >= 0 && inputChannel < numInputChannels && inputChannelData[inputChannel] != nullptr)
+                    {
+                        inputSample = inputChannelData[inputChannel][sample];
                         }
                     }
                     

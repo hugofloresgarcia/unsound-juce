@@ -36,12 +36,7 @@ MidiLearnManager::MidiLearnManager()
 
 MidiLearnManager::~MidiLearnManager()
 {
-    // Stop MIDI input first to prevent callbacks during destruction
-    if (midiInput)
-    {
-        midiInput->stop();
-        midiInput.reset();
-    }
+    stopAllMidiInputs();
     midiEnabled = false;
     
     // Clear all mappings and parameters to prevent any callbacks
@@ -79,6 +74,52 @@ void MidiLearnManager::unregisterParameter(const juce::String& parameterId)
     }
 }
 
+bool MidiLearnManager::openMidiDevice(int deviceIndex)
+{
+    auto devices = juce::MidiInput::getAvailableDevices();
+    if (deviceIndex < 0 || deviceIndex >= devices.size())
+        return false;
+
+    juce::Logger::writeToLog("MidiLearnManager: Attempting to open device index " + juce::String(deviceIndex) + ": " + devices[deviceIndex].name);
+    auto input = juce::MidiInput::openDevice(devices[deviceIndex].identifier, this);
+    if (input == nullptr)
+    {
+        juce::Logger::writeToLog("MidiLearnManager: Failed to open MIDI device: " + devices[deviceIndex].name);
+        return false;
+    }
+
+    input->start();
+    midiInputs.push_back(std::move(input));
+    juce::Logger::writeToLog("MidiLearnManager: Listening to MIDI device: " + devices[deviceIndex].name);
+    return true;
+}
+
+void MidiLearnManager::stopAllMidiInputs()
+{
+    for (auto& input : midiInputs)
+    {
+        if (input != nullptr)
+        {
+            juce::Logger::writeToLog("MidiLearnManager: Closing MIDI device: " + input->getName());
+            input->stop();
+        }
+    }
+    midiInputs.clear();
+}
+
+juce::String MidiLearnManager::getActiveMidiDeviceNames() const
+{
+    if (midiInputs.empty())
+        return "No device";
+
+    juce::StringArray names;
+    for (const auto& input : midiInputs)
+        if (input != nullptr)
+            names.add(input->getName());
+
+    return names.joinIntoString(", ");
+}
+
 void MidiLearnManager::startLearning(const juce::String& parameterId, MidiMapping::Mode mode)
 {
     juce::ScopedLock lock(mapLock);
@@ -91,7 +132,7 @@ void MidiLearnManager::startLearning(const juce::String& parameterId, MidiMappin
     }
     learningParameterId = parameterId;
     learningMode = mode;
-    juce::String deviceName = midiInput ? midiInput->getName() : "No device";
+    juce::String deviceName = getActiveMidiDeviceNames();
     juce::Logger::writeToLog("MidiLearnManager: Started learning for: " + parameterId + " (MIDI device: " + deviceName + ", enabled: " + (midiEnabled ? "Yes" : "No") + ")");
 }
 
@@ -172,37 +213,48 @@ MidiMapping MidiLearnManager::getMappingForParameter(const juce::String& paramet
     return mapping;
 }
 
+void MidiLearnManager::setMapping(const juce::String& parameterId,
+                                  MidiMapping::MessageType type,
+                                  int number,
+                                  MidiMapping::Mode mode)
+{
+    juce::ScopedLock lock(mapLock);
+
+    if (parameters.find(parameterId) == parameters.end())
+    {
+        juce::Logger::writeToLog("MidiLearnManager: Cannot map unknown parameter: " + parameterId);
+        return;
+    }
+
+    storeMappingLocked(parameterId, type, number, mode);
+    juce::Logger::writeToLog("MidiLearnManager: Programmatically mapped "
+                             + parameterId + " -> " + MidiMapping::getTypeName(type)
+                             + " " + juce::String(number));
+}
+
 void MidiLearnManager::setMidiInputEnabled(bool enabled)
 {
     if (enabled && !midiEnabled)
     {
-        // Try to open first available MIDI device
         auto devices = juce::MidiInput::getAvailableDevices();
-        if (!devices.isEmpty())
+        int opened = 0;
+        for (int i = 0; i < devices.size(); ++i)
         {
-            setMidiInputDevice(0);
+            if (openMidiDevice(i))
+                ++opened;
         }
+        midiEnabled = opened > 0;
     }
     else if (!enabled && midiEnabled)
     {
-        if (midiInput)
-        {
-            midiInput->stop();
-            midiInput.reset();
-        }
+        stopAllMidiInputs();
         midiEnabled = false;
     }
 }
 
 void MidiLearnManager::setMidiInputDevice(int deviceIndex)
 {
-    // Stop current input
-    if (midiInput)
-    {
-        juce::Logger::writeToLog("MidiLearnManager: Closing MIDI device: " + midiInput->getName());
-        midiInput->stop();
-        midiInput.reset();
-    }
+    stopAllMidiInputs();
     
     auto devices = juce::MidiInput::getAvailableDevices();
     juce::Logger::writeToLog("MidiLearnManager: Available MIDI devices: " + juce::String(devices.size()));
@@ -211,26 +263,14 @@ void MidiLearnManager::setMidiInputDevice(int deviceIndex)
         juce::Logger::writeToLog("  [" + juce::String(i) + "] " + devices[i].name + " (ID: " + devices[i].identifier + ")");
     }
     
-    if (deviceIndex >= 0 && deviceIndex < devices.size())
+    if (!openMidiDevice(deviceIndex))
     {
-        juce::Logger::writeToLog("MidiLearnManager: Attempting to open device index " + juce::String(deviceIndex) + ": " + devices[deviceIndex].name);
-        midiInput = juce::MidiInput::openDevice(devices[deviceIndex].identifier, this);
-        if (midiInput)
-        {
-            midiInput->start();
-            midiEnabled = true;
-            juce::Logger::writeToLog("MidiLearnManager: Successfully opened and started MIDI device: " + devices[deviceIndex].name);
-        }
-        else
-        {
-            juce::Logger::writeToLog("MidiLearnManager: Failed to open MIDI device: " + devices[deviceIndex].name);
-            midiEnabled = false;
-        }
+        juce::Logger::writeToLog("MidiLearnManager: Failed to open requested device index " + juce::String(deviceIndex));
+        midiEnabled = false;
     }
     else
     {
-        juce::Logger::writeToLog("MidiLearnManager: Invalid device index: " + juce::String(deviceIndex));
-        midiEnabled = false;
+        midiEnabled = true;
     }
 }
 

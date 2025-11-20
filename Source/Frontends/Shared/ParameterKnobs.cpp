@@ -193,6 +193,31 @@ std::vector<juce::String> ParameterKnobs::getParameterIds() const
     return ids;
 }
 
+void ParameterKnobs::bindKnobsSequentially(int startCcNumber, int maxAssignments)
+{
+    if (midiLearnManager == nullptr || startCcNumber < 0)
+        return;
+
+    auto ids = getParameterIds();
+    const int count = juce::jmin(maxAssignments, static_cast<int>(ids.size()));
+    for (int i = 0; i < count; ++i)
+    {
+        midiLearnManager->setMapping(ids[i],
+                                     MidiMapping::MessageType::CC,
+                                     startCcNumber + i,
+                                     MidiMapping::Mode::Momentary);
+    }
+}
+
+void ParameterKnobs::clearAllMidiMappings()
+{
+    if (midiLearnManager == nullptr)
+        return;
+
+    for (const auto& control : knobs)
+        midiLearnManager->clearMapping(control.parameterId);
+}
+
 void ParameterKnobs::paint(juce::Graphics& g)
 {
     // Draw MIDI indicators on knobs that have mappings

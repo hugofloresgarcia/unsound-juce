@@ -55,6 +55,8 @@ public:
 
     // Convenience helpers for config save/load
     std::vector<juce::String> getParameterIds() const;
+    void bindKnobsSequentially(int startCcNumber = 0, int maxAssignments = 16);
+    void clearAllMidiMappings();
 
 private:
     struct KnobControl

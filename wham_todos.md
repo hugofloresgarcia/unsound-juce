@@ -16,8 +16,8 @@ Let's add some unit tests for the basic functionality. In particular, before imp
 ### Load input from file _(✅ Completed)_
 Tracks can import audio into their input buffers via the new “load input” button (also used by session save/load).
 
-### Different colors for each track
-That way we can color code the controller with corresponding play buttons.
+### Different colors for each track _(✅ Completed)_
+Each WhAM track now gets a unique accent (up to four colours) applied to the track frame, controls, and transport play button so you can visually match controllers to tracks.
 
 ### Finalize Viz GUI (move WhAM to middle)
 For now, have a narrow rounded rectangle in the middle that says "WhAM", and remove the current WhAM logo from the top. I'll ask Meghan for a nicer long-rectangular Asset.

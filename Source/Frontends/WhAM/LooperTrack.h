@@ -178,6 +178,7 @@ private:
     juce::DrawableButton loopModeButton;
     RightClickSafeTextButton loadInputButton;
     RightClickSafeTextButton saveOutputButton;
+    juce::Colour accentColour;
     
     // Panner
     juce::String pannerType;
