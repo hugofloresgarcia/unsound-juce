@@ -316,10 +316,10 @@ void MainComponent::resized()
     int logoSize = juce::jmin(logoArea.getWidth(), headerHeight - 6);
     gitInfoLabel.setBounds({});
 
-    bounds.removeFromTop(4);
+    const int controlRowHeight = 40;
+    auto controlArea = headerArea.removeFromBottom(controlRowHeight).reduced(0, 4);
 
     // Control buttons with overflow logic
-    auto controlArea = bounds.removeFromTop(40);
     const int buttonSpacing = 10;
     const int overflowButtonWidth = 60;
 
@@ -420,7 +420,7 @@ void MainComponent::resized()
     juce::Rectangle<int> logoButtonBounds(logoX, logoY, logoSize, logoSize);
     headerLogoButton.setBounds(logoButtonBounds);
 
-    bounds.removeFromTop(10);
+    bounds.removeFromTop(6);
     trackViewport.setBounds(bounds);
     layoutTracks();
 
