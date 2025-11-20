@@ -115,11 +115,11 @@ void LayerCakeKnob::paint(juce::Graphics& g)
 
     auto centre = circle.getCentre();
     const float pointerLength = circle.getWidth() * 0.38f;
-    juce::Point<float> pointer(centre.x + pointerLength * std::cos(angle),
-                               centre.y + pointerLength * std::sin(angle));
+    juce::Point<float> pointer(centre.x  + pointerLength * std::cos(angle - (4*3.1415)/8),
+                               centre.y  + pointerLength * std::sin(angle - (4*3.1415)/8));
 
-    g.setColour(accent);
-    g.drawLine(centre.x, centre.y, pointer.x, pointer.y, 2.4f);
+    // g.setColour(accent);
+    // g.drawLine(centre.x, centre.y, pointer.x, pointer.y, 2.4f);
     g.fillEllipse(pointer.x - 3.0f, pointer.y - 3.0f, 6.0f, 6.0f);
 }
 
