@@ -29,6 +29,8 @@ public:
     // Playback parameters
     void set_speed(float speed) { m_playback_speed.store(speed); }
     float get_speed() const { return m_playback_speed.load(); }
+    void set_direction_forward(bool forward) { m_direction_fwd.store(forward); }
+    bool is_direction_forward() const { return m_direction_fwd.load(); }
     
     void set_level_db(float db) { m_level_db.store(db); }
     float get_level_db() const { return m_level_db.load(); }

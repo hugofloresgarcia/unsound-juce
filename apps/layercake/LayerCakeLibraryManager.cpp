@@ -1,0 +1,575 @@
+#include "LayerCakeLibraryManager.h"
+#include <juce_core/juce_core.h>
+
+namespace
+{
+constexpr const char* kLayerCakeFolderName = "layercake";
+constexpr const char* kPalettesFolderName = "palettes";
+constexpr const char* kPatternsFolderName = "patterns";
+constexpr const char* kScenesFolderName = "scenes";
+constexpr const char* kSceneJsonName = "scene.json";
+constexpr const char* kPatternExtension = ".json";
+
+juce::File ensure_directory(const juce::File& folder)
+{
+    if (!folder.exists())
+        folder.createDirectory();
+    return folder;
+}
+
+juce::var grain_state_to_var(const GrainState& state)
+{
+    auto* obj = new juce::DynamicObject();
+    obj->setProperty("loopStartSeconds", state.loop_start_seconds);
+    obj->setProperty("durationMs", state.duration_ms);
+    obj->setProperty("rateSemitones", state.rate_semitones);
+    obj->setProperty("envAttackMs", state.env_attack_ms);
+    obj->setProperty("envReleaseMs", state.env_release_ms);
+    obj->setProperty("playForward", state.play_forward);
+    obj->setProperty("layer", state.layer);
+    obj->setProperty("pan", state.pan);
+    obj->setProperty("spreadAmount", state.spread_amount);
+    obj->setProperty("reverseProbability", state.reverse_probability);
+    obj->setProperty("skipRandomization", state.skip_randomization);
+    obj->setProperty("shouldTrigger", state.should_trigger);
+    return obj;
+}
+
+bool grain_state_from_var(const juce::var& value, GrainState& out_state)
+{
+    if (!value.isObject())
+    {
+        DBG("LayerCakeLibraryManager::grain_state_from_var invalid value");
+        return false;
+    }
+
+    auto* obj = value.getDynamicObject();
+    out_state.loop_start_seconds = static_cast<float>(obj->getProperty("loopStartSeconds"));
+    out_state.duration_ms = static_cast<float>(obj->getProperty("durationMs"));
+    out_state.rate_semitones = static_cast<float>(obj->getProperty("rateSemitones"));
+    out_state.env_attack_ms = static_cast<float>(obj->getProperty("envAttackMs"));
+    out_state.env_release_ms = static_cast<float>(obj->getProperty("envReleaseMs"));
+    out_state.play_forward = obj->getProperty("playForward");
+    out_state.layer = static_cast<int>(obj->getProperty("layer"));
+    out_state.pan = static_cast<float>(obj->getProperty("pan"));
+    if (obj->hasProperty("spreadAmount"))
+        out_state.spread_amount = static_cast<float>(obj->getProperty("spreadAmount"));
+    else
+        out_state.spread_amount = 0.0f;
+    if (obj->hasProperty("reverseProbability"))
+        out_state.reverse_probability = static_cast<float>(obj->getProperty("reverseProbability"));
+    else
+        out_state.reverse_probability = 0.0f;
+    if (obj->hasProperty("skipRandomization"))
+        out_state.skip_randomization = static_cast<bool>(obj->getProperty("skipRandomization"));
+    else
+        out_state.skip_randomization = false;
+    out_state.should_trigger = static_cast<bool>(obj->getProperty("shouldTrigger"));
+    return true;
+}
+
+juce::var serialize_pattern_json(const LayerCakePresetData& data)
+{
+    auto* pattern = new juce::DynamicObject();
+    pattern->setProperty("length", data.pattern_snapshot.pattern_length);
+    pattern->setProperty("skipProbability", data.pattern_snapshot.skip_probability);
+    pattern->setProperty("periodMs", data.pattern_snapshot.period_ms);
+    pattern->setProperty("enabled", data.pattern_snapshot.enabled);
+    pattern->setProperty("subdivision", data.pattern_subdivision);
+
+    juce::Array<juce::var> steps;
+    for (const auto& step : data.pattern_snapshot.steps)
+        steps.add(grain_state_to_var(step));
+    pattern->setProperty("steps", steps);
+    return pattern;
+}
+
+bool parse_pattern_json(const juce::var& value, LayerCakePresetData& out_data)
+{
+    if (!value.isObject())
+    {
+        DBG("LayerCakeLibraryManager::parse_pattern_json invalid value");
+        return false;
+    }
+
+    auto* pattern = value.getDynamicObject();
+    out_data.pattern_snapshot.pattern_length = static_cast<int>(pattern->getProperty("length"));
+    out_data.pattern_snapshot.skip_probability = static_cast<float>(pattern->getProperty("skipProbability"));
+    out_data.pattern_snapshot.period_ms = static_cast<float>(pattern->getProperty("periodMs"));
+    out_data.pattern_snapshot.enabled = static_cast<bool>(pattern->getProperty("enabled"));
+    if (pattern->hasProperty("subdivision"))
+        out_data.pattern_subdivision = static_cast<float>(pattern->getProperty("subdivision"));
+    else
+        out_data.pattern_subdivision = 0.0f;
+
+    auto steps_var = pattern->getProperty("steps");
+    if (steps_var.isArray())
+    {
+        auto* array = steps_var.getArray();
+        const int num_steps = juce::jmin(array->size(), static_cast<int>(out_data.pattern_snapshot.steps.size()));
+        for (int i = 0; i < num_steps; ++i)
+        {
+            if (!grain_state_from_var(array->getReference(i), out_data.pattern_snapshot.steps[static_cast<size_t>(i)]))
+            {
+                DBG("LayerCakeLibraryManager::parse_pattern_json invalid step");
+                return false;
+            }
+        }
+    }
+    else
+    {
+        DBG("LayerCakeLibraryManager::parse_pattern_json missing steps array");
+        return false;
+    }
+
+    return true;
+}
+
+bool write_json_file(const juce::File& target, const juce::var& json, const juce::String& context)
+{
+    juce::TemporaryFile temp(target);
+    {
+        juce::FileOutputStream stream(temp.getFile());
+        if (!stream.openedOk())
+        {
+            DBG(context + " failed to open json file for writing");
+            return false;
+        }
+        stream.writeText(juce::JSON::toString(json, true), false, false, "\n");
+        stream.flush();
+        if (stream.getStatus().failed())
+        {
+            DBG(context + " stream write error");
+            return false;
+        }
+    }
+
+    if (!temp.overwriteTargetFileWithTemporary())
+    {
+        DBG(context + " failed to finalize json file");
+        return false;
+    }
+
+    return true;
+}
+
+bool read_json_file(const juce::File& file, juce::var& out_var, const juce::String& context)
+{
+    if (!file.existsAsFile())
+    {
+        DBG(context + " missing file=" + file.getFullPathName());
+        return false;
+    }
+
+    const auto file_text = file.loadFileAsString();
+    if (file_text.isEmpty())
+    {
+        DBG(context + " file empty");
+        return false;
+    }
+
+    auto result = juce::JSON::parse(file_text, out_var);
+    if (result.failed())
+    {
+        DBG(context + " parse error: " + result.getErrorMessage());
+        return false;
+    }
+
+    if (!out_var.isObject())
+    {
+        DBG(context + " parsed value is not object");
+        return false;
+    }
+
+    return true;
+}
+} // namespace
+
+LayerCakeLibraryManager::LayerCakeLibraryManager()
+{
+    m_root = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                 .getChildFile(kLayerCakeFolderName);
+    refresh();
+}
+
+void LayerCakeLibraryManager::refresh()
+{
+    ensure_directory(m_root);
+    refresh_palettes();
+    refresh_patterns();
+    refresh_scenes();
+}
+
+bool LayerCakeLibraryManager::save_palette(const juce::String& name, const LayerBufferArray& layers)
+{
+    const auto sanitized = sanitize_name(name);
+    if (sanitized.isEmpty())
+    {
+        DBG("LayerCakeLibraryManager::save_palette invalid name");
+        return false;
+    }
+
+    auto folder = ensure_directory(palette_folder(sanitized));
+    if (!write_layers(folder, layers))
+    {
+        DBG("LayerCakeLibraryManager::save_palette failed to write layers");
+        return false;
+    }
+
+    refresh_palettes();
+    return true;
+}
+
+bool LayerCakeLibraryManager::load_palette(const juce::String& name, LayerBufferArray& out_layers) const
+{
+    const auto sanitized = sanitize_name(name);
+    if (sanitized.isEmpty())
+    {
+        DBG("LayerCakeLibraryManager::load_palette invalid name");
+        return false;
+    }
+
+    auto folder = palette_folder(sanitized);
+    if (!folder.exists())
+    {
+        DBG("LayerCakeLibraryManager::load_palette missing folder=" + folder.getFullPathName());
+        return false;
+    }
+
+    if (!read_layers(folder, out_layers))
+    {
+        DBG("LayerCakeLibraryManager::load_palette failed to read layers");
+        return false;
+    }
+    return true;
+}
+
+bool LayerCakeLibraryManager::delete_palette(const juce::String& name)
+{
+    const auto sanitized = sanitize_name(name);
+    if (sanitized.isEmpty())
+    {
+        DBG("LayerCakeLibraryManager::delete_palette invalid name");
+        return false;
+    }
+
+    auto folder = palette_folder(sanitized);
+    if (!folder.exists())
+    {
+        DBG("LayerCakeLibraryManager::delete_palette missing folder=" + folder.getFullPathName());
+        return false;
+    }
+
+    const auto result = folder.deleteRecursively();
+    if (!result)
+        DBG("LayerCakeLibraryManager::delete_palette failed to delete folder=" + folder.getFullPathName());
+    refresh_palettes();
+    return result;
+}
+
+bool LayerCakeLibraryManager::save_pattern(const juce::String& name, const LayerCakePresetData& data)
+{
+    const auto sanitized = sanitize_name(name);
+    if (sanitized.isEmpty())
+    {
+        DBG("LayerCakeLibraryManager::save_pattern invalid name");
+        return false;
+    }
+
+    auto file = pattern_file(sanitized);
+    auto json = serialize_pattern_json(data);
+    if (!write_json_file(file, json, "LayerCakeLibraryManager::save_pattern"))
+    {
+        DBG("LayerCakeLibraryManager::save_pattern failed to write json");
+        return false;
+    }
+
+    refresh_patterns();
+    return true;
+}
+
+bool LayerCakeLibraryManager::load_pattern(const juce::String& name, LayerCakePresetData& out_data) const
+{
+    const auto sanitized = sanitize_name(name);
+    if (sanitized.isEmpty())
+    {
+        DBG("LayerCakeLibraryManager::load_pattern invalid name");
+        return false;
+    }
+
+    auto file = pattern_file(sanitized);
+    juce::var json;
+    if (!read_json_file(file, json, "LayerCakeLibraryManager::load_pattern"))
+    {
+        DBG("LayerCakeLibraryManager::load_pattern failed to read json");
+        return false;
+    }
+
+    out_data = LayerCakePresetData{};
+    if (!parse_pattern_json(json, out_data))
+    {
+        DBG("LayerCakeLibraryManager::load_pattern failed to parse pattern json");
+        return false;
+    }
+    return true;
+}
+
+bool LayerCakeLibraryManager::delete_pattern(const juce::String& name)
+{
+    const auto sanitized = sanitize_name(name);
+    if (sanitized.isEmpty())
+    {
+        DBG("LayerCakeLibraryManager::delete_pattern invalid name");
+        return false;
+    }
+
+    auto file = pattern_file(sanitized);
+    if (!file.existsAsFile())
+    {
+        DBG("LayerCakeLibraryManager::delete_pattern missing file=" + file.getFullPathName());
+        return false;
+    }
+
+    if (!file.deleteFile())
+    {
+        DBG("LayerCakeLibraryManager::delete_pattern failed to delete " + file.getFullPathName());
+        return false;
+    }
+
+    refresh_patterns();
+    return true;
+}
+
+bool LayerCakeLibraryManager::save_scene(const juce::String& name,
+                                         const LayerCakePresetData& data,
+                                         const LayerBufferArray& layers)
+{
+    const auto sanitized = sanitize_name(name);
+    if (sanitized.isEmpty())
+    {
+        DBG("LayerCakeLibraryManager::save_scene invalid name");
+        return false;
+    }
+
+    auto folder = ensure_directory(scene_folder(sanitized));
+    auto scene_file = folder.getChildFile(kSceneJsonName);
+
+    auto json = serialize_pattern_json(data);
+    if (!write_json_file(scene_file, json, "LayerCakeLibraryManager::save_scene"))
+    {
+        DBG("LayerCakeLibraryManager::save_scene failed to write scene json");
+        return false;
+    }
+
+    if (!write_layers(folder, layers))
+    {
+        DBG("LayerCakeLibraryManager::save_scene failed to write layers");
+        return false;
+    }
+
+    refresh_scenes();
+    return true;
+}
+
+bool LayerCakeLibraryManager::load_scene(const juce::String& name,
+                                         LayerCakePresetData& out_data,
+                                         LayerBufferArray& out_layers) const
+{
+    const auto sanitized = sanitize_name(name);
+    if (sanitized.isEmpty())
+    {
+        DBG("LayerCakeLibraryManager::load_scene invalid name");
+        return false;
+    }
+
+    auto folder = scene_folder(sanitized);
+    if (!folder.exists())
+    {
+        DBG("LayerCakeLibraryManager::load_scene missing folder=" + folder.getFullPathName());
+        return false;
+    }
+
+    auto scene_file = folder.getChildFile(kSceneJsonName);
+    juce::var json;
+    if (!read_json_file(scene_file, json, "LayerCakeLibraryManager::load_scene"))
+    {
+        DBG("LayerCakeLibraryManager::load_scene failed to read scene json");
+        return false;
+    }
+
+    out_data = LayerCakePresetData{};
+    if (!parse_pattern_json(json, out_data))
+    {
+        DBG("LayerCakeLibraryManager::load_scene failed to parse scene json");
+        return false;
+    }
+
+    if (!read_layers(folder, out_layers))
+    {
+        DBG("LayerCakeLibraryManager::load_scene failed to read layers");
+        return false;
+    }
+    return true;
+}
+
+bool LayerCakeLibraryManager::delete_scene(const juce::String& name)
+{
+    const auto sanitized = sanitize_name(name);
+    if (sanitized.isEmpty())
+    {
+        DBG("LayerCakeLibraryManager::delete_scene invalid name");
+        return false;
+    }
+
+    auto folder = scene_folder(sanitized);
+    if (!folder.exists())
+    {
+        DBG("LayerCakeLibraryManager::delete_scene missing folder=" + folder.getFullPathName());
+        return false;
+    }
+
+    const auto result = folder.deleteRecursively();
+    if (!result)
+        DBG("LayerCakeLibraryManager::delete_scene failed to delete folder=" + folder.getFullPathName());
+    refresh_scenes();
+    return result;
+}
+
+juce::File LayerCakeLibraryManager::palettes_root() const
+{
+    return m_root.getChildFile(kPalettesFolderName);
+}
+
+juce::File LayerCakeLibraryManager::patterns_root() const
+{
+    return m_root.getChildFile(kPatternsFolderName);
+}
+
+juce::File LayerCakeLibraryManager::scenes_root() const
+{
+    return m_root.getChildFile(kScenesFolderName);
+}
+
+juce::File LayerCakeLibraryManager::palette_folder(const juce::String& name) const
+{
+    return palettes_root().getChildFile(name);
+}
+
+juce::File LayerCakeLibraryManager::scene_folder(const juce::String& name) const
+{
+    return scenes_root().getChildFile(name);
+}
+
+juce::File LayerCakeLibraryManager::pattern_file(const juce::String& name) const
+{
+    return patterns_root().getChildFile(name + kPatternExtension);
+}
+
+juce::String LayerCakeLibraryManager::sanitize_name(const juce::String& name)
+{
+    return juce::File::createLegalFileName(name.trim());
+}
+
+bool LayerCakeLibraryManager::write_layers(const juce::File& folder, const LayerBufferArray& layers) const
+{
+    ensure_directory(folder);
+    for (size_t i = 0; i < layers.size(); ++i)
+    {
+        auto layer_file = folder.getChildFile("layer_" + juce::String(static_cast<int>(i)) + ".bin");
+        if (!layers[i].has_audio || layers[i].recorded_length == 0)
+        {
+            if (layer_file.existsAsFile())
+                layer_file.deleteFile();
+            continue;
+        }
+
+        juce::FileOutputStream stream(layer_file);
+        if (!stream.openedOk())
+        {
+            DBG("LayerCakeLibraryManager::write_layers failed to open " + layer_file.getFullPathName());
+            return false;
+        }
+
+        stream.writeInt64(static_cast<juce::int64>(layers[i].recorded_length));
+        stream.write(layers[i].samples.data(), static_cast<int>(layers[i].recorded_length * sizeof(float)));
+        stream.flush();
+        if (stream.getStatus().failed())
+        {
+            DBG("LayerCakeLibraryManager::write_layers write error");
+            return false;
+        }
+    }
+    return true;
+}
+
+bool LayerCakeLibraryManager::read_layers(const juce::File& folder, LayerBufferArray& out_layers) const
+{
+    for (size_t i = 0; i < out_layers.size(); ++i)
+    {
+        out_layers[i].samples.clear();
+        out_layers[i].recorded_length = 0;
+        out_layers[i].has_audio = false;
+
+        auto layer_file = folder.getChildFile("layer_" + juce::String(static_cast<int>(i)) + ".bin");
+        if (!layer_file.existsAsFile())
+            continue;
+
+        juce::FileInputStream stream(layer_file);
+        if (!stream.openedOk())
+        {
+            DBG("LayerCakeLibraryManager::read_layers failed to open " + layer_file.getFullPathName());
+            return false;
+        }
+
+        const auto recorded = stream.readInt64();
+        if (recorded <= 0)
+            continue;
+
+        const size_t samples_to_read = static_cast<size_t>(recorded);
+        out_layers[i].samples.resize(samples_to_read);
+        const size_t bytes_to_read = samples_to_read * sizeof(float);
+        if (stream.read(out_layers[i].samples.data(), static_cast<int>(bytes_to_read)) != static_cast<int>(bytes_to_read))
+        {
+            DBG("LayerCakeLibraryManager::read_layers truncated layer file");
+            return false;
+        }
+
+        out_layers[i].recorded_length = samples_to_read;
+        out_layers[i].has_audio = true;
+    }
+    return true;
+}
+
+void LayerCakeLibraryManager::refresh_palettes()
+{
+    auto root = ensure_directory(palettes_root());
+    m_palette_names.clear();
+    juce::Array<juce::File> dirs;
+    root.findChildFiles(dirs, juce::File::findDirectories, false);
+    for (const auto& dir : dirs)
+        m_palette_names.add(dir.getFileName());
+    m_palette_names.sort(true);
+}
+
+void LayerCakeLibraryManager::refresh_patterns()
+{
+    auto root = ensure_directory(patterns_root());
+    m_pattern_names.clear();
+    juce::Array<juce::File> files;
+    root.findChildFiles(files, juce::File::findFiles, false, juce::String("*") + kPatternExtension);
+    for (const auto& file : files)
+        m_pattern_names.add(file.getFileNameWithoutExtension());
+    m_pattern_names.sort(true);
+}
+
+void LayerCakeLibraryManager::refresh_scenes()
+{
+    auto root = ensure_directory(scenes_root());
+    m_scene_names.clear();
+    juce::Array<juce::File> dirs;
+    root.findChildFiles(dirs, juce::File::findDirectories, false);
+    for (const auto& dir : dirs)
+        m_scene_names.add(dir.getFileName());
+    m_scene_names.sort(true);
+}
+

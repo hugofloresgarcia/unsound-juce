@@ -8,6 +8,11 @@ target_sources(flowerjuce PRIVATE
     LooperEngine/TapeLoop.cpp
     LooperEngine/LooperWriteHead.cpp
     LooperEngine/LooperReadHead.cpp
+    LayerCakeEngine/LayerCakeEngine.cpp
+    LayerCakeEngine/GrainVoice.cpp
+    LayerCakeEngine/LayerCakeEnvelope.cpp
+    LayerCakeEngine/PatternClock.cpp
+    LayerCakeEngine/Metro.cpp
 )
 
 # Engine headers
@@ -18,6 +23,12 @@ target_sources(flowerjuce PRIVATE
     LooperEngine/LooperWriteHead.h
     LooperEngine/LooperReadHead.h
     LooperEngine/OutputBus.h
+    LayerCakeEngine/LayerCakeEngine.h
+    LayerCakeEngine/LayerCakeTypes.h
+    LayerCakeEngine/GrainVoice.h
+    LayerCakeEngine/LayerCakeEnvelope.h
+    LayerCakeEngine/PatternClock.h
+    LayerCakeEngine/Metro.h
 )
 
 # DSP source files

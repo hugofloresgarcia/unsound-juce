@@ -1,0 +1,439 @@
+#include "LayerCakeEngine.h"
+#include "PatternClock.h"
+#include <juce_audio_basics/juce_audio_basics.h>
+#include <algorithm>
+
+namespace
+{
+float decibels_to_gain(float db)
+{
+    return juce::Decibels::decibelsToGain(db);
+}
+} // namespace
+
+LayerCakeEngine::LayerCakeEngine()
+{
+    DBG("LayerCakeEngine ctor");
+    for (size_t voice = 0; voice < kNumVoices; ++voice)
+    {
+        m_voices[voice] = std::make_unique<GrainVoice>(voice);
+    }
+    m_pattern_clock = std::make_unique<PatternClock>(*this);
+}
+
+LayerCakeEngine::~LayerCakeEngine() = default;
+
+void LayerCakeEngine::prepare(double sample_rate, int block_size, int num_output_channels)
+{
+    DBG("LayerCakeEngine::prepare sample_rate=" + juce::String(sample_rate)
+        + " block=" + juce::String(block_size)
+        + " outputs=" + juce::String(num_output_channels));
+
+    m_sample_rate = sample_rate;
+    m_block_size = block_size;
+    m_num_output_channels = num_output_channels;
+
+    allocate_layers(sample_rate);
+
+    for (auto& voice : m_voices)
+        voice->prepare(sample_rate);
+
+    rebuild_write_head();
+
+    if (m_pattern_clock != nullptr)
+        m_pattern_clock->prepare(sample_rate);
+
+    m_is_prepared.store(true);
+}
+
+void LayerCakeEngine::allocate_layers(double sample_rate)
+{
+    for (auto& layer : m_layers)
+    {
+        layer.allocate_buffer(sample_rate, kMaxLayerDurationSeconds);
+        layer.clear_buffer();
+    }
+}
+
+void LayerCakeEngine::rebuild_write_head()
+{
+    if (!layer_index_valid(m_record_layer_index))
+        m_record_layer_index = 0;
+
+    m_write_head = std::make_unique<LooperWriteHead>(m_layers[m_record_layer_index]);
+    m_write_head->set_sample_rate(m_sample_rate);
+    m_write_head->set_record_enable(m_record_enabled.load());
+    m_write_head->set_input_channel(m_record_input_channel);
+    m_record_cursor.store(0);
+}
+
+bool LayerCakeEngine::layer_index_valid(int layer_index) const
+{
+    return layer_index >= 0 && layer_index < static_cast<int>(kNumLayers);
+}
+
+void LayerCakeEngine::set_record_layer(int layer_index)
+{
+    if (!layer_index_valid(layer_index))
+    {
+        DBG("LayerCakeEngine::set_record_layer invalid layer=" + juce::String(layer_index));
+        return;
+    }
+
+    if (layer_index == m_record_layer_index)
+        return;
+
+    const juce::SpinLock::ScopedLockType lock(m_record_lock);
+    m_record_layer_index = layer_index;
+    rebuild_write_head();
+    DBG("LayerCakeEngine::set_record_layer index=" + juce::String(layer_index));
+}
+
+void LayerCakeEngine::set_record_enable(bool should_record)
+{
+    const juce::SpinLock::ScopedLockType lock(m_record_lock);
+
+    if (m_write_head == nullptr)
+    {
+        DBG("LayerCakeEngine::set_record_enable called before prepare");
+        return;
+    }
+
+    if (should_record == m_record_enabled.load())
+        return;
+
+    m_record_enabled.store(should_record);
+    m_write_head->set_record_enable(should_record);
+
+    if (should_record)
+    {
+        auto& layer = m_layers[m_record_layer_index];
+        if (!layer.m_has_recorded.load())
+            layer.clear_buffer();
+        m_record_cursor.store(0);
+        DBG("LayerCakeEngine::set_record_enable START record layer=" + juce::String(m_record_layer_index));
+    }
+    else
+    {
+        const double buffer_size = static_cast<double>(m_layers[m_record_layer_index].get_buffer_size());
+        const double final_position = juce::jmin(buffer_size, static_cast<double>(m_record_cursor.load()));
+        m_write_head->finalize_recording(static_cast<float>(final_position));
+        DBG("LayerCakeEngine::set_record_enable STOP at samples=" + juce::String(final_position));
+    }
+}
+
+void LayerCakeEngine::process_block(const float* const* input_channel_data,
+                                    int num_input_channels,
+                                    float* const* output_channel_data,
+                                    int num_output_channels,
+                                    int num_samples)
+{
+    if (!m_is_prepared.load())
+    {
+        DBG("LayerCakeEngine::process_block called before prepare");
+        return;
+    }
+
+    if (output_channel_data == nullptr || num_output_channels == 0)
+    {
+        DBG("LayerCakeEngine::process_block missing output buffers");
+        return;
+    }
+
+    drain_pending_grains();
+
+    for (int channel = 0; channel < num_output_channels; ++channel)
+    {
+        if (output_channel_data[channel] != nullptr)
+            juce::FloatVectorOperations::clear(output_channel_data[channel], num_samples);
+    }
+
+    const float master_gain = decibels_to_gain(m_master_gain_db.load());
+
+    size_t recorded_samples = 0;
+    const size_t block_cursor = m_record_cursor.load();
+
+    for (int sample = 0; sample < num_samples; ++sample)
+    {
+        if (m_pattern_clock != nullptr)
+            m_pattern_clock->process_sample();
+
+        if (m_record_enabled.load())
+        {
+            process_recording_sample(input_channel_data,
+                                     num_input_channels,
+                                     sample,
+                                     block_cursor + recorded_samples);
+            ++recorded_samples;
+        }
+
+        float left_mix = 0.0f;
+        float right_mix = 0.0f;
+
+        for (auto& voice : m_voices)
+        {
+            const auto sample_pair = voice->get_next_sample();
+            left_mix += sample_pair[0];
+            right_mix += sample_pair[1];
+        }
+
+        left_mix *= master_gain;
+        right_mix *= master_gain;
+
+        if (num_output_channels > 0 && output_channel_data[0] != nullptr)
+            output_channel_data[0][sample] += left_mix;
+
+        if (num_output_channels > 1 && output_channel_data[1] != nullptr)
+            output_channel_data[1][sample] += right_mix;
+
+        for (int channel = 2; channel < num_output_channels; ++channel)
+        {
+            if (output_channel_data[channel] != nullptr)
+                output_channel_data[channel][sample] += (left_mix + right_mix) * 0.5f;
+        }
+    }
+
+    if (recorded_samples > 0)
+        m_record_cursor.store(block_cursor + recorded_samples);
+}
+
+void LayerCakeEngine::process_recording_sample(const float* const* input_channel_data,
+                                               int num_input_channels,
+                                               int buffer_sample_index,
+                                               size_t absolute_sample_index)
+{
+    static std::atomic<bool> logged_missing_write_head{false};
+    if (m_write_head == nullptr)
+    {
+        if (!logged_missing_write_head.exchange(true))
+            DBG("LayerCakeEngine::process_recording_sample missing write head");
+        return;
+    }
+
+    static std::atomic<bool> logged_missing_input{false};
+    if (input_channel_data == nullptr || num_input_channels == 0)
+    {
+        if (!logged_missing_input.exchange(true))
+            DBG("LayerCakeEngine::process_recording_sample missing input channels");
+        return;
+    }
+
+    const int channel = (m_record_input_channel >= 0 && m_record_input_channel < num_input_channels)
+                            ? m_record_input_channel
+                            : 0;
+
+    const float* input = input_channel_data[channel];
+    if (input == nullptr)
+    {
+        static std::atomic<bool> logged_null_channel{false};
+        if (!logged_null_channel.exchange(true))
+            DBG("LayerCakeEngine::process_recording_sample null input buffer");
+        return;
+    }
+
+    const float input_sample = input[buffer_sample_index];
+    const float record_position = static_cast<float>(absolute_sample_index);
+    m_write_head->process_sample(input_sample, record_position);
+}
+
+void LayerCakeEngine::trigger_grain(const GrainState& state, bool triggered_by_pattern_clock)
+{
+    GrainState queued_state = state;
+    queued_state.should_trigger = true;
+
+    if (!layer_index_valid(queued_state.layer))
+    {
+        DBG("LayerCakeEngine::trigger_grain invalid layer=" + juce::String(queued_state.layer));
+        return;
+    }
+
+    apply_randomization(queued_state);
+
+    if (!triggered_by_pattern_clock && m_pattern_clock != nullptr)
+    {
+        auto recorded_state = queued_state;
+        recorded_state.skip_randomization = true;
+        m_pattern_clock->capture_step_grain(recorded_state);
+    }
+
+    const juce::SpinLock::ScopedLockType lock(m_grain_queue_lock);
+    m_pending_grains.push_back(queued_state);
+}
+
+void LayerCakeEngine::apply_randomization(GrainState& state)
+{
+    if (state.skip_randomization)
+        return;
+
+    apply_spread_randomization(state);
+    apply_direction_randomization(state);
+}
+
+void LayerCakeEngine::apply_spread_randomization(GrainState& state)
+{
+    const float spread = juce::jlimit(0.0f, 1.0f, state.spread_amount);
+    if (spread <= 0.0f)
+        return;
+
+    if (!layer_index_valid(state.layer))
+        return;
+
+    auto& loop = m_layers[static_cast<size_t>(state.layer)];
+    const size_t recorded_samples = loop.m_recorded_length.load();
+    if (recorded_samples == 0 || m_sample_rate <= 0.0)
+        return;
+
+    const double recorded_seconds = static_cast<double>(recorded_samples) / m_sample_rate;
+    const double duration_seconds = juce::jmax(0.0, static_cast<double>(state.duration_ms) * 0.001);
+    const double max_start = juce::jmax(0.0, recorded_seconds - duration_seconds);
+    if (max_start <= 0.0)
+    {
+        state.loop_start_seconds = 0.0f;
+        return;
+    }
+
+    const double max_offset = juce::jmin(max_start, recorded_seconds * spread * 0.5);
+    if (max_offset <= 0.0)
+        return;
+
+    const double clamped_start = juce::jlimit(0.0, max_start, static_cast<double>(state.loop_start_seconds));
+    const double offset = (m_random.nextDouble() * 2.0 - 1.0) * max_offset;
+    const double new_start = juce::jlimit(0.0, max_start, clamped_start + offset);
+    state.loop_start_seconds = static_cast<float>(new_start);
+}
+
+void LayerCakeEngine::apply_direction_randomization(GrainState& state)
+{
+    const float probability = juce::jlimit(0.0f, 1.0f, state.reverse_probability);
+    if (probability <= 0.0f)
+    {
+        state.play_forward = true;
+        return;
+    }
+
+    const bool should_reverse = m_random.nextFloat() < probability;
+    state.play_forward = !should_reverse;
+}
+
+void LayerCakeEngine::drain_pending_grains()
+{
+    std::deque<GrainState> local_queue;
+    {
+        const juce::SpinLock::ScopedLockType lock(m_grain_queue_lock);
+        local_queue.swap(m_pending_grains);
+    }
+
+    for (auto& state : local_queue)
+    {
+        if (!state.is_valid())
+            continue;
+
+        auto* voice = find_free_voice();
+        if (voice == nullptr)
+        {
+            DBG("LayerCakeEngine::drain_pending_grains - voice steal");
+            voice = m_voices.front().get();
+            voice->force_stop();
+        }
+
+        auto& loop = m_layers[juce::jlimit(0, static_cast<int>(kNumLayers - 1), state.layer)];
+        if (!voice->trigger(state, loop, m_sample_rate))
+        {
+            DBG("LayerCakeEngine::drain_pending_grains failed to trigger voice");
+        }
+    }
+}
+
+GrainVoice* LayerCakeEngine::find_free_voice()
+{
+    for (auto& voice : m_voices)
+    {
+        if (!voice->is_active())
+            return voice.get();
+    }
+    return nullptr;
+}
+
+void LayerCakeEngine::get_active_grains(std::vector<GrainVisualState>& out_states) const
+{
+    out_states.clear();
+    for (const auto& voice : m_voices)
+    {
+        if (voice == nullptr)
+            continue;
+
+        GrainVisualState state;
+        if (voice->get_visual_state(state))
+            out_states.push_back(state);
+    }
+}
+
+void LayerCakeEngine::capture_layer_snapshot(int layer_index, LayerBufferSnapshot& snapshot) const
+{
+    if (!layer_index_valid(layer_index))
+    {
+        DBG("LayerCakeEngine::capture_layer_snapshot invalid layer=" + juce::String(layer_index));
+        snapshot.samples.clear();
+        snapshot.recorded_length = 0;
+        snapshot.has_audio = false;
+        return;
+    }
+
+    const auto& loop = m_layers[static_cast<size_t>(layer_index)];
+    const juce::ScopedLock sl(loop.m_lock);
+    const auto& buffer = loop.get_buffer();
+    const size_t recorded = juce::jmin(loop.m_recorded_length.load(), buffer.size());
+
+    if (recorded == 0 || !loop.m_has_recorded.load())
+    {
+        snapshot.samples.clear();
+        snapshot.recorded_length = 0;
+        snapshot.has_audio = false;
+        return;
+    }
+
+    snapshot.samples.resize(recorded);
+    if (recorded > 0)
+        juce::FloatVectorOperations::copy(snapshot.samples.data(), buffer.data(), static_cast<int>(recorded));
+    snapshot.recorded_length = recorded;
+    snapshot.has_audio = true;
+}
+
+void LayerCakeEngine::capture_all_layer_snapshots(std::array<LayerBufferSnapshot, kNumLayers>& snapshots) const
+{
+    for (size_t i = 0; i < snapshots.size(); ++i)
+        capture_layer_snapshot(static_cast<int>(i), snapshots[i]);
+}
+
+void LayerCakeEngine::apply_layer_snapshot(int layer_index, const LayerBufferSnapshot& snapshot)
+{
+    if (!layer_index_valid(layer_index))
+    {
+        DBG("LayerCakeEngine::apply_layer_snapshot invalid layer=" + juce::String(layer_index));
+        return;
+    }
+
+    auto& loop = m_layers[static_cast<size_t>(layer_index)];
+    const juce::ScopedLock sl(loop.m_lock);
+
+    if (!snapshot.has_audio || snapshot.recorded_length == 0 || snapshot.samples.empty())
+    {
+        DBG("LayerCakeEngine::apply_layer_snapshot clearing layer=" + juce::String(layer_index));
+        loop.m_recorded_length.store(0);
+        loop.m_has_recorded.store(false);
+        auto& buffer = loop.get_buffer();
+        if (!buffer.empty())
+            juce::FloatVectorOperations::clear(buffer.data(), static_cast<int>(buffer.size()));
+        return;
+    }
+
+    auto& buffer = loop.get_buffer();
+    if (buffer.size() < snapshot.samples.size())
+        buffer.resize(snapshot.samples.size(), 0.0f);
+
+    std::copy(snapshot.samples.begin(), snapshot.samples.end(), buffer.begin());
+    loop.m_recorded_length.store(snapshot.recorded_length);
+    loop.m_has_recorded.store(true);
+}
+
+
