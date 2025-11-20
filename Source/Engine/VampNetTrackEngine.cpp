@@ -30,6 +30,7 @@ void VampNetTrackEngine::initialize(double sampleRate, double maxBufferDurationS
 {
     trackState.recordBuffer.allocateBuffer(sampleRate, maxBufferDurationSeconds);
     trackState.outputBuffer.allocateBuffer(sampleRate, maxBufferDurationSeconds);
+    trackState.hpPrevInput = trackState.hpPrevOutput = trackState.lpPrevOutput = 0.0f;
 }
 
 void VampNetTrackEngine::audioDeviceAboutToStart(double sampleRate)
@@ -42,6 +43,7 @@ void VampNetTrackEngine::audioDeviceAboutToStart(double sampleRate)
     trackState.writeHead.reset();
     trackState.recordReadHead.reset();
     trackState.outputReadHead.reset();
+    trackState.hpPrevInput = trackState.hpPrevOutput = trackState.lpPrevOutput = 0.0f;
 }
 
 void VampNetTrackEngine::audioDeviceStopped()
@@ -261,6 +263,7 @@ bool VampNetTrackEngine::loadInputFromFile(const juce::File& audioFile)
     return true;
 }
 
+
 bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
                                      int numInputChannels,
                                      float* const* outputChannelData,
@@ -479,9 +482,11 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
                 int outputChannel = track.recordReadHead.getOutputChannel();
                 track.outputBus.setOutputChannel(outputChannel);
 
+                float filteredSample = applyOutputFilters(sampleValue);
+
                 // Route to selected output channel(s)
                 // Note: activeChannels check is done in MultiTrackLooperEngine, so we pass nullptr here
-                track.outputBus.processSample(outputChannelData, numOutputChannels, sample, sampleValue, nullptr);
+                track.outputBus.processSample(outputChannelData, numOutputChannels, sample, filteredSample, nullptr);
 
                 // Advance both read heads together (same playhead position)
                 bool wrappedRecord = track.recordReadHead.advance(wrapPos);
@@ -538,4 +543,74 @@ bool VampNetTrackEngine::processBlock(const float* const* inputChannelData,
     return recordingFinalized;
 }
 
+void VampNetTrackEngine::setHighPassCutoff(float hz)
+{
+    float clamped = juce::jlimit(0.0f, 20000.0f, hz);
+    trackState.highPassCutoffHz.store(clamped);
+}
 
+void VampNetTrackEngine::setLowPassCutoff(float hz)
+{
+    float clamped = juce::jlimit(0.0f, 20000.0f, hz);
+    trackState.lowPassCutoffHz.store(clamped);
+}
+
+float VampNetTrackEngine::getHighPassCutoff() const
+{
+    return trackState.highPassCutoffHz.load();
+}
+
+float VampNetTrackEngine::getLowPassCutoff() const
+{
+    return trackState.lowPassCutoffHz.load();
+}
+
+float VampNetTrackEngine::applyOutputFilters(float sample)
+{
+    double sampleRate = trackState.writeHead.getSampleRate();
+    if (sampleRate <= 0.0)
+        sampleRate = 44100.0;
+
+    float filtered = processHighPass(sample, sampleRate);
+    filtered = processLowPass(filtered, sampleRate);
+    return filtered;
+}
+
+float VampNetTrackEngine::processHighPass(float input, double sampleRate)
+{
+    float cutoff = trackState.highPassCutoffHz.load();
+    if (cutoff <= 0.0f)
+    {
+        trackState.hpPrevInput = input;
+        trackState.hpPrevOutput = input;
+        return input;
+    }
+
+    const double dt = 1.0 / sampleRate;
+    const double rc = 1.0 / (juce::MathConstants<double>::twoPi * juce::jmax(1.0, static_cast<double>(cutoff)));
+    const double alpha = rc / (rc + dt);
+
+    float output = static_cast<float>(alpha * (trackState.hpPrevOutput + input - trackState.hpPrevInput));
+    trackState.hpPrevOutput = output;
+    trackState.hpPrevInput = input;
+    return output;
+}
+
+float VampNetTrackEngine::processLowPass(float input, double sampleRate)
+{
+    float cutoff = trackState.lowPassCutoffHz.load();
+    double nyquist = sampleRate * 0.5;
+    if (cutoff <= 0.0f || cutoff >= nyquist)
+    {
+        trackState.lpPrevOutput = input;
+        return input;
+    }
+
+    const double dt = 1.0 / sampleRate;
+    const double rc = 1.0 / (juce::MathConstants<double>::twoPi * juce::jmax(1.0, static_cast<double>(cutoff)));
+    const double alpha = dt / (rc + dt);
+
+    float output = static_cast<float>(trackState.lpPrevOutput + alpha * (input - trackState.lpPrevOutput));
+    trackState.lpPrevOutput = output;
+    return output;
+}

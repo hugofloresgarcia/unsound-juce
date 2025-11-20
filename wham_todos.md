@@ -19,8 +19,8 @@ Tracks can import audio into their input buffers via the new “load input” bu
 ### Different colors for each track _(✅ Completed)_
 Each WhAM track now gets a unique accent (up to four colours) applied to the track frame, controls, and transport play button so you can visually match controllers to tracks.
 
-### Finalize Viz GUI (move WhAM to middle)
-For now, have a narrow rounded rectangle in the middle that says "WhAM", and remove the current WhAM logo from the top. I'll ask Meghan for a nicer long-rectangular Asset.
+### Finalize Viz GUI (move WhAM to middle) _(pending)_
+Still outstanding; current Viz retains the old placement/logo until new art arrives.
 
 ### Change "Save/load config" to just "Save/load" _(✅ Completed)_
 Buttons/menus now say “save”/“load”, and sessions persist routing, mic state, synth config, MIDI mappings, and the actual track audio into sidecar WAVs.
@@ -30,8 +30,8 @@ Replaced with a loop-mode icon next to the Generate button; it toggles the butto
 
 ## Large Changes
 
-### Add high/low pass filters
-Perhaps instead of "Overdub"? These knobs should go in the Tape Control knob section.
+### Add high/low pass filters _(✅ Completed)_
+Each track now has `hpf`/`lpf` knobs (Midi Bind-able) sharing the main tape-control knob row (speed/dry-wet, replacing the overdub knob entirely), with per-track audio filtering applied during playback and persisted in sessions.
 
 ### Header redesign
 #### Top left

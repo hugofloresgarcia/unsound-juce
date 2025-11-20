@@ -128,12 +128,16 @@ public:
     juce::Result loadOutputAudioFromFile(const juce::File& file);
     juce::Result saveInputAudioToFile(const juce::File& file) const;
     juce::Result saveOutputAudioToFile(const juce::File& file) const;
+    float getHighPassCutoffHz() const;
+    void setHighPassCutoffHz(float hz);
+    float getLowPassCutoffHz() const;
+    void setLowPassCutoffHz(float hz);
 
     bool isAutogenEnabled() const { return loopModeButton.getToggleState(); }
     void setAutogenEnabled(bool enabled);
 
-    bool isUseOutputAsInputEnabled() const { return useOutputAsInputToggle.getToggleState(); }
-    void setUseOutputAsInputEnabled(bool enabled);
+    bool isUseOutputAsInputEnabled() const { return useOutputAsInputEnabled; }
+    void setUseOutputAsInputEnabled(bool enabled) { useOutputAsInputEnabled = enabled; }
 
     double getLevelDb() const;
     void setLevelDb(double value, juce::NotificationType notification);
@@ -174,11 +178,11 @@ private:
     RightClickSafeTextButton resetButton;
     juce::TextButton generateButton;
     juce::TextButton configureParamsButton;
-    juce::ToggleButton useOutputAsInputToggle;
     juce::DrawableButton loopModeButton;
     RightClickSafeTextButton loadInputButton;
     RightClickSafeTextButton saveOutputButton;
     juce::Colour accentColour;
+    bool useOutputAsInputEnabled { false };
     
     // Panner
     juce::String pannerType;
@@ -235,6 +239,8 @@ private:
     juce::String trackIdPrefix;
     juce::String lastLoadedInputPath;
     juce::String lastSavedOutputPath;
+    juce::String highPassParamId;
+    juce::String lowPassParamId;
 
     Shared::ParameterKnobs* getModelParameterKnobComponent();
     const Shared::ParameterKnobs* getModelParameterKnobComponent() const;

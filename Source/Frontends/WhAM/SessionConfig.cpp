@@ -52,6 +52,8 @@ juce::var SessionConfig::toVar() const
         trackObj->setProperty("micEnabled", track.micEnabled);
         trackObj->setProperty("inputAudio", track.inputAudioFile);
         trackObj->setProperty("outputAudio", track.outputAudioFile);
+        trackObj->setProperty("highPassHz", track.highPassHz);
+        trackObj->setProperty("lowPassHz", track.lowPassHz);
         trackArray.add(juce::var(trackObj));
     }
     root->setProperty("tracks", juce::var(trackArray));
@@ -119,6 +121,13 @@ juce::Result SessionConfig::fromVar(const juce::var& data, SessionConfig& out)
             state.micEnabled = micVar.isVoid() ? true : static_cast<bool>(micVar);
             state.inputAudioFile = obj->getProperty("inputAudio").toString();
             state.outputAudioFile = obj->getProperty("outputAudio").toString();
+            auto hpVar = obj->getProperty("highPassHz");
+            if (!hpVar.isVoid())
+                state.highPassHz = static_cast<double>(hpVar);
+
+            auto lpVar = obj->getProperty("lowPassHz");
+            if (!lpVar.isVoid())
+                state.lowPassHz = static_cast<double>(lpVar);
             config.tracks.push_back(state);
         }
     }

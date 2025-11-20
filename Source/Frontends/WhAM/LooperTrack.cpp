@@ -384,7 +384,6 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
       trackLabel("Track", "track " + juce::String(index + 1)),
       resetButton("x"),
       generateButton("generate"),
-      useOutputAsInputToggle("use o as i"),
       loopModeButton("loopMode", juce::DrawableButton::ImageOnButtonBackgroundOriginalSize),
       loadInputButton("load input"),
       saveOutputButton("save output"),
@@ -502,7 +501,10 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     transportControls.onReset = [this]() { resetButtonClicked(); };
     addAndMakeVisible(transportControls);
 
-    // Setup parameter knobs (speed, overdub, dry/wet)
+    highPassParamId = trackIdPrefix + "_hpf";
+    lowPassParamId  = trackIdPrefix + "_lpf";
+
+    // Setup parameter knobs (speed, dry/wet, hpf, lpf)
     parameterKnobs.addKnob({
         "speed",
         0.25, 4.0, 1.0, 0.01,
@@ -516,16 +518,6 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     });
 
     parameterKnobs.addKnob({
-        "overdub",
-        0.0, 1.0, 0.5, 0.01,
-        "",
-        [this](double value) {
-            looperEngine.getTrack(trackIndex).writeHead.setOverdubMix(static_cast<float>(value));
-        },
-        ""  // parameterId - will be auto-generated
-    });
-
-    parameterKnobs.addKnob({
         "dry/wet",
         0.0, 1.0, 0.5, 0.01,
         "",
@@ -534,6 +526,29 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
         },
         ""  // parameterId - will be auto-generated
     });
+
+    auto& trackEngine = looperEngine.getTrackEngine(trackIndex);
+
+    parameterKnobs.addKnob({
+        "hpf",
+        0.0, 20000.0, trackEngine.getHighPassCutoff(), 1.0,
+        " Hz",
+        [this](double value) {
+            looperEngine.getTrackEngine(trackIndex).setHighPassCutoff(static_cast<float>(value));
+        },
+        highPassParamId
+    });
+
+    parameterKnobs.addKnob({
+        "lpf",
+        0.0, 20000.0, trackEngine.getLowPassCutoff(), 1.0,
+        " Hz",
+        [this](double value) {
+            looperEngine.getTrackEngine(trackIndex).setLowPassCutoff(static_cast<float>(value));
+        },
+        lowPassParamId
+    });
+
     addAndMakeVisible(parameterKnobs);
     initializeModelParameterKnobs();
     syncCustomParamsToKnobs();
@@ -585,12 +600,6 @@ LooperTrack::LooperTrack(VampNetMultiTrackLooperEngine& engine, int index, std::
     micIconButton.onClick = [this]() { setMicEnabled(micIconButton.getToggleState()); };
     micIconButton.setToggleState(isMicEnabled(), juce::dontSendNotification);
     addAndMakeVisible(micIconButton);
-
-    // Setup "use o as i" toggle
-    useOutputAsInputToggle.setButtonText("use o as i");
-    useOutputAsInputToggle.setToggleState(false, juce::dontSendNotification);
-    useOutputAsInputToggle.setColour(juce::ToggleButton::textColourId, accentColour);
-    addAndMakeVisible(useOutputAsInputToggle);
 
     // Setup input selector
     inputSelector.onChannelChange = [this](int channel) {
@@ -674,7 +683,6 @@ void LooperTrack::applyLookAndFeel()
         resetButton.setLookAndFeel(&laf);
         generateButton.setLookAndFeel(&laf);
         configureParamsButton.setLookAndFeel(&laf);
-        useOutputAsInputToggle.setLookAndFeel(&laf);
         loadInputButton.setLookAndFeel(&laf);
         saveOutputButton.setLookAndFeel(&laf);
     }
@@ -828,7 +836,7 @@ void LooperTrack::resized()
     generateButton.setBounds(generateArea);
     removeBottomSpacing();
 
-    // Level control and toggles
+    // Level control, filters, and mic column
     auto controlsArea = remainingArea.removeFromBottom(controlsHeight);
     auto levelArea = controlsArea.removeFromLeft(115); // 80 + 5 + 30
     levelControl.setBounds(levelArea);
@@ -840,9 +848,6 @@ void LooperTrack::resized()
     micIconButton.setBounds(micBounds);
     controlsArea.removeFromLeft(spacingSmall);
 
-    // Use output as input toggle
-    auto toggleArea = controlsArea.removeFromLeft(120);
-    useOutputAsInputToggle.setBounds(toggleArea.removeFromTop(30));
     removeBottomSpacing();
 
     // Knob array (all VampNet controls)
@@ -931,7 +936,7 @@ void LooperTrack::generateButtonClicked()
     generateButton.setButtonText("generating...");
 
     // Check if we should use output buffer as input
-    bool useOutputAsInput = useOutputAsInputToggle.getToggleState();
+    bool useOutputAsInput = useOutputAsInputEnabled;
 
     // Determine if we have audio (check appropriate buffer based on toggle)
     juce::File audioFile;
@@ -1174,13 +1179,16 @@ LooperTrack::~LooperTrack()
         resetButton.removeMouseListener(resetButtonMouseListener.get());
     if (micToggleMouseListener)
         micIconButton.removeMouseListener(micToggleMouseListener.get());
-
     // Unregister MIDI parameters
     if (midiLearnManager)
     {
         midiLearnManager->unregisterParameter(trackIdPrefix + "_generate");
         midiLearnManager->unregisterParameter(trackIdPrefix + "_clear");
         midiLearnManager->unregisterParameter(trackIdPrefix + "_mic");
+        if (highPassParamId.isNotEmpty())
+            midiLearnManager->unregisterParameter(highPassParamId);
+        if (lowPassParamId.isNotEmpty())
+            midiLearnManager->unregisterParameter(lowPassParamId);
     }
 
     // Stop and wait for background thread to finish
@@ -1255,11 +1263,6 @@ void LooperTrack::updateGenerateButtonMode()
         generateButton.setToggleState(false, juce::dontSendNotification);
 }
 
-void LooperTrack::setUseOutputAsInputEnabled(bool enabled)
-{
-    useOutputAsInputToggle.setToggleState(enabled, juce::dontSendNotification);
-}
-
 bool LooperTrack::isMicEnabled() const
 {
     const auto& track = looperEngine.getTrack(trackIndex);
@@ -1291,6 +1294,34 @@ int LooperTrack::getSelectedOutputChannel() const
 void LooperTrack::setSelectedOutputChannel(int channel)
 {
     outputSelector.setSelectedChannel(channel, juce::sendNotificationSync);
+}
+
+void LooperTrack::setHighPassCutoffHz(float hz)
+{
+    if (highPassParamId.isNotEmpty())
+        parameterKnobs.setKnobValue(highPassParamId, hz, juce::dontSendNotification);
+    looperEngine.getTrackEngine(trackIndex).setHighPassCutoff(hz);
+}
+
+void LooperTrack::setLowPassCutoffHz(float hz)
+{
+    if (lowPassParamId.isNotEmpty())
+        parameterKnobs.setKnobValue(lowPassParamId, hz, juce::dontSendNotification);
+    looperEngine.getTrackEngine(trackIndex).setLowPassCutoff(hz);
+}
+
+float LooperTrack::getHighPassCutoffHz() const
+{
+    if (highPassParamId.isNotEmpty())
+        return static_cast<float>(parameterKnobs.getKnobValue(highPassParamId));
+    return looperEngine.getTrackEngine(trackIndex).getHighPassCutoff();
+}
+
+float LooperTrack::getLowPassCutoffHz() const
+{
+    if (lowPassParamId.isNotEmpty())
+        return static_cast<float>(parameterKnobs.getKnobValue(lowPassParamId));
+    return looperEngine.getTrackEngine(trackIndex).getLowPassCutoff();
 }
 
 bool LooperTrack::hasInputAudio() const

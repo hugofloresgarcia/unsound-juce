@@ -31,6 +31,11 @@ public:
         std::atomic<bool> micEnabled{true};   // New: mic button state (audio input on/off)
         std::atomic<bool> hasInputChannels{false}; // Updated each callback based on numInputChannels
         std::atomic<bool> hasInputChannelsInitialized{false}; // True once we've seen at least one callback
+        std::atomic<float> highPassCutoffHz{0.0f};
+        std::atomic<float> lowPassCutoffHz{20000.0f};
+        float hpPrevInput{0.0f};
+        float hpPrevOutput{0.0f};
+        float lpPrevOutput{0.0f};
 
         TrackState() : writeHead(recordBuffer), recordReadHead(recordBuffer), outputReadHead(outputBuffer) {}
 
@@ -76,6 +81,11 @@ public:
     bool loadFromFile(const juce::File& audioFile);
     bool loadInputFromFile(const juce::File& audioFile);
 
+    void setHighPassCutoff(float hz);
+    void setLowPassCutoff(float hz);
+    float getHighPassCutoff() const;
+    float getLowPassCutoff() const;
+
     // Access to track state
     TrackState& getTrackState() { return trackState; }
     const TrackState& getTrackState() const { return trackState; }
@@ -93,5 +103,9 @@ private:
     
     // Sampler owned by this track
     std::unique_ptr<VampNet::Sampler> sampler;
+
+    float applyOutputFilters(float sample);
+    float processHighPass(float input, double sampleRate);
+    float processLowPass(float input, double sampleRate);
 };
 

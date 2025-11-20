@@ -814,6 +814,8 @@ SessionConfig MainComponent::buildSessionConfig() const
         state.inputChannel = trackPtr->getSelectedInputChannel();
         state.outputChannel = trackPtr->getSelectedOutputChannel();
         state.micEnabled = trackPtr->isMicEnabled();
+        state.highPassHz = trackPtr->getHighPassCutoffHz();
+        state.lowPassHz = trackPtr->getLowPassCutoffHz();
         config.tracks.push_back(state);
     }
 
@@ -853,6 +855,8 @@ void MainComponent::applySessionConfig(const SessionConfig& config, bool showErr
         track->setSelectedInputChannel(trackState.inputChannel);
         track->setSelectedOutputChannel(trackState.outputChannel);
         track->setMicEnabled(trackState.micEnabled);
+        track->setHighPassCutoffHz(static_cast<float>(trackState.highPassHz));
+        track->setLowPassCutoffHz(static_cast<float>(trackState.lowPassHz));
 
         if (config.audioDirectory.exists())
         {

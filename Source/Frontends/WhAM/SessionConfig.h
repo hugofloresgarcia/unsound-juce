@@ -23,6 +23,8 @@ struct SessionConfig
         bool micEnabled = true;
         juce::String inputAudioFile;
         juce::String outputAudioFile;
+        double highPassHz = 0.0;
+        double lowPassHz = 20000.0;
     };
 
     juce::String gradioUrl;
