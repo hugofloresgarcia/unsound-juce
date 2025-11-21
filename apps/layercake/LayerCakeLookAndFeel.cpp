@@ -11,15 +11,33 @@ juce::Colour getAccentForButton(const juce::Button& button)
 }
 } // namespace
 
+const juce::Identifier LayerCakeLookAndFeel::kControlButtonTypeProperty("layercake.controlButtonType");
+
 LayerCakeLookAndFeel::LayerCakeLookAndFeel()
 {
     m_background = juce::Colours::black;
     m_panel = juce::Colour(0xff050d17);
     m_border = juce::Colour(0xff2a3147);
-    m_terminal = juce::Colour(0xfff1463a);
+    m_terminal = juce::Colour(0xffffaEa5).brighter();
     m_scanline = juce::Colour(0x3300b5ff);
     m_accentCyan = juce::Colour(0xff35c0ff);
     m_accentMagenta = juce::Colour(0xfff45bff);
+    m_controlRed = juce::Colour(0xffff564a);
+    m_controlGreen = juce::Colour(0xff3cff9f);
+    m_controlYellow = juce::Colour(0xfff8d24b);
+    m_controlCyan = juce::Colour(0xff35c0ff);
+    m_controlMagenta = juce::Colour(0xfff45bff);
+    m_waveform_colour = juce::Colour(0xffefefef);
+    m_knob_label_colour = m_terminal.brighter(0.4f);
+    m_disabled_button_fill = juce::Colours::black.withAlpha(0.85f);
+    m_layer_colours = {
+        juce::Colour(0xfff25f5c).darker(0.8),
+        juce::Colour(0xff35c0ff).darker(0.8),
+        juce::Colour(0xfff2b950).darker(0.8),
+        juce::Colour(0xff7d6bff).darker(0.8),
+        juce::Colour(0xff5aff8c).darker(0.8),
+        juce::Colour(0xfff45bff).darker(0.8)
+    };
 
     setColour(juce::ResizableWindow::backgroundColourId, m_background);
 
@@ -98,21 +116,109 @@ void LayerCakeLookAndFeel::drawButtonBackground(juce::Graphics& g,
 {
     auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
     const float radius = juce::jmin(6.0f, bounds.getHeight() * 0.45f);
-    auto accent = getAccentForButton(button);
+    const auto controlType = getControlButtonType(button);
 
-    auto fillColour = juce::Colours::black.withAlpha(0.9f);
-    if (button.getToggleState() || shouldDrawButtonAsDown)
-        fillColour = accent.withAlpha(0.25f);
-    else if (shouldDrawButtonAsHighlighted)
-        fillColour = backgroundColour.withAlpha(0.3f);
+    if (controlType == ControlButtonType::Unknown)
+    {
+        auto accent = getAccentForButton(button);
 
-    g.setColour(fillColour);
-    g.fillRoundedRectangle(bounds, radius);
+        auto fillColour = juce::Colours::black.withAlpha(0.9f);
+        if (button.getToggleState() || shouldDrawButtonAsDown)
+            fillColour = accent.withAlpha(0.25f);
+        else if (shouldDrawButtonAsHighlighted)
+            fillColour = backgroundColour.withAlpha(0.3f);
 
-    g.setColour(m_border);
-    g.drawRoundedRectangle(bounds, radius, kButtonBorderThickness);
+        g.setColour(fillColour);
+        g.fillRoundedRectangle(bounds, radius);
 
-    g.setColour(accent.withAlpha(0.85f));
-    g.drawRoundedRectangle(bounds.reduced(1.5f), juce::jmax(2.0f, radius - 2.0f), kInnerBorderThickness);
+        g.setColour(m_border);
+        g.drawRoundedRectangle(bounds, radius, kButtonBorderThickness);
+
+        g.setColour(accent.withAlpha(0.85f));
+        g.drawRoundedRectangle(bounds.reduced(1.5f), juce::jmax(2.0f, radius - 2.0f), kInnerBorderThickness);
+    }
+    else
+    {
+        const bool isEnabled = button.isEnabled();
+        const bool isActive = button.getToggleState();
+        auto fillColour = control_fill_colour(controlType,
+                                              isEnabled,
+                                              isActive,
+                                              shouldDrawButtonAsHighlighted,
+                                              shouldDrawButtonAsDown);
+        auto borderColour = control_border_colour(controlType, isEnabled);
+
+        g.setColour(fillColour);
+        g.fillRoundedRectangle(bounds, radius);
+
+        g.setColour(borderColour);
+        g.drawRoundedRectangle(bounds, radius, kButtonBorderThickness);
+
+        g.setColour(borderColour.withAlpha(juce::jlimit(0.2f, 1.0f, borderColour.getFloatAlpha() + 0.1f)));
+        g.drawRoundedRectangle(bounds.reduced(1.5f), juce::jmax(2.0f, radius - 2.0f), kInnerBorderThickness);
+    }
+}
+
+void LayerCakeLookAndFeel::setControlButtonType(juce::Button& button, ControlButtonType type)
+{
+    button.getProperties().set(kControlButtonTypeProperty, static_cast<int>(type));
+}
+
+LayerCakeLookAndFeel::ControlButtonType LayerCakeLookAndFeel::getControlButtonType(const juce::Button& button)
+{
+    const auto value = button.getProperties()[kControlButtonTypeProperty];
+    if (value.isVoid())
+        return ControlButtonType::Unknown;
+    return static_cast<ControlButtonType>(static_cast<int>(value));
+}
+
+juce::Colour LayerCakeLookAndFeel::getLayerColour(size_t index) const noexcept
+{
+    if (m_layer_colours.empty())
+        return m_terminal;
+    return m_layer_colours[index % m_layer_colours.size()];
+}
+
+juce::Colour LayerCakeLookAndFeel::getControlAccentColour(ControlButtonType type) const noexcept
+{
+    switch (type)
+    {
+        case ControlButtonType::Trigger: return m_controlCyan;
+        case ControlButtonType::Record:  return m_controlRed;
+        case ControlButtonType::Clock:   return m_controlGreen;
+        case ControlButtonType::Pattern: return m_controlYellow;
+        case ControlButtonType::Preset:  return m_controlMagenta;
+        case ControlButtonType::Unknown:
+        default:                         return m_accentCyan;
+    }
+}
+
+juce::Colour LayerCakeLookAndFeel::getControlDisabledBorderColour(ControlButtonType type) const noexcept
+{
+    return control_border_colour(type, false);
+}
+
+juce::Colour LayerCakeLookAndFeel::control_fill_colour(ControlButtonType type,
+                                                       bool isEnabled,
+                                                       bool isActive,
+                                                       bool isHighlighted,
+                                                       bool isDown) const noexcept
+{
+    if (!isEnabled)
+        return m_disabled_button_fill;
+
+    auto accent = getControlAccentColour(type);
+    if (isActive || isDown)
+        return accent.withAlpha(0.35f);
+    if (isHighlighted)
+        return accent.withAlpha(0.22f);
+    return accent.withAlpha(0.14f);
+}
+
+juce::Colour LayerCakeLookAndFeel::control_border_colour(ControlButtonType type, bool isEnabled) const noexcept
+{
+    auto accent = getControlAccentColour(type);
+    const float alpha = isEnabled ? 0.95f : 0.4f;
+    return accent.withAlpha(alpha);
 }
 

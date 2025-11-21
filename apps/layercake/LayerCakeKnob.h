@@ -28,13 +28,16 @@ public:
 
     juce::Slider& slider() { return m_slider; }
     const juce::Slider& slider() const { return m_slider; }
+    const juce::String& parameter_id() const { return m_config.parameterId; }
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void lookAndFeelChanged() override;
 
 private:
     void register_midi_parameter();
     void sliderValueChanged(juce::Slider* slider) override;
+    void apply_look_and_feel_colours();
 
     Config m_config;
     Shared::MidiLearnManager* m_midi_manager{nullptr};

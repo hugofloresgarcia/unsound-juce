@@ -1,4 +1,5 @@
 #include "LayerCakeDisplay.h"
+#include <algorithm>
 
 namespace
 {
@@ -7,6 +8,7 @@ constexpr int kDisplaySize = 500;
 constexpr float kHighlightAlpha = 0.35f;
 constexpr float kPlayheadSway = 6.0f;
 constexpr float kBaseSquiggleCycles = 2.0f;
+constexpr float kLaneSpacing = 10.0f;
 }
 
 LayerCakeDisplay::LayerCakeDisplay(LayerCakeEngine& engine)
@@ -49,7 +51,7 @@ void LayerCakeDisplay::paint(juce::Graphics& g)
     const float frame_corner_radius = 30.0f;
     const float screen_corner_radius = 18.0f;
     const float lane_corner_radius = 10.0f;
-    const float lane_spacing = 10.0f;
+    const float lane_spacing = kLaneSpacing;
     const float lane_inner_padding = 8.0f;
     const float indicator_column_width = 34.0f;
     const float indicator_corner_radius = 5.0f;
@@ -70,11 +72,6 @@ void LayerCakeDisplay::paint(juce::Graphics& g)
     g.setColour(juce::Colour(0xff050505));
     g.fillRoundedRectangle(display, screen_corner_radius);
 
-    // Draw grass-like scanlines
-    g.setColour(juce::Colour(0xff101010));
-    for (float y = display.getY(); y < display.getBottom(); y += 6.0f)
-        g.drawLine(display.getX(), y, display.getRight(), y, 1.0f);
-
     const float position_indicator = m_position_indicator.load();
     const bool show_position = position_indicator >= 0.0f && position_indicator <= 1.0f;
 
@@ -94,7 +91,7 @@ void LayerCakeDisplay::paint(juce::Graphics& g)
         const float layer_mix = num_layers > 1 ? static_cast<float>(layer) / static_cast<float>(num_layers - 1)
                                                : 0.0f;
         juce::Colour lane_colour = juce::Colours::black
-                                       .interpolatedWith(juce::Colour(0xff101722), 0.35f + 0.35f * layer_mix);
+                                       .interpolatedWith(juce::Colour(0xffbbeeff), 0.35f + 0.35f * layer_mix);
         if (is_record_layer)
             lane_colour = lane_colour.brighter(0.2f);
         g.setColour(lane_colour);
@@ -109,7 +106,7 @@ void LayerCakeDisplay::paint(juce::Graphics& g)
         g.fillRoundedRectangle(indicator_rect, indicator_corner_radius);
         g.setColour(juce::Colour(0xfff6f1d3));
         g.drawRoundedRectangle(indicator_rect, indicator_corner_radius, 1.5f);
-        juce::String indicator_text = is_record_layer ? "R" : juce::String(layer + 1);
+        juce::String indicator_text = is_record_layer ? "r" : juce::String(layer + 1);
         g.drawText(indicator_text, indicator_rect, juce::Justification::centred);
     }
 
@@ -314,6 +311,99 @@ void LayerCakeDisplay::update_invaders(float width, float height)
         inv.position.x = juce::jlimit(0.0f, width, inv.position.x);
         inv.position.y = juce::jlimit(0.0f, height, inv.position.y);
     }
+}
+
+bool LayerCakeDisplay::isInterestedInFileDrag(const juce::StringArray& files)
+{
+    for (const auto& path : files)
+    {
+        juce::File file(path);
+        if (file.existsAsFile() && has_supported_audio_extension(file))
+            return true;
+    }
+    return false;
+}
+
+void LayerCakeDisplay::filesDropped(const juce::StringArray& files, int x, int y)
+{
+    if (files.isEmpty())
+    {
+        DBG("LayerCakeDisplay::filesDropped early return (no files)");
+        return;
+    }
+
+    juce::File drop_file;
+    for (const auto& path : files)
+    {
+        juce::File candidate(path);
+        if (candidate.existsAsFile() && has_supported_audio_extension(candidate))
+        {
+            drop_file = candidate;
+            break;
+        }
+    }
+
+    if (!drop_file.existsAsFile())
+    {
+        DBG("LayerCakeDisplay::filesDropped early return (no supported audio files)");
+        return;
+    }
+
+    const int layer_index = layer_at_point({ x, y });
+    if (!juce::isPositiveAndBelow(layer_index, static_cast<int>(LayerCakeEngine::kNumLayers)))
+    {
+        DBG("LayerCakeDisplay::filesDropped early return (point outside lanes)");
+        return;
+    }
+
+    if (!m_engine.load_layer_from_file(layer_index, drop_file))
+    {
+        DBG("LayerCakeDisplay::filesDropped failed to load file=" + drop_file.getFileName());
+        return;
+    }
+
+    DBG("LayerCakeDisplay::filesDropped loaded file=" + drop_file.getFileName()
+        + " layer=" + juce::String(layer_index + 1));
+    refresh_waveforms();
+    repaint();
+}
+
+juce::Rectangle<float> LayerCakeDisplay::lane_bounds_for_index(int layer_index) const
+{
+    if (!juce::isPositiveAndBelow(layer_index, static_cast<int>(LayerCakeEngine::kNumLayers)))
+        return {};
+
+    auto display = get_display_area();
+    const float total_spacing = kLaneSpacing * (LayerCakeEngine::kNumLayers - 1);
+    const float lane_height = (display.getHeight() - total_spacing) / static_cast<float>(LayerCakeEngine::kNumLayers);
+
+    return {
+        display.getX(),
+        display.getY() + static_cast<float>(layer_index) * (lane_height + kLaneSpacing),
+        display.getWidth(),
+        lane_height
+    };
+}
+
+int LayerCakeDisplay::layer_at_point(juce::Point<int> point) const
+{
+    const auto target = point.toFloat();
+    for (int layer = 0; layer < static_cast<int>(LayerCakeEngine::kNumLayers); ++layer)
+    {
+        if (lane_bounds_for_index(layer).contains(target))
+            return layer;
+    }
+    return -1;
+}
+
+bool LayerCakeDisplay::has_supported_audio_extension(const juce::File& file) const
+{
+    static const std::array<juce::String, 6> kExtensions{
+        ".wav", ".aif", ".aiff", ".flac", ".mp3", ".ogg"
+    };
+    const auto ext = file.getFileExtension().toLowerCase();
+    return std::any_of(kExtensions.begin(), kExtensions.end(),
+                       [&ext](const juce::String& allowed) { return ext == allowed; });
 }
 
 

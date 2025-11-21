@@ -1,6 +1,7 @@
 #include "LayerCakeEngine.h"
 #include "PatternClock.h"
 #include <juce_audio_basics/juce_audio_basics.h>
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <algorithm>
 
 namespace
@@ -14,6 +15,7 @@ float decibels_to_gain(float db)
 LayerCakeEngine::LayerCakeEngine()
 {
     DBG("LayerCakeEngine ctor");
+    m_audio_format_manager.registerBasicFormats();
     for (size_t voice = 0; voice < kNumVoices; ++voice)
     {
         m_voices[voice] = std::make_unique<GrainVoice>(voice);
@@ -247,13 +249,6 @@ void LayerCakeEngine::trigger_grain(const GrainState& state, bool triggered_by_p
         return;
     }
 
-
-    // record the grain into the pattern.
-    if (!triggered_by_pattern_clock && m_pattern_clock != nullptr)
-    {
-        m_pattern_clock->capture_step_grain(queued_state);
-    }
-
     const juce::SpinLock::ScopedLockType lock(m_grain_queue_lock);
     m_pending_grains.push_back(queued_state);
 }
@@ -423,6 +418,92 @@ void LayerCakeEngine::apply_layer_snapshot(int layer_index, const LayerBufferSna
     std::copy(snapshot.samples.begin(), snapshot.samples.end(), buffer.begin());
     loop.m_recorded_length.store(snapshot.recorded_length);
     loop.m_has_recorded.store(true);
+}
+
+bool LayerCakeEngine::load_layer_from_file(int layer_index, const juce::File& audio_file)
+{
+    if (!layer_index_valid(layer_index))
+    {
+        DBG("LayerCakeEngine::load_layer_from_file early return invalid layer=" + juce::String(layer_index));
+        return false;
+    }
+
+    if (!audio_file.existsAsFile())
+    {
+        DBG("LayerCakeEngine::load_layer_from_file early return missing file=" + audio_file.getFullPathName());
+        return false;
+    }
+
+    std::unique_ptr<juce::AudioFormatReader> reader(m_audio_format_manager.createReaderFor(audio_file));
+    if (reader == nullptr)
+    {
+        DBG("LayerCakeEngine::load_layer_from_file early return unable to create reader for " + audio_file.getFileName());
+        return false;
+    }
+
+    auto& loop = m_layers[static_cast<size_t>(layer_index)];
+    const juce::ScopedLock sl(loop.m_lock);
+
+    if (loop.get_buffer().empty())
+    {
+        if (m_sample_rate <= 0.0)
+        {
+            DBG("LayerCakeEngine::load_layer_from_file early return buffer not allocated sampleRate<=0");
+            return false;
+        }
+        loop.allocate_buffer(m_sample_rate, kMaxLayerDurationSeconds);
+    }
+
+    auto& buffer = loop.get_buffer();
+    if (buffer.empty())
+    {
+        DBG("LayerCakeEngine::load_layer_from_file early return buffer still empty after allocate");
+        return false;
+    }
+
+    const size_t max_samples = buffer.size();
+    const size_t reader_samples = static_cast<size_t>(juce::jmax<juce::int64>(0, reader->lengthInSamples));
+    const size_t samples_to_copy = juce::jmin(max_samples, reader_samples);
+    if (samples_to_copy == 0)
+    {
+        DBG("LayerCakeEngine::load_layer_from_file early return no samples to copy");
+        return false;
+    }
+
+    juce::AudioBuffer<float> temp_buffer(static_cast<int>(juce::jmax<juce::uint32>(1, reader->numChannels)),
+                                         static_cast<int>(samples_to_copy));
+    if (!reader->read(&temp_buffer, 0, static_cast<int>(samples_to_copy), 0, true, true))
+    {
+        DBG("LayerCakeEngine::load_layer_from_file early return failed to read audio data");
+        return false;
+    }
+
+    if (temp_buffer.getNumChannels() == 1)
+    {
+        const float* source = temp_buffer.getReadPointer(0);
+        std::copy(source, source + static_cast<int>(samples_to_copy), buffer.begin());
+    }
+    else
+    {
+        const int channels = temp_buffer.getNumChannels();
+        for (size_t sample = 0; sample < samples_to_copy; ++sample)
+        {
+            float mixed = 0.0f;
+            for (int channel = 0; channel < channels; ++channel)
+                mixed += temp_buffer.getSample(channel, static_cast<int>(sample));
+            buffer[sample] = mixed / static_cast<float>(channels);
+        }
+    }
+
+    if (samples_to_copy < max_samples)
+        std::fill(buffer.begin() + static_cast<ptrdiff_t>(samples_to_copy), buffer.end(), 0.0f);
+
+    loop.m_recorded_length.store(samples_to_copy);
+    loop.m_has_recorded.store(true);
+
+    DBG("LayerCakeEngine::load_layer_from_file loaded "
+        + audio_file.getFileName() + " into layer=" + juce::String(layer_index));
+    return true;
 }
 
 

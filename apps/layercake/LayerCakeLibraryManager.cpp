@@ -7,6 +7,7 @@ constexpr const char* kLayerCakeFolderName = "layercake";
 constexpr const char* kPalettesFolderName = "palettes";
 constexpr const char* kPatternsFolderName = "patterns";
 constexpr const char* kScenesFolderName = "scenes";
+constexpr const char* kKnobsetsFolderName = "knobsets";
 constexpr const char* kSceneJsonName = "scene.json";
 constexpr const char* kPatternExtension = ".json";
 
@@ -53,7 +54,31 @@ bool grain_state_from_var(const juce::var& value, GrainState& out_state)
     return true;
 }
 
-juce::var serialize_pattern_json(const LayerCakePresetData& data)
+juce::var knob_values_to_var(const juce::NamedValueSet& knobs)
+{
+    auto* obj = new juce::DynamicObject();
+    for (const auto& entry : knobs)
+    {
+        obj->setProperty(entry.name, static_cast<double>(entry.value));
+    }
+    return obj;
+}
+
+void knob_values_from_var(const juce::var& value, juce::NamedValueSet& out_knobs)
+{
+    out_knobs.clear();
+    if (!value.isObject())
+        return;
+
+    if (auto* obj = value.getDynamicObject())
+    {
+        const auto& props = obj->getProperties();
+        for (const auto& entry : props)
+            out_knobs.set(entry.name, static_cast<double>(entry.value));
+    }
+}
+
+juce::var serialize_preset_json(const LayerCakePresetData& data)
 {
     auto* pattern = new juce::DynamicObject();
     pattern->setProperty("length", data.pattern_snapshot.pattern_length);
@@ -61,6 +86,12 @@ juce::var serialize_pattern_json(const LayerCakePresetData& data)
     pattern->setProperty("periodMs", data.pattern_snapshot.period_ms);
     pattern->setProperty("enabled", data.pattern_snapshot.enabled);
     pattern->setProperty("subdivision", data.pattern_subdivision);
+    pattern->setProperty("masterGainDb", data.master_gain_db);
+    pattern->setProperty("recordLayer", data.record_layer);
+    pattern->setProperty("spreadAmount", data.spread_amount);
+    pattern->setProperty("reverseProbability", data.reverse_probability);
+    pattern->setProperty("manualState", grain_state_to_var(data.manual_state));
+    pattern->setProperty("knobs", knob_values_to_var(data.knob_values));
 
     juce::Array<juce::var> steps;
     for (const auto& step : data.pattern_snapshot.steps)
@@ -69,11 +100,11 @@ juce::var serialize_pattern_json(const LayerCakePresetData& data)
     return pattern;
 }
 
-bool parse_pattern_json(const juce::var& value, LayerCakePresetData& out_data)
+bool parse_preset_json(const juce::var& value, LayerCakePresetData& out_data)
 {
     if (!value.isObject())
     {
-        DBG("LayerCakeLibraryManager::parse_pattern_json invalid value");
+        DBG("LayerCakeLibraryManager::parse_preset_json invalid value");
         return false;
     }
 
@@ -86,6 +117,18 @@ bool parse_pattern_json(const juce::var& value, LayerCakePresetData& out_data)
         out_data.pattern_subdivision = static_cast<float>(pattern->getProperty("subdivision"));
     else
         out_data.pattern_subdivision = 0.0f;
+    if (pattern->hasProperty("masterGainDb"))
+        out_data.master_gain_db = static_cast<float>(pattern->getProperty("masterGainDb"));
+    if (pattern->hasProperty("recordLayer"))
+        out_data.record_layer = static_cast<int>(pattern->getProperty("recordLayer"));
+    if (pattern->hasProperty("spreadAmount"))
+        out_data.spread_amount = static_cast<float>(pattern->getProperty("spreadAmount"));
+    if (pattern->hasProperty("reverseProbability"))
+        out_data.reverse_probability = static_cast<float>(pattern->getProperty("reverseProbability"));
+    if (pattern->hasProperty("manualState"))
+        grain_state_from_var(pattern->getProperty("manualState"), out_data.manual_state);
+    if (pattern->hasProperty("knobs"))
+        knob_values_from_var(pattern->getProperty("knobs"), out_data.knob_values);
 
     auto steps_var = pattern->getProperty("steps");
     if (steps_var.isArray())
@@ -96,14 +139,14 @@ bool parse_pattern_json(const juce::var& value, LayerCakePresetData& out_data)
         {
             if (!grain_state_from_var(array->getReference(i), out_data.pattern_snapshot.steps[static_cast<size_t>(i)]))
             {
-                DBG("LayerCakeLibraryManager::parse_pattern_json invalid step");
+                DBG("LayerCakeLibraryManager::parse_preset_json invalid step");
                 return false;
             }
         }
     }
     else
     {
-        DBG("LayerCakeLibraryManager::parse_pattern_json missing steps array");
+        DBG("LayerCakeLibraryManager::parse_preset_json missing steps array");
         return false;
     }
 
@@ -183,6 +226,7 @@ void LayerCakeLibraryManager::refresh()
     refresh_palettes();
     refresh_patterns();
     refresh_scenes();
+    refresh_knobsets();
 }
 
 bool LayerCakeLibraryManager::save_palette(const juce::String& name, const LayerBufferArray& layers)
@@ -262,7 +306,7 @@ bool LayerCakeLibraryManager::save_pattern(const juce::String& name, const Layer
     }
 
     auto file = pattern_file(sanitized);
-    auto json = serialize_pattern_json(data);
+    auto json = serialize_preset_json(data);
     if (!write_json_file(file, json, "LayerCakeLibraryManager::save_pattern"))
     {
         DBG("LayerCakeLibraryManager::save_pattern failed to write json");
@@ -291,7 +335,7 @@ bool LayerCakeLibraryManager::load_pattern(const juce::String& name, LayerCakePr
     }
 
     out_data = LayerCakePresetData{};
-    if (!parse_pattern_json(json, out_data))
+    if (!parse_preset_json(json, out_data))
     {
         DBG("LayerCakeLibraryManager::load_pattern failed to parse pattern json");
         return false;
@@ -325,6 +369,79 @@ bool LayerCakeLibraryManager::delete_pattern(const juce::String& name)
     return true;
 }
 
+bool LayerCakeLibraryManager::save_knobset(const juce::String& name, const LayerCakePresetData& data)
+{
+    const auto sanitized = sanitize_name(name);
+    if (sanitized.isEmpty())
+    {
+        DBG("LayerCakeLibraryManager::save_knobset invalid name");
+        return false;
+    }
+
+    auto file = knobset_file(sanitized);
+    auto json = serialize_preset_json(data);
+    if (!write_json_file(file, json, "LayerCakeLibraryManager::save_knobset"))
+    {
+        DBG("LayerCakeLibraryManager::save_knobset failed to write json");
+        return false;
+    }
+
+    refresh_knobsets();
+    return true;
+}
+
+bool LayerCakeLibraryManager::load_knobset(const juce::String& name, LayerCakePresetData& out_data) const
+{
+    const auto sanitized = sanitize_name(name);
+    if (sanitized.isEmpty())
+    {
+        DBG("LayerCakeLibraryManager::load_knobset invalid name");
+        return false;
+    }
+
+    auto file = knobset_file(sanitized);
+    juce::var json;
+    if (!read_json_file(file, json, "LayerCakeLibraryManager::load_knobset"))
+    {
+        DBG("LayerCakeLibraryManager::load_knobset failed to read json");
+        return false;
+    }
+
+    out_data = LayerCakePresetData{};
+    if (!parse_preset_json(json, out_data))
+    {
+        DBG("LayerCakeLibraryManager::load_knobset failed to parse knobset json");
+        return false;
+    }
+    return true;
+}
+
+bool LayerCakeLibraryManager::delete_knobset(const juce::String& name)
+{
+    const auto sanitized = sanitize_name(name);
+    if (sanitized.isEmpty())
+    {
+        DBG("LayerCakeLibraryManager::delete_knobset invalid name");
+        return false;
+    }
+
+    auto file = knobset_file(sanitized);
+    if (!file.existsAsFile())
+    {
+        DBG("LayerCakeLibraryManager::delete_knobset missing file=" + file.getFullPathName());
+        return false;
+    }
+
+    if (!file.deleteFile())
+    {
+        DBG("LayerCakeLibraryManager::delete_knobset failed to delete " + file.getFullPathName());
+        return false;
+    }
+
+    refresh_knobsets();
+    return true;
+}
+
 bool LayerCakeLibraryManager::save_scene(const juce::String& name,
                                          const LayerCakePresetData& data,
                                          const LayerBufferArray& layers)
@@ -339,7 +456,7 @@ bool LayerCakeLibraryManager::save_scene(const juce::String& name,
     auto folder = ensure_directory(scene_folder(sanitized));
     auto scene_file = folder.getChildFile(kSceneJsonName);
 
-    auto json = serialize_pattern_json(data);
+    auto json = serialize_preset_json(data);
     if (!write_json_file(scene_file, json, "LayerCakeLibraryManager::save_scene"))
     {
         DBG("LayerCakeLibraryManager::save_scene failed to write scene json");
@@ -383,7 +500,7 @@ bool LayerCakeLibraryManager::load_scene(const juce::String& name,
     }
 
     out_data = LayerCakePresetData{};
-    if (!parse_pattern_json(json, out_data))
+    if (!parse_preset_json(json, out_data))
     {
         DBG("LayerCakeLibraryManager::load_scene failed to parse scene json");
         return false;
@@ -435,6 +552,11 @@ juce::File LayerCakeLibraryManager::scenes_root() const
     return m_root.getChildFile(kScenesFolderName);
 }
 
+juce::File LayerCakeLibraryManager::knobsets_root() const
+{
+    return m_root.getChildFile(kKnobsetsFolderName);
+}
+
 juce::File LayerCakeLibraryManager::palette_folder(const juce::String& name) const
 {
     return palettes_root().getChildFile(name);
@@ -448,6 +570,11 @@ juce::File LayerCakeLibraryManager::scene_folder(const juce::String& name) const
 juce::File LayerCakeLibraryManager::pattern_file(const juce::String& name) const
 {
     return patterns_root().getChildFile(name + kPatternExtension);
+}
+
+juce::File LayerCakeLibraryManager::knobset_file(const juce::String& name) const
+{
+    return knobsets_root().getChildFile(name + kPatternExtension);
 }
 
 juce::String LayerCakeLibraryManager::sanitize_name(const juce::String& name)
@@ -556,5 +683,16 @@ void LayerCakeLibraryManager::refresh_scenes()
     for (const auto& dir : dirs)
         m_scene_names.add(dir.getFileName());
     m_scene_names.sort(true);
+}
+
+void LayerCakeLibraryManager::refresh_knobsets()
+{
+    auto root = ensure_directory(knobsets_root());
+    m_knobset_names.clear();
+    juce::Array<juce::File> files;
+    root.findChildFiles(files, juce::File::findFiles, false, juce::String("*") + kPatternExtension);
+    for (const auto& file : files)
+        m_knobset_names.add(file.getFileNameWithoutExtension());
+    m_knobset_names.sort(true);
 }
 

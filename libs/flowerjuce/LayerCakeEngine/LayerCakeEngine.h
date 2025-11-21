@@ -3,6 +3,7 @@
 #include "GrainVoice.h"
 #include "LayerCakeTypes.h"
 #include <flowerjuce/LooperEngine/LooperWriteHead.h>
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <array>
 #include <atomic>
 #include <deque>
@@ -52,6 +53,7 @@ public:
     void capture_layer_snapshot(int layer_index, LayerBufferSnapshot& snapshot) const;
     void capture_all_layer_snapshots(std::array<LayerBufferSnapshot, kNumLayers>& snapshots) const;
     void apply_layer_snapshot(int layer_index, const LayerBufferSnapshot& snapshot);
+    bool load_layer_from_file(int layer_index, const juce::File& audio_file);
 
     void apply_spread_randomization(GrainState& state, float spread_amount);
     void apply_direction_randomization(GrainState& state, float reverse_prob);
@@ -87,6 +89,7 @@ private:
 
     juce::SpinLock m_record_lock;
     juce::Random m_random;
+    juce::AudioFormatManager m_audio_format_manager;
 };
 
 

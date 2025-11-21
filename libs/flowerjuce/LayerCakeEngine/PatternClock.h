@@ -49,15 +49,19 @@ public:
 
     void capture_step_grain(const GrainState& state);
     Mode get_mode() const { return m_mode; }
+    void set_mode(const Mode mode);
     void get_snapshot(PatternSnapshot& snapshot) const;
     void apply_snapshot(const PatternSnapshot& snapshot);
     void set_auto_fire_enabled(bool enabled);
     void set_auto_fire_state(const GrainState& state);
 
+    void set_grain_builder(const std::function<GrainState()> builder) { m_grain_builder = builder; }
+
 private:
     void advance_step();
     void handle_record_step();
     void handle_playback_step();
+    void handle_idle_step();
     void trigger_step_state(const GrainState& state);
     void clear_pattern();
     bool should_skip_step();
@@ -66,6 +70,7 @@ private:
     LayerCakeEngine& m_engine;
     Metro m_metro;
     std::array<GrainState, 128> m_pattern_steps;
+    std::function<GrainState()> m_grain_builder;
     GrainState m_pending_record_state;
     std::atomic<bool> m_enabled{false};
     Mode m_mode{Mode::Idle};

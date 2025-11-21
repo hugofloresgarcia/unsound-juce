@@ -10,7 +10,6 @@ PatternClock::PatternClock(LayerCakeEngine& engine)
     : m_engine(engine)
 {
     clear_pattern();
-    prime_pending_state();
 }
 
 void PatternClock::prepare(double sample_rate)
@@ -21,25 +20,6 @@ void PatternClock::prepare(double sample_rate)
 void PatternClock::set_enabled(bool enabled)
 {
     m_enabled.store(enabled);
-
-    if (enabled)
-    {
-        m_mode = Mode::Recording;
-        m_current_step = 0;
-        m_recorded_steps = 0;
-        clear_pattern();
-        prime_pending_state();
-        m_metro.reset();
-        DBG("PatternClock armed: recording " + juce::String(m_pattern_length) + " steps");
-    }
-    else
-    {
-        m_mode = Mode::Idle;
-        m_current_step = 0;
-        m_recorded_steps = 0;
-        prime_pending_state();
-        DBG("PatternClock disarmed");
-    }
 }
 
 void PatternClock::set_pattern_length(int length)
@@ -74,17 +54,18 @@ void PatternClock::reset()
     m_current_step = 0;
     m_recorded_steps = 0;
     m_metro.reset();
-    prime_pending_state();
 }
 
 void PatternClock::process_sample()
 {
-    if (!m_enabled.load())
-        return;
-
     m_metro.process_sample();
-    if (m_metro.consume_tick())
-        advance_step();
+    if (m_metro.consume_tick()){
+        if (!m_enabled.load()){
+            // DBG("PatternClock: clock disabled;");
+        } else {
+            advance_step();
+        }
+    }
 }
 
 void PatternClock::capture_step_grain(const GrainState& state)
@@ -107,17 +88,18 @@ void PatternClock::advance_step()
             handle_playback_step();
             break;
         case Mode::Idle:
+            DBG("PatternClock: handling idle step;");
+            handle_idle_step();
         default:
             break;
     }
 
     m_current_step = (m_current_step + 1) % m_pattern_length;
-    prime_pending_state();
 }
 
 void PatternClock::handle_record_step()
 {
-    m_pattern_steps[m_current_step] = m_pending_record_state;
+    m_pattern_steps[m_current_step] = m_grain_builder();
     // m_pattern_steps[m_current_step].skip_randomization = true;
     ++m_recorded_steps;
 
@@ -138,6 +120,13 @@ void PatternClock::handle_playback_step()
     trigger_step_state(step_state);
 }
 
+void PatternClock::handle_idle_step()
+{
+    // TODO: here, we need to sample a NEW auto fire state from the engine.
+    m_auto_fire_state = m_grain_builder();
+    trigger_step_state(m_auto_fire_state);
+}
+
 void PatternClock::trigger_step_state(const GrainState& state)
 {
     if (!m_enabled.load()){
@@ -145,7 +134,7 @@ void PatternClock::trigger_step_state(const GrainState& state)
         return;
     }
 
-    if (should_skip_step()){
+    if (!state.should_trigger){
         DBG("PatternClock: rskip skipping skep.");
         return;
     }
@@ -183,16 +172,21 @@ bool PatternClock::should_skip_step()
     return m_random.nextFloat() < m_skip_probability;
 }
 
-void PatternClock::prime_pending_state()
-{
-    m_pending_record_state = GrainState{};
-    m_pending_record_state.should_trigger = false;
-
-    if (m_auto_fire_enabled.load())
+void PatternClock::set_mode(const PatternClock::Mode mode) {
+    m_mode = mode;
+    if (m_mode == Mode::Recording)
     {
-        const juce::SpinLock::ScopedLockType lock(m_auto_state_lock);
-        m_pending_record_state = m_auto_fire_state;
-        m_pending_record_state.should_trigger = true;
+        m_current_step = 0;
+        m_recorded_steps = 0;
+        clear_pattern();
+        m_metro.reset();
+        DBG("PatternClock armed: recording " + juce::String(m_pattern_length) + " steps");
+    }
+    else
+    {
+        m_current_step = 0;
+        m_recorded_steps = 0;
+        DBG("PatternClock disarmed");
     }
 }
 
@@ -226,7 +220,6 @@ void PatternClock::apply_snapshot(const PatternSnapshot& snapshot)
     m_mode = snapshot.enabled ? Mode::Playback : Mode::Idle;
     m_current_step = 0;
     m_recorded_steps = 0;
-    prime_pending_state();
     m_metro.reset();
 }
 

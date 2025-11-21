@@ -7,6 +7,44 @@
 namespace LayerCakeApp
 {
 
+void VerticalMeter::setLevel(double level)
+{
+    const double clamped = juce::jlimit(0.0, 1.0, level);
+    if (std::abs(clamped - m_level_value) >= 0.0005)
+    {
+        m_level_value = clamped;
+        repaint();
+    }
+}
+
+void VerticalMeter::paint(juce::Graphics& g)
+{
+    auto meter_bounds = getLocalBounds().toFloat().reduced(2.0f);
+    if (!meter_bounds.isEmpty())
+    {
+        const float corner_radius = juce::jmin(8.0f, meter_bounds.getWidth() * 0.45f);
+        const auto background = findColour(juce::ProgressBar::backgroundColourId).withAlpha(0.85f);
+        const auto outline = findColour(juce::Slider::trackColourId).withAlpha(0.7f);
+        const auto foreground = findColour(juce::ProgressBar::foregroundColourId);
+
+        g.setColour(background);
+        g.fillRoundedRectangle(meter_bounds, corner_radius);
+
+        g.setColour(outline);
+        g.drawRoundedRectangle(meter_bounds, corner_radius, 1.4f);
+
+        auto fill_bounds = meter_bounds.reduced(3.0f);
+        const float fill_height = fill_bounds.getHeight() * static_cast<float>(m_level_value);
+        if (fill_height > 0.0f)
+        {
+            auto active_region = fill_bounds.removeFromBottom(fill_height);
+            const float fill_corner = juce::jmin(corner_radius * 0.6f, active_region.getWidth() * 0.45f);
+            g.setColour(foreground);
+            g.fillRoundedRectangle(active_region, fill_corner);
+        }
+    }
+}
+
 namespace
 {
 constexpr double kDefaultSampleRate = 48000.0;
@@ -17,20 +55,16 @@ const juce::Colour kAccentMagenta(0xfff45bff);
 const juce::Colour kAccentAmber(0xfff2b950);
 const juce::Colour kAccentRed(0xfff25f5c);
 const juce::Colour kAccentIndigo(0xff7d6bff);
-const juce::Colour kTerminalGreen(0xff63ff87);
+// const juce::Colour kTerminalGreen(0xff63ff87);
 
 void configureControlButton(juce::TextButton& button,
                             const juce::String& label,
-                            juce::Colour accent,
+                            LayerCakeLookAndFeel::ControlButtonType type,
                             bool isToggle)
 {
     button.setButtonText(label);
     button.setClickingTogglesState(isToggle);
-    const auto base = accent.darker(1.4f).withAlpha(0.65f);
-    button.setColour(juce::TextButton::buttonColourId, base);
-    button.setColour(juce::TextButton::buttonOnColourId, accent);
-    button.setColour(juce::TextButton::textColourOffId, kTerminalGreen);
-    button.setColour(juce::TextButton::textColourOnId, kTerminalGreen);
+    LayerCakeLookAndFeel::setControlButtonType(button, type);
     button.setWantsKeyboardFocus(false);
 }
 }
@@ -39,12 +73,11 @@ MainComponent::MainComponent()
     : m_title_label("title", "layercake"),
       m_record_layer_label("recordLayer", ""),
       m_record_status_label("recordStatus", ""),
-      m_master_meter(m_meter_display),
-      m_trigger_button("[trg]"),
-      m_record_button("[rec]"),
-      m_preset_button("[pre]"),
-      m_clock_button("[clk]"),
-      m_pattern_button("[pr]"),
+      m_trigger_button("trg"),
+      m_record_button("rec"),
+      m_preset_button("pre"),
+      m_clock_button("clk"),
+      m_pattern_button("pr"),
       m_pattern_status_label("patternStatus", ""),
       m_display(m_engine),
       m_midi_learn_overlay(m_midi_learn_manager)
@@ -64,11 +97,11 @@ MainComponent::MainComponent()
     addAndMakeVisible(m_title_label);
 
     m_record_layer_label.setJustificationType(juce::Justification::centredLeft);
-    m_record_layer_label.setColour(juce::Label::textColourId, kTerminalGreen);
+    m_record_layer_label.setColour(juce::Label::textColourId, kAccentMagenta);
     addAndMakeVisible(m_record_layer_label);
 
     m_record_status_label.setJustificationType(juce::Justification::centredLeft);
-    m_record_status_label.setColour(juce::Label::textColourId, kTerminalGreen);
+    m_record_status_label.setColour(juce::Label::textColourId, kAccentMagenta);
     addAndMakeVisible(m_record_status_label);
 
     auto makeKnob = [this](const LayerCakeKnob::Config& config) {
@@ -90,9 +123,9 @@ MainComponent::MainComponent()
         m_engine.set_master_gain_db(static_cast<float>(m_master_gain_knob->slider().getValue()));
     };
 
-    m_loop_start_knob = makeKnob({ "position", 0.0, 1.0, 0.0, 0.001, "", "layercake_position" });
+    m_loop_start_knob = makeKnob({ "position", 0.0, 1.0, 0.5, 0.001, "", "layercake_position" });
     bindManualKnob(m_loop_start_knob.get());
-    m_duration_knob = makeKnob({ "duration", 10.0, 1000.0, 250.0, 1.0, " ms", "layercake_duration" });
+    m_duration_knob = makeKnob({ "duration", 10.0, 1000.0, 300.0, 1.0, " ms", "layercake_duration" });
     bindManualKnob(m_duration_knob.get());
     m_rate_knob = makeKnob({ "rate", -24.0, 24.0, 0.0, 0.1, " st", "layercake_rate" });
     bindManualKnob(m_rate_knob.get());
@@ -100,7 +133,7 @@ MainComponent::MainComponent()
     bindManualKnob(m_env_knob.get());
     m_spread_knob = makeKnob({ "spread", 0.0, 1.0, 0.0, 0.01, "", "layercake_spread" });
     bindManualKnob(m_spread_knob.get());
-    m_direction_knob = makeKnob({ "direction", 0.0, 1.0, 0.0, 0.01, "", "layercake_direction" });
+    m_direction_knob = makeKnob({ "direction", 0.0, 1.0, 0.5, 0.01, "", "layercake_direction" });
     bindManualKnob(m_direction_knob.get());
     m_pan_knob = makeKnob({ "pan", 0.0, 1.0, 0.5, 0.01, "", "layercake_pan" });
     bindManualKnob(m_pan_knob.get());
@@ -122,33 +155,49 @@ MainComponent::MainComponent()
                              m_custom_look_and_feel.findColour(juce::ProgressBar::backgroundColourId));
     addAndMakeVisible(m_master_meter);
 
-    configureControlButton(m_trigger_button, "[trg]", kAccentCyan, false);
+    configureControlButton(m_trigger_button,
+                           "trg",
+                           LayerCakeLookAndFeel::ControlButtonType::Trigger,
+                           false);
     m_trigger_button.onClick = [this]() { trigger_manual_grain(); };
     addAndMakeVisible(m_trigger_button);
 
-    configureControlButton(m_record_button, "[rec]", kAccentRed, true);
+    configureControlButton(m_record_button,
+                           "rec",
+                           LayerCakeLookAndFeel::ControlButtonType::Record,
+                           true);
     m_record_button.onClick = [this]() { toggle_record_enable(); };
     addAndMakeVisible(m_record_button);
 
-    configureControlButton(m_clock_button, "[clk]", kAccentAmber, true);
+    configureControlButton(m_clock_button,
+                           "clk",
+                           LayerCakeLookAndFeel::ControlButtonType::Clock,
+                           true);
     m_clock_button.setToggleState(false, juce::dontSendNotification);
     m_clock_button.setTooltip("Toggle clocked auto grains");
     m_clock_button.onClick = [this]() { update_auto_grain_settings(); };
     addAndMakeVisible(m_clock_button);
 
-    configureControlButton(m_pattern_button, "[pr]", kAccentIndigo, false);
+    configureControlButton(m_pattern_button,
+                           "pr",
+                           LayerCakeLookAndFeel::ControlButtonType::Pattern,
+                           false);
     m_pattern_button.setTooltip("Record/play the pattern sequencer");
     m_pattern_button.onClick = [this]() { handle_pattern_button(); };
     addAndMakeVisible(m_pattern_button);
 
     m_pattern_status_label.setJustificationType(juce::Justification::centredLeft);
-    m_pattern_status_label.setColour(juce::Label::textColourId, kTerminalGreen);
+    m_pattern_status_label.setColour(juce::Label::textColourId, kAccentMagenta);
     addAndMakeVisible(m_pattern_status_label);
 
     auto configurePatternKnob = [this](LayerCakeKnob& knob, bool rearm_on_change)
     {
         auto& slider = knob.slider();
-        slider.onValueChange = [this, rearm_on_change]() { apply_pattern_settings(rearm_on_change); };
+        slider.onValueChange = [this, rearm_on_change]()
+        {
+            if (!m_loading_knob_values)
+                apply_pattern_settings(rearm_on_change);
+        };
         slider.onDragStart = [this]() { begin_pattern_parameter_edit(); };
         slider.onDragEnd = [this]() { end_pattern_parameter_edit(); };
     };
@@ -167,9 +216,37 @@ MainComponent::MainComponent()
     m_pattern_subdiv_knob->slider().setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     configurePatternKnob(*m_pattern_subdiv_knob, true);
 
-    configureControlButton(m_preset_button, "[pre]", kAccentMagenta, false);
+    configureControlButton(m_preset_button,
+                           "pre",
+                           LayerCakeLookAndFeel::ControlButtonType::Preset,
+                           false);
     m_preset_button.onClick = [this]() { open_library_window(); };
     addAndMakeVisible(m_preset_button);
+
+    auto capturePattern = [this]() { return capture_pattern_data(); };
+    auto captureLayers = [this]() { return capture_layer_buffers(); };
+    auto applyPattern = [this](const LayerCakePresetData& data) { apply_pattern_snapshot(data); };
+    auto applyLayers = [this](const LayerBufferArray& buffers) { apply_layer_buffers(buffers); };
+    auto captureKnobset = [this]() { return capture_knobset_data(); };
+    auto applyKnobset = [this](const LayerCakePresetData& data) { apply_knobset(data); };
+
+    m_preset_panel = std::make_unique<LibraryBrowserComponent>(m_library_manager,
+                                                               capturePattern,
+                                                               captureLayers,
+                                                               applyPattern,
+                                                               applyLayers,
+                                                               captureKnobset,
+                                                               applyKnobset);
+    if (m_preset_panel != nullptr)
+    {
+        m_preset_panel->setLookAndFeel(&m_custom_look_and_feel);
+        m_preset_panel->setVisible(m_preset_panel_visible);
+        addAndMakeVisible(m_preset_panel.get());
+    }
+    else
+    {
+        DBG("MainComponent ctor preset panel initialization failed");
+    }
 
     m_midi_learn_manager.setMidiInputEnabled(true);
     addAndMakeVisible(m_midi_learn_overlay);
@@ -195,19 +272,22 @@ MainComponent::MainComponent()
     m_manual_state.should_trigger = false;
     sync_manual_state_from_controls();
     m_display.set_record_layer(m_engine.get_record_layer());
-    open_library_window();
+
+    // set grain builder callback
+    m_engine.get_pattern_clock()->set_grain_builder(
+        [this](){
+            return build_manual_grain_state();
+        }
+    );
+
 }
 
 MainComponent::~MainComponent()
 {
     DBG("LayerCakeApp::MainComponent dtor");
     stopTimer();
-    if (m_library_window != nullptr)
-    {
-        if (auto* content = m_library_window->getContentComponent())
-            content->setLookAndFeel(nullptr);
-        m_library_window->setLookAndFeel(nullptr);
-    }
+    if (m_preset_panel != nullptr)
+        m_preset_panel->setLookAndFeel(nullptr);
     if (m_midi_mappings_file != juce::File())
     {
         m_midi_mappings_file.getParentDirectory().createDirectory();
@@ -215,7 +295,6 @@ MainComponent::~MainComponent()
     }
     removeKeyListener(&m_midi_learn_overlay);
     removeKeyListener(this);
-    m_library_window = nullptr;
     m_device_manager.removeAudioCallback(this);
     m_device_manager.closeAudioDevice();
     setLookAndFeel(nullptr);
@@ -230,17 +309,9 @@ void MainComponent::paint(juce::Graphics& g)
     g.setColour(background);
     g.fillRect(bounds);
 
-    juce::ColourGradient gradient(panel,
-                                  bounds.getBottomLeft(),
-                                  background.darker(0.4f),
-                                  bounds.getTopRight(),
-                                  false);
-    gradient.addColour(0.35f, panel.brighter(0.08f));
-    gradient.addColour(0.75f, background.darker(0.15f));
-    g.setGradientFill(gradient);
     g.fillRect(bounds);
 
-    const auto scanlineColour = kTerminalGreen.withAlpha(0.12f);
+    const auto scanlineColour = kAccentMagenta.withAlpha(0.12f);
     g.setColour(scanlineColour);
     for (float y = bounds.getY(); y < bounds.getBottom(); y += 6.0f)
     {
@@ -269,15 +340,39 @@ void MainComponent::resized()
     const int knobLabelGap = 4;
     const int knobStackHeight = knobDiameter + knobLabelGap + knobLabelHeight;
     const int knobSpacing = 14;
+    const int knobGridColumns = 4;
 
-    const int buttonHeight = 44;
-    const int meterHeight = 34;
+    const int buttonHeight = 22;
+    const int meterWidth = 32;
+    const int meterSpacing = 18;
     const int patternTransportHeight = 36;
 
     const int displayPanelWidth = 560;
     const int displaySize = 500;
 
+    const int presetPanelSpacing = 16;
+    const int presetPanelMargin = 10;
+    const int presetPanelWidthExpanded = 340;
+    const int presetPanelWidthCollapsed = 0;
+
     auto bounds = getLocalBounds().reduced(marginOuter);
+
+    const int presetPanelWidth = m_preset_panel_visible ? presetPanelWidthExpanded : presetPanelWidthCollapsed;
+    if (presetPanelWidth > 0)
+    {
+        auto presetArea = bounds.removeFromRight(presetPanelWidth).reduced(presetPanelMargin);
+        if (m_preset_panel != nullptr)
+            m_preset_panel->setBounds(presetArea);
+        bounds.removeFromRight(presetPanelSpacing);
+    }
+    else if (m_preset_panel != nullptr)
+    {
+        m_preset_panel->setBounds({});
+    }
+
+    auto meterArea = bounds.removeFromRight(meterWidth);
+    bounds.removeFromRight(meterSpacing);
+    m_master_meter.setBounds(meterArea);
 
     auto displayPanel = bounds.removeFromLeft(displayPanelWidth);
     auto tvArea = displayPanel.withSizeKeepingCentre(displaySize, displaySize);
@@ -285,6 +380,7 @@ void MainComponent::resized()
 
     bounds.removeFromLeft(sectionSpacing);
     auto panel = bounds;
+    const int knobGridX = panel.getX();
 
     auto titleArea = panel.removeFromTop(labelHeight);
     m_title_label.setBounds(titleArea);
@@ -299,8 +395,6 @@ void MainComponent::resized()
     auto masterArea = panel.removeFromTop(knobStackHeight);
     m_master_gain_knob->setBounds(masterArea.withWidth(knobDiameter)
                                            .withHeight(knobStackHeight));
-    panel.removeFromTop(rowSpacing);
-    m_master_meter.setBounds(panel.removeFromTop(meterHeight));
     panel.removeFromTop(sectionSpacing);
 
     const int manualRows = 2;
@@ -323,13 +417,19 @@ void MainComponent::resized()
     placeManualKnob(m_pan_knob.get(), 1, 2);
     placeManualKnob(m_direction_knob.get(), 1, 3);
 
-    auto buttonRow = panel.removeFromTop(buttonHeight);
-    const int buttonWidth = (buttonRow.getWidth() - 2 * rowSpacing) / 3;
-    m_trigger_button.setBounds(buttonRow.removeFromLeft(buttonWidth));
-    buttonRow.removeFromLeft(rowSpacing);
-    m_record_button.setBounds(buttonRow.removeFromLeft(buttonWidth));
-    buttonRow.removeFromLeft(rowSpacing);
-    m_preset_button.setBounds(buttonRow.removeFromLeft(buttonWidth));
+    panel.removeFromTop(rowSpacing);
+    auto gridButtonArea = panel.removeFromTop(buttonHeight);
+    auto gridCellBounds = [&](int columnIndex, int columnSpan, int y, int height)
+    {
+        const int span = juce::jmax(1, columnSpan);
+        const int width = knobDiameter * span + knobSpacing * (span - 1);
+        const int x = knobGridX + columnIndex * (knobDiameter + knobSpacing);
+        return juce::Rectangle<int>(x, y, width, height);
+    };
+    const int buttonRowY = gridButtonArea.getY();
+    m_trigger_button.setBounds(gridCellBounds(0, 1, buttonRowY, buttonHeight));
+    m_record_button.setBounds(gridCellBounds(1, 1, buttonRowY, buttonHeight));
+    m_preset_button.setBounds(gridCellBounds(2, 1, buttonRowY, buttonHeight));
     panel.removeFromTop(sectionSpacing);
 
     auto patternArea = panel.removeFromTop(knobStackHeight);
@@ -348,14 +448,13 @@ void MainComponent::resized()
     if (m_pattern_subdiv_knob != nullptr)
         placePatternKnob(*m_pattern_subdiv_knob, 3);
 
-    auto patternTransport = panel.removeFromTop(patternTransportHeight);
-    const int clockWidth = 80;
-    const int patternButtonWidth = 80;
-    m_clock_button.setBounds(patternTransport.removeFromLeft(clockWidth));
-    patternTransport.removeFromLeft(rowSpacing);
-    m_pattern_button.setBounds(patternTransport.removeFromLeft(patternButtonWidth));
-    patternTransport.removeFromLeft(rowSpacing);
-    m_pattern_status_label.setBounds(patternTransport);
+    panel.removeFromTop(rowSpacing);
+    auto patternTransport = panel.removeFromTop(buttonHeight);
+    const int transportRowY = patternTransport.getY();
+    m_clock_button.setBounds(gridCellBounds(0, 1, transportRowY, buttonHeight));
+    m_pattern_button.setBounds(gridCellBounds(1, 1, transportRowY, buttonHeight));
+    auto statusBounds = gridCellBounds(2, 2, transportRowY, buttonHeight);
+    m_pattern_status_label.setBounds(statusBounds);
     panel.removeFromTop(sectionSpacing);
 
     m_midi_learn_overlay.setBounds(getLocalBounds());
@@ -550,7 +649,7 @@ void MainComponent::update_record_labels()
 void MainComponent::update_meter()
 {
     const double new_value = juce::jlimit(0.0, 1.0, static_cast<double>(m_meter_value.load()));
-    m_meter_display = new_value;
+    m_master_meter.setLevel(new_value);
 }
 
 void MainComponent::apply_pattern_settings(bool request_rearm)
@@ -590,7 +689,7 @@ void MainComponent::update_pattern_labels()
     m_clock_button.setEnabled(true);
 
     juce::String status_text = "pattern";
-    juce::String button_text = "[pr]";
+    juce::String button_text = "pat";
     const auto mode = clock->get_mode();
     switch (mode)
     {
@@ -620,15 +719,12 @@ void MainComponent::handle_pattern_button()
         return;
     }
 
-    const auto mode = clock->get_mode();
-    if (mode == PatternClock::Mode::Playback || mode == PatternClock::Mode::Recording)
-    {
-        clock->set_enabled(false);
-    }
-    else
-    {
-        clock->set_enabled(false);
-        clock->set_enabled(true);
+    // if we're currently idle, switch to recording
+    // if we're recording or playback, switch to idle
+    if (clock->get_mode() == PatternClock::Mode::Idle) {
+        clock->set_mode(PatternClock::Mode::Recording);
+    } else {
+        clock->set_mode(PatternClock::Mode::Idle);
     }
 
     update_pattern_labels();
@@ -636,34 +732,65 @@ void MainComponent::handle_pattern_button()
 
 void MainComponent::open_library_window()
 {
-    if (m_library_window != nullptr)
+    if (m_preset_panel == nullptr)
     {
-        DBG("MainComponent::open_library_window focusing existing window");
-        m_library_window->toFront(true);
+        DBG("MainComponent::open_library_window early return (preset panel missing)");
         return;
     }
 
-    DBG("MainComponent::open_library_window creating library window");
-    auto capture_pattern = [this]() { return capture_pattern_data(); };
-    auto capture_layers = [this]() { return capture_layer_buffers(); };
-    auto apply_pattern = [this](const LayerCakePresetData& data) { apply_pattern_snapshot(data); };
-    auto apply_layers = [this](const LayerBufferArray& buffers) { apply_layer_buffers(buffers); };
-    auto on_close = [this]() { m_library_window = nullptr; };
+    m_preset_panel_visible = !m_preset_panel_visible;
+    m_preset_panel->setVisible(m_preset_panel_visible);
+    DBG("MainComponent::open_library_window toggled preset panel visibility to "
+        + juce::String(m_preset_panel_visible ? "visible" : "hidden"));
+    resized();
+}
 
-    m_library_window = std::make_unique<LibraryBrowserWindow>(m_library_manager,
-                                                              capture_pattern,
-                                                              capture_layers,
-                                                              apply_pattern,
-                                                              apply_layers,
-                                                              on_close);
-    m_library_window->setLookAndFeel(&m_custom_look_and_feel);
-    if (auto* content = m_library_window->getContentComponent())
-        content->setLookAndFeel(&m_custom_look_and_feel);
+LayerCakePresetData MainComponent::capture_knobset_data() const
+{
+    LayerCakePresetData data;
+    data.master_gain_db = m_master_gain_knob != nullptr
+                              ? static_cast<float>(m_master_gain_knob->slider().getValue())
+                              : 0.0f;
+    data.manual_state = m_manual_state;
+    data.manual_state.should_trigger = false;
+    data.record_layer = m_engine.get_record_layer();
+    data.spread_amount = m_spread_knob != nullptr
+                             ? static_cast<float>(m_spread_knob->slider().getValue())
+                             : 0.0f;
+    data.reverse_probability = m_direction_knob != nullptr
+                                   ? static_cast<float>(m_direction_knob->slider().getValue())
+                                   : 0.0f;
+
+    auto capture = [&](LayerCakeKnob* knob)
+    {
+        if (knob == nullptr)
+            return;
+        const auto& parameterId = knob->parameter_id();
+        if (parameterId.isEmpty())
+            return;
+        data.knob_values.set(juce::Identifier(parameterId), knob->slider().getValue());
+    };
+
+    capture(m_master_gain_knob.get());
+    capture(m_loop_start_knob.get());
+    capture(m_duration_knob.get());
+    capture(m_rate_knob.get());
+    capture(m_env_knob.get());
+    capture(m_spread_knob.get());
+    capture(m_direction_knob.get());
+    capture(m_pan_knob.get());
+    capture(m_layer_select_knob.get());
+    capture(m_pattern_length_knob.get());
+    capture(m_pattern_skip_knob.get());
+    capture(m_pattern_tempo_knob.get());
+    capture(m_pattern_subdiv_knob.get());
+
+    return data;
 }
 
 LayerCakePresetData MainComponent::capture_pattern_data() const
 {
-    LayerCakePresetData data;
+    LayerCakePresetData data = capture_knobset_data();
     data.pattern_subdivision = m_pattern_subdiv_knob != nullptr
                                    ? static_cast<float>(m_pattern_subdiv_knob->slider().getValue())
                                    : 0.0f;
@@ -686,19 +813,62 @@ LayerBufferArray MainComponent::capture_layer_buffers() const
     return buffers;
 }
 
+void MainComponent::apply_knobset(const LayerCakePresetData& data, bool update_pattern_engine)
+{
+    bool pattern_knob_touched = false;
+    const juce::ScopedValueSetter<bool> knob_guard(m_loading_knob_values, true);
+    auto applyValue = [&](LayerCakeKnob* knob, bool is_pattern_knob)
+    {
+        if (knob == nullptr)
+            return;
+        const auto& parameterId = knob->parameter_id();
+        if (parameterId.isEmpty())
+            return;
+        const auto identifier = juce::Identifier(parameterId);
+        if (identifier.isNull())
+            return;
+        if (const juce::var* value = data.knob_values.getVarPointer(identifier))
+        {
+            pattern_knob_touched = pattern_knob_touched || is_pattern_knob;
+            knob->slider().setValue(static_cast<double>(*value), juce::sendNotificationSync);
+        }
+    };
+
+    applyValue(m_master_gain_knob.get(), false);
+    applyValue(m_loop_start_knob.get(), false);
+    applyValue(m_duration_knob.get(), false);
+    applyValue(m_rate_knob.get(), false);
+    applyValue(m_env_knob.get(), false);
+    applyValue(m_spread_knob.get(), false);
+    applyValue(m_direction_knob.get(), false);
+    applyValue(m_pan_knob.get(), false);
+    applyValue(m_layer_select_knob.get(), false);
+    applyValue(m_pattern_length_knob.get(), true);
+    applyValue(m_pattern_skip_knob.get(), true);
+    applyValue(m_pattern_tempo_knob.get(), true);
+    applyValue(m_pattern_subdiv_knob.get(), true);
+
+    if (update_pattern_engine && pattern_knob_touched)
+        apply_pattern_settings(true);
+}
+
 void MainComponent::apply_pattern_snapshot(const LayerCakePresetData& data)
 {
-    m_pattern_length_knob->slider().setValue(data.pattern_snapshot.pattern_length, juce::dontSendNotification);
-    m_pattern_skip_knob->slider().setValue(data.pattern_snapshot.skip_probability, juce::dontSendNotification);
-    const float bpm = Metro::period_ms_to_bpm(data.pattern_snapshot.period_ms);
-    m_pattern_tempo_knob->slider().setValue(bpm, juce::dontSendNotification);
-    if (m_pattern_subdiv_knob != nullptr)
-        m_pattern_subdiv_knob->slider().setValue(data.pattern_subdivision, juce::dontSendNotification);
+    apply_knobset(data, false);
+    {
+        const juce::ScopedValueSetter<bool> loading_guard(m_loading_knob_values, true);
+        m_pattern_length_knob->slider().setValue(data.pattern_snapshot.pattern_length, juce::sendNotificationSync);
+        m_pattern_skip_knob->slider().setValue(data.pattern_snapshot.skip_probability, juce::sendNotificationSync);
+        const float bpm = Metro::period_ms_to_bpm(data.pattern_snapshot.period_ms);
+        m_pattern_tempo_knob->slider().setValue(bpm, juce::sendNotificationSync);
+        if (m_pattern_subdiv_knob != nullptr)
+            m_pattern_subdiv_knob->slider().setValue(data.pattern_subdivision, juce::sendNotificationSync);
+    }
 
     if (auto* clock = m_engine.get_pattern_clock())
     {
         clock->apply_snapshot(data.pattern_snapshot);
-        clock->set_enabled(data.pattern_snapshot.enabled);
+        // clock->set_enabled(data.pattern_snapshot.enabled);
     }
 
     apply_pattern_settings(true);
@@ -738,6 +908,7 @@ void MainComponent::update_auto_grain_settings()
     if (clock == nullptr)
         return;
 
+    clock->set_enabled(m_clock_button.getToggleState());
     clock->set_auto_fire_enabled(m_clock_button.getToggleState());
     clock->set_auto_fire_state(m_manual_state);
 }
@@ -773,18 +944,19 @@ void MainComponent::rearm_pattern_clock()
         return;
     }
 
-    if (!clock->is_enabled())
-    {
+    if (clock->get_mode() == PatternClock::Mode::Idle)
+   {
         DBG("MainComponent::rearm_pattern_clock clock disabled, skipping rearm");
         m_pattern_rearm_requested = false;
-        return;
+
+    } else {
+
+        DBG("MainComponent::rearm_pattern_clock rearming after parameter edit");
+        clock->set_mode(PatternClock::Mode::Recording);
+        m_pattern_rearm_requested = false;
+        update_pattern_labels();
     }
 
-    DBG("MainComponent::rearm_pattern_clock rearming after parameter edit");
-    clock->set_enabled(false);
-    clock->set_enabled(true);
-    m_pattern_rearm_requested = false;
-    update_pattern_labels();
 }
 
 double MainComponent::get_layer_recorded_seconds(int layer_index) const

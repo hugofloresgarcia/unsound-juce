@@ -15,6 +15,16 @@
 namespace LayerCakeApp
 {
 
+class VerticalMeter : public juce::Component
+{
+public:
+    void setLevel(double level);
+    void paint(juce::Graphics& g) override;
+
+private:
+    double m_level_value{0.0};
+};
+
 class MainComponent : public juce::Component,
                       public juce::AudioIODeviceCallback,
                       public juce::KeyListener,
@@ -52,8 +62,10 @@ private:
     void apply_pattern_settings(bool request_rearm = false);
     void update_pattern_labels();
     void open_library_window();
+    LayerCakePresetData capture_knobset_data() const;
     LayerCakePresetData capture_pattern_data() const;
     LayerBufferArray capture_layer_buffers() const;
+    void apply_knobset(const LayerCakePresetData& data, bool update_pattern_engine = true);
     void apply_pattern_snapshot(const LayerCakePresetData& data);
     void apply_layer_buffers(const LayerBufferArray& buffers);
     void sync_manual_state_from_controls();
@@ -75,7 +87,7 @@ private:
     juce::Label m_record_layer_label;
     juce::Label m_record_status_label;
     std::unique_ptr<LayerCakeKnob> m_master_gain_knob;
-    juce::ProgressBar m_master_meter;
+    VerticalMeter m_master_meter;
 
     std::unique_ptr<LayerCakeKnob> m_loop_start_knob;
     std::unique_ptr<LayerCakeKnob> m_duration_knob;
@@ -99,14 +111,15 @@ private:
 
     LayerCakeDisplay m_display;
     std::atomic<float> m_meter_value{0.0f};
-    double m_meter_display{0.0};
     bool m_device_ready{false};
     LayerCakeLibraryManager m_library_manager;
-    std::unique_ptr<LibraryBrowserWindow> m_library_window;
+    std::unique_ptr<LibraryBrowserComponent> m_preset_panel;
+    bool m_preset_panel_visible{true};
     GrainState m_manual_state;
     juce::File m_midi_mappings_file;
     int m_pattern_edit_depth{0};
     bool m_pattern_rearm_requested{false};
+    bool m_loading_knob_values{false};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

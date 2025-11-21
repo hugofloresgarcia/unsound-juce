@@ -8,6 +8,7 @@
 #include <atomic>
 
 class LayerCakeDisplay : public juce::Component,
+                         public juce::FileDragAndDropTarget,
                          private juce::Timer
 {
 public:
@@ -22,9 +23,14 @@ public:
 
 private:
     void timerCallback() override;
+    bool isInterestedInFileDrag(const juce::StringArray& files) override;
+    void filesDropped(const juce::StringArray& files, int x, int y) override;
     void refresh_waveforms();
     void refresh_grains();
     juce::Rectangle<float> get_display_area() const;
+    int layer_at_point(juce::Point<int> point) const;
+    juce::Rectangle<float> lane_bounds_for_index(int layer_index) const;
+    bool has_supported_audio_extension(const juce::File& file) const;
     juce::Colour colour_for_voice(size_t voice_index);
     void update_invaders(float width, float height);
 

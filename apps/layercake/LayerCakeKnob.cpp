@@ -1,4 +1,5 @@
 #include "LayerCakeKnob.h"
+#include "LayerCakeLookAndFeel.h"
 #include <cmath>
 
 namespace LayerCakeApp
@@ -42,6 +43,7 @@ LayerCakeKnob::LayerCakeKnob(const Config& config, Shared::MidiLearnManager* mid
 
     register_midi_parameter();
     update_value_label();
+    apply_look_and_feel_colours();
 }
 
 LayerCakeKnob::~LayerCakeKnob()
@@ -135,6 +137,11 @@ void LayerCakeKnob::resized()
     m_value_label.setBounds(valueBounds.reduced(kValueLabelInset));
 }
 
+void LayerCakeKnob::lookAndFeelChanged()
+{
+    apply_look_and_feel_colours();
+}
+
 void LayerCakeKnob::register_midi_parameter()
 {
     if (m_midi_manager == nullptr || m_config.parameterId.isEmpty())
@@ -191,6 +198,22 @@ void LayerCakeKnob::sliderValueChanged(juce::Slider* slider)
 
     update_value_label();
     repaint();
+}
+
+void LayerCakeKnob::apply_look_and_feel_colours()
+{
+    auto& laf = getLookAndFeel();
+    juce::Colour knobLabelColour = juce::Colour(0xfff25f5c);
+    juce::Colour valueColour = knobLabelColour.brighter(0.35f);
+
+    if (auto* layercake = dynamic_cast<LayerCakeLookAndFeel*>(&laf))
+    {
+        knobLabelColour = layercake->getKnobLabelColour();
+        valueColour = knobLabelColour.brighter(0.15f);
+    }
+
+    m_label.setColour(juce::Label::textColourId, knobLabelColour);
+    m_value_label.setColour(juce::Label::textColourId, valueColour);
 }
 
 } // namespace LayerCakeApp

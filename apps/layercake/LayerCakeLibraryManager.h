@@ -16,6 +16,7 @@ struct LayerCakePresetData
     float pattern_subdivision{0.0f};
     float spread_amount{0.0f};
     float reverse_probability{0.0f};
+    juce::NamedValueSet knob_values;
 };
 
 using LayerBufferArray = std::array<LayerBufferSnapshot, LayerCakeEngine::kNumLayers>;
@@ -30,6 +31,7 @@ public:
     const juce::StringArray& get_palettes() const { return m_palette_names; }
     const juce::StringArray& get_patterns() const { return m_pattern_names; }
     const juce::StringArray& get_scenes() const { return m_scene_names; }
+    const juce::StringArray& get_knobsets() const { return m_knobset_names; }
 
     bool save_palette(const juce::String& name, const LayerBufferArray& layers);
     bool load_palette(const juce::String& name, LayerBufferArray& out_layers) const;
@@ -38,6 +40,10 @@ public:
     bool save_pattern(const juce::String& name, const LayerCakePresetData& data);
     bool load_pattern(const juce::String& name, LayerCakePresetData& out_data) const;
     bool delete_pattern(const juce::String& name);
+
+    bool save_knobset(const juce::String& name, const LayerCakePresetData& data);
+    bool load_knobset(const juce::String& name, LayerCakePresetData& out_data) const;
+    bool delete_knobset(const juce::String& name);
 
     bool save_scene(const juce::String& name,
                     const LayerCakePresetData& data,
@@ -51,9 +57,11 @@ private:
     juce::File palettes_root() const;
     juce::File patterns_root() const;
     juce::File scenes_root() const;
+    juce::File knobsets_root() const;
     juce::File palette_folder(const juce::String& name) const;
     juce::File scene_folder(const juce::String& name) const;
     juce::File pattern_file(const juce::String& name) const;
+    juce::File knobset_file(const juce::String& name) const;
     static juce::String sanitize_name(const juce::String& name);
 
     bool write_layers(const juce::File& folder, const LayerBufferArray& layers) const;
@@ -62,10 +70,12 @@ private:
     void refresh_palettes();
     void refresh_patterns();
     void refresh_scenes();
+    void refresh_knobsets();
 
     juce::StringArray m_palette_names;
     juce::StringArray m_pattern_names;
     juce::StringArray m_scene_names;
+    juce::StringArray m_knobset_names;
     juce::File m_root;
 };
 

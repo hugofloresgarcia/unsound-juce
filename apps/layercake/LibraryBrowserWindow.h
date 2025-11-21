@@ -12,7 +12,9 @@ public:
                             std::function<LayerCakePresetData()> capture_pattern_fn,
                             std::function<LayerBufferArray()> capture_layers_fn,
                             std::function<void(const LayerCakePresetData&)> apply_pattern_fn,
-                            std::function<void(const LayerBufferArray&)> apply_layers_fn);
+                            std::function<void(const LayerBufferArray&)> apply_layers_fn,
+                            std::function<LayerCakePresetData()> capture_knobset_fn,
+                            std::function<void(const LayerCakePresetData&)> apply_knobset_fn);
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -22,6 +24,7 @@ private:
     {
         Palette,
         Pattern,
+        Knobset,
         Scene
     };
 
@@ -54,6 +57,7 @@ private:
     private:
         LibraryBrowserComponent& m_owner;
         ColumnType m_type;
+        bool m_reported_invalid_row{false};
     };
 
     struct ColumnWidgets
@@ -74,16 +78,20 @@ private:
     ColumnWidgets& widgets_for(ColumnType type);
     void format_name_editor(juce::TextEditor& editor) const;
     static juce::String column_title(ColumnType type);
+    juce::Colour accent_for(ColumnType type) const;
 
     LayerCakeLibraryManager& m_manager;
     ColumnWidgets m_palette_widgets;
     ColumnWidgets m_pattern_widgets;
+    ColumnWidgets m_knobset_widgets;
     ColumnWidgets m_scene_widgets;
 
     std::function<LayerCakePresetData()> m_capture_pattern_fn;
     std::function<LayerBufferArray()> m_capture_layers_fn;
     std::function<void(const LayerCakePresetData&)> m_apply_pattern_fn;
     std::function<void(const LayerBufferArray&)> m_apply_layers_fn;
+    std::function<LayerCakePresetData()> m_capture_knobset_fn;
+    std::function<void(const LayerCakePresetData&)> m_apply_knobset_fn;
 };
 
 class LibraryBrowserWindow : public juce::DocumentWindow
@@ -94,6 +102,8 @@ public:
                          std::function<LayerBufferArray()> capture_layers_fn,
                          std::function<void(const LayerCakePresetData&)> apply_pattern_fn,
                          std::function<void(const LayerBufferArray&)> apply_layers_fn,
+                         std::function<LayerCakePresetData()> capture_knobset_fn,
+                         std::function<void(const LayerCakePresetData&)> apply_knobset_fn,
                          std::function<void()> on_close);
 
     void closeButtonPressed() override;
