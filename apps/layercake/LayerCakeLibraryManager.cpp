@@ -78,6 +78,61 @@ void knob_values_from_var(const juce::var& value, juce::NamedValueSet& out_knobs
     }
 }
 
+juce::var lfo_slots_to_var(const std::array<LayerCakePresetData::LfoSlotData, 3>& slots)
+{
+    juce::Array<juce::var> serialized;
+    for (const auto& slot : slots)
+    {
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty("mode", slot.mode);
+        obj->setProperty("rateHz", slot.rate_hz);
+        obj->setProperty("depth", slot.depth);
+        serialized.add(obj);
+    }
+    return serialized;
+}
+
+void lfo_slots_from_var(const juce::var& value, std::array<LayerCakePresetData::LfoSlotData, 3>& out_slots)
+{
+    if (!value.isArray())
+        return;
+
+    auto* array = value.getArray();
+    const int count = juce::jmin(static_cast<int>(out_slots.size()), array->size());
+    for (int i = 0; i < count; ++i)
+    {
+        auto slotVar = array->getReference(i);
+        if (!slotVar.isObject())
+            continue;
+        auto* obj = slotVar.getDynamicObject();
+        out_slots[static_cast<size_t>(i)].mode = static_cast<int>(obj->getProperty("mode"));
+        out_slots[static_cast<size_t>(i)].rate_hz = static_cast<float>(obj->getProperty("rateHz"));
+        out_slots[static_cast<size_t>(i)].depth = static_cast<float>(obj->getProperty("depth"));
+    }
+}
+
+juce::var lfo_assignments_to_var(const juce::NamedValueSet& assignments)
+{
+    auto* obj = new juce::DynamicObject();
+    for (const auto& entry : assignments)
+        obj->setProperty(entry.name, static_cast<int>(entry.value));
+    return obj;
+}
+
+void lfo_assignments_from_var(const juce::var& value, juce::NamedValueSet& out_assignments)
+{
+    out_assignments.clear();
+    if (!value.isObject())
+        return;
+
+    if (auto* obj = value.getDynamicObject())
+    {
+        const auto& props = obj->getProperties();
+        for (const auto& entry : props)
+            out_assignments.set(entry.name, static_cast<int>(entry.value));
+    }
+}
+
 juce::var serialize_preset_json(const LayerCakePresetData& data)
 {
     auto* pattern = new juce::DynamicObject();
@@ -90,8 +145,11 @@ juce::var serialize_preset_json(const LayerCakePresetData& data)
     pattern->setProperty("recordLayer", data.record_layer);
     pattern->setProperty("spreadAmount", data.spread_amount);
     pattern->setProperty("reverseProbability", data.reverse_probability);
+    pattern->setProperty("clockEnabled", data.clock_enabled);
     pattern->setProperty("manualState", grain_state_to_var(data.manual_state));
     pattern->setProperty("knobs", knob_values_to_var(data.knob_values));
+    pattern->setProperty("lfos", lfo_slots_to_var(data.lfo_slots));
+    pattern->setProperty("lfoAssignments", lfo_assignments_to_var(data.lfo_assignments));
 
     juce::Array<juce::var> steps;
     for (const auto& step : data.pattern_snapshot.steps)
@@ -125,10 +183,20 @@ bool parse_preset_json(const juce::var& value, LayerCakePresetData& out_data)
         out_data.spread_amount = static_cast<float>(pattern->getProperty("spreadAmount"));
     if (pattern->hasProperty("reverseProbability"))
         out_data.reverse_probability = static_cast<float>(pattern->getProperty("reverseProbability"));
+    if (pattern->hasProperty("clockEnabled"))
+        out_data.clock_enabled = static_cast<bool>(pattern->getProperty("clockEnabled"));
     if (pattern->hasProperty("manualState"))
         grain_state_from_var(pattern->getProperty("manualState"), out_data.manual_state);
     if (pattern->hasProperty("knobs"))
         knob_values_from_var(pattern->getProperty("knobs"), out_data.knob_values);
+    if (pattern->hasProperty("lfos"))
+        lfo_slots_from_var(pattern->getProperty("lfos"), out_data.lfo_slots);
+    else
+        out_data.lfo_slots = {};
+    if (pattern->hasProperty("lfoAssignments"))
+        lfo_assignments_from_var(pattern->getProperty("lfoAssignments"), out_data.lfo_assignments);
+    else
+        out_data.lfo_assignments.clear();
 
     auto steps_var = pattern->getProperty("steps");
     if (steps_var.isArray())

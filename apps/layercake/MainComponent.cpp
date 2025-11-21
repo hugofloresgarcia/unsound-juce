@@ -55,6 +55,7 @@ const juce::Colour kAccentMagenta(0xfff45bff);
 const juce::Colour kAccentAmber(0xfff2b950);
 const juce::Colour kAccentRed(0xfff25f5c);
 const juce::Colour kAccentIndigo(0xff7d6bff);
+const juce::Colour kSoftWhite(0xfff4f4f2);
 // const juce::Colour kTerminalGreen(0xff63ff87);
 
 void configureControlButton(juce::TextButton& button,
@@ -90,23 +91,70 @@ MainComponent::MainComponent()
 
     addAndMakeVisible(m_display);
 
-    m_title_label.setJustificationType(juce::Justification::centred);
+    for (auto& value : m_lfo_last_values)
+        value.store(0.0f, std::memory_order_relaxed);
+
+    const std::array<juce::Colour, 4> lfoPalette = {
+        m_custom_look_and_feel.getLayerColour(0).brighter(0.6f),
+        m_custom_look_and_feel.getLayerColour(1).brighter(0.6f),
+        m_custom_look_and_feel.getLayerColour(2).brighter(0.6f),
+        m_custom_look_and_feel.getLayerColour(3).brighter(0.6f)
+    };
+
+    for (size_t i = 0; i < m_lfo_slots.size(); ++i)
+    {
+        auto& slot = m_lfo_slots[i];
+        slot.accent = lfoPalette[i % lfoPalette.size()];
+        slot.label = "LFO " + juce::String(static_cast<int>(i) + 1);
+        slot.generator.set_mode(flower::LfoWaveform::Sine);
+        slot.generator.set_rate_hz(0.35f + static_cast<float>(i) * 0.15f);
+        slot.generator.set_depth(0.5f);
+        slot.generator.reset_phase(static_cast<double>(i) / static_cast<double>(m_lfo_slots.size()));
+
+        slot.widget = std::make_unique<LayerCakeLfoWidget>(static_cast<int>(i), slot.generator, slot.accent);
+        slot.widget->set_drag_label(slot.label);
+        slot.widget->set_on_settings_changed([this, index = static_cast<int>(i)]()
+        {
+            if (index < 0 || index >= static_cast<int>(m_lfo_slots.size()))
+            {
+                DBG("MainComponent::lfo callback early return (index out of range)");
+                return;
+            }
+
+            auto* widget = m_lfo_slots[static_cast<size_t>(index)].widget.get();
+            if (widget != nullptr)
+                widget->refresh_wave_preview();
+            update_all_modulation_overlays();
+        });
+        if (slot.widget != nullptr)
+        {
+            slot.widget->refresh_wave_preview();
+            addAndMakeVisible(slot.widget.get());
+        }
+        else
+        {
+            DBG("MainComponent ctor LFO widget creation failed index=" + juce::String(static_cast<int>(i)));
+        }
+    }
+
+    m_title_label.setJustificationType(juce::Justification::centredLeft);
     m_title_label.setFont(juce::Font(juce::FontOptions()
                                          .withName(juce::Font::getDefaultMonospacedFontName())
                                          .withHeight(20.0f)));
     addAndMakeVisible(m_title_label);
 
     m_record_layer_label.setJustificationType(juce::Justification::centredLeft);
-    m_record_layer_label.setColour(juce::Label::textColourId, kAccentMagenta);
+    m_record_layer_label.setColour(juce::Label::textColourId, kSoftWhite);
     addAndMakeVisible(m_record_layer_label);
 
     m_record_status_label.setJustificationType(juce::Justification::centredLeft);
-    m_record_status_label.setColour(juce::Label::textColourId, kAccentMagenta);
+    m_record_status_label.setColour(juce::Label::textColourId, kSoftWhite);
     addAndMakeVisible(m_record_status_label);
 
     auto makeKnob = [this](LayerCakeKnob::Config config, bool enableRecorder = true) {
         config.enableSweepRecorder = enableRecorder;
         auto knob = std::make_unique<LayerCakeKnob>(config, &m_midi_learn_manager);
+        register_knob_for_lfo(knob.get());
         addAndMakeVisible(knob.get());
         return knob;
     };
@@ -121,7 +169,8 @@ MainComponent::MainComponent()
 
     m_master_gain_knob = makeKnob({ "master gain", -24.0, 6.0, 0.0, 0.1, " dB", "layercake_master_gain" });
     m_master_gain_knob->slider().onValueChange = [this]() {
-        m_engine.set_master_gain_db(static_cast<float>(m_master_gain_knob->slider().getValue()));
+        const float gain = static_cast<float>(get_effective_knob_value(m_master_gain_knob.get()));
+        m_engine.set_master_gain_db(gain);
     };
 
     m_loop_start_knob = makeKnob({ "position", 0.0, 1.0, 0.5, 0.001, "", "layercake_position" });
@@ -141,7 +190,8 @@ MainComponent::MainComponent()
     m_layer_select_knob = makeKnob({ "layer", 1.0, static_cast<double>(LayerCakeEngine::kNumLayers), 1.0, 1.0, "", "layercake_layer_select" });
     m_layer_select_knob->slider().setDoubleClickReturnValue(true, 1.0);
     m_layer_select_knob->slider().onValueChange = [this]() {
-        const int raw = static_cast<int>(std::round(m_layer_select_knob->slider().getValue())) - 1;
+        const double effective = get_effective_knob_value(m_layer_select_knob.get());
+        const int raw = static_cast<int>(std::round(effective)) - 1;
         const int clamped = juce::jlimit(0, static_cast<int>(LayerCakeEngine::kNumLayers) - 1, raw);
         if (clamped != m_engine.get_record_layer())
         {
@@ -188,7 +238,7 @@ MainComponent::MainComponent()
     addAndMakeVisible(m_pattern_button);
 
     m_pattern_status_label.setJustificationType(juce::Justification::centredLeft);
-    m_pattern_status_label.setColour(juce::Label::textColourId, kAccentMagenta);
+    m_pattern_status_label.setColour(juce::Label::textColourId, kSoftWhite);
     addAndMakeVisible(m_pattern_status_label);
 
     auto configurePatternKnob = [this](LayerCakeKnob& knob, bool rearm_on_change)
@@ -312,19 +362,7 @@ void MainComponent::paint(juce::Graphics& g)
 
     g.fillRect(bounds);
 
-    const auto scanlineColour = kAccentMagenta.withAlpha(0.12f);
-    g.setColour(scanlineColour);
-    for (float y = bounds.getY(); y < bounds.getBottom(); y += 6.0f)
-    {
-        const float thickness = (static_cast<int>(y / 6.0f) % 2 == 0) ? 0.7f : 0.35f;
-        g.drawLine(bounds.getX(), y, bounds.getRight(), y, thickness);
-    }
-
-    g.setColour(kAccentIndigo.withAlpha(0.15f));
-    for (float x = bounds.getX(); x < bounds.getRight(); x += 18.0f)
-        g.drawLine(x, bounds.getY(), x, bounds.getBottom(), 0.3f);
-
-    g.setColour(kAccentCyan.withAlpha(0.35f));
+    g.setColour(kSoftWhite.withAlpha(0.35f));
     g.drawRect(bounds, 1.5f);
 }
 
@@ -336,7 +374,7 @@ void MainComponent::resized()
 
     const int labelHeight = 28;
 
-    const int knobDiameter = 96;
+    const int knobDiameter = 86;
     const int knobLabelHeight = 18;
     const int knobLabelGap = 4;
     const int knobStackHeight = knobDiameter + knobLabelGap + knobLabelHeight;
@@ -348,15 +386,25 @@ void MainComponent::resized()
     const int meterSpacing = 18;
     const int patternTransportHeight = 36;
 
-    const int displayPanelWidth = 560;
-    const int displaySize = 500;
+    const int displayPanelWidth = 620;
+    const int displaySize = 560;
 
     const int presetPanelSpacing = 16;
     const int presetPanelMargin = 10;
     const int presetPanelWidthExpanded = 340;
     const int presetPanelWidthCollapsed = 0;
+    const int lfoRowHeight = 160;
+    const int lfoSpacing = 14;
+    const int lfoMargin = 10;
+    const int lfoSlotMinWidth = 120;
+    const int lfoVerticalGap = 12;
 
     auto bounds = getLocalBounds().reduced(marginOuter);
+    auto titleGlobalArea = juce::Rectangle<int>(bounds.getX(),
+                                                bounds.getY(),
+                                                displayPanelWidth,
+                                                labelHeight);
+    m_title_label.setBounds(titleGlobalArea);
 
     const int presetPanelWidth = m_preset_panel_visible ? presetPanelWidthExpanded : presetPanelWidthCollapsed;
     if (presetPanelWidth > 0)
@@ -375,16 +423,17 @@ void MainComponent::resized()
     bounds.removeFromRight(meterSpacing);
     m_master_meter.setBounds(meterArea);
 
-    auto displayPanel = bounds.removeFromLeft(displayPanelWidth);
-    auto tvArea = displayPanel.withSizeKeepingCentre(displaySize, displaySize);
+    auto displayColumn = bounds.removeFromLeft(displayPanelWidth);
+    auto lfoArea = displayColumn.removeFromBottom(lfoRowHeight);
+    displayColumn.removeFromBottom(lfoVerticalGap);
+    auto tvArea = displayColumn.withSizeKeepingCentre(displaySize, displaySize);
     m_display.setBounds(tvArea);
 
     bounds.removeFromLeft(sectionSpacing);
     auto panel = bounds;
     const int knobGridX = panel.getX();
 
-    auto titleArea = panel.removeFromTop(labelHeight);
-    m_title_label.setBounds(titleArea);
+    panel.removeFromTop(labelHeight);
     panel.removeFromTop(rowSpacing);
 
     auto recordArea = panel.removeFromTop(labelHeight);
@@ -457,6 +506,24 @@ void MainComponent::resized()
     auto statusBounds = gridCellBounds(2, 2, transportRowY, buttonHeight);
     m_pattern_status_label.setBounds(statusBounds);
     panel.removeFromTop(sectionSpacing);
+
+    auto lfoRowBounds = lfoArea.reduced(lfoMargin);
+    const int lfoCount = static_cast<int>(m_lfo_slots.size());
+    if (lfoCount > 0)
+    {
+        const int totalSpacing = lfoSpacing * juce::jmax(0, lfoCount - 1);
+        const int slotWidth = juce::jmax(lfoSlotMinWidth,
+                                         (lfoRowBounds.getWidth() - totalSpacing) / juce::jmax(1, lfoCount));
+        auto rowWalker = lfoRowBounds;
+        for (int i = 0; i < lfoCount; ++i)
+        {
+            auto widgetBounds = rowWalker.removeFromLeft(slotWidth);
+            if (i < lfoCount - 1)
+                rowWalker.removeFromLeft(lfoSpacing);
+            if (auto* widget = m_lfo_slots[static_cast<size_t>(i)].widget.get())
+                widget->setBounds(widgetBounds);
+        }
+    }
 
     m_midi_learn_overlay.setBounds(getLocalBounds());
 }
@@ -562,8 +629,14 @@ bool MainComponent::keyPressed(const juce::KeyPress& key, juce::Component*)
 
 void MainComponent::timerCallback()
 {
+    const double now_ms = juce::Time::getMillisecondCounterHiRes();
+    advance_lfos(now_ms);
+    update_all_modulation_overlays();
+    update_master_gain_from_knob();
+    update_record_layer_from_lfo();
     update_record_labels();
     update_meter();
+    apply_pattern_settings(false);
     update_pattern_labels();
     m_display.set_record_layer(m_engine.get_record_layer());
 }
@@ -595,10 +668,12 @@ GrainState MainComponent::build_manual_grain_state()
     GrainState state;
     const int layer = m_engine.get_record_layer();
     const double recorded_seconds = get_layer_recorded_seconds(layer);
-    const double normalized_start = juce::jlimit(0.0, 1.0, m_loop_start_knob->slider().getValue());
+    const double normalized_start = (m_loop_start_knob != nullptr)
+        ? juce::jlimit(0.0, 1.0, get_effective_knob_value(m_loop_start_knob.get()))
+        : 0.0;
     double loop_start_seconds = normalized_start * recorded_seconds;
 
-    double duration_ms = m_duration_knob->slider().getValue();
+    double duration_ms = get_effective_knob_value(m_duration_knob.get());
     double duration_seconds = duration_ms * 0.001;
 
     if (recorded_seconds > 0.0)
@@ -608,21 +683,21 @@ GrainState MainComponent::build_manual_grain_state()
     }
     duration_ms = duration_seconds * 1000.0;
 
-    double env_value = m_env_knob != nullptr ? m_env_knob->slider().getValue() : 0.5;
+    double env_value = m_env_knob != nullptr ? get_effective_knob_value(m_env_knob.get()) : 0.5;
     env_value = juce::jlimit(0.0, 1.0, env_value);
     const double attack_ms = duration_ms * (1.0 - env_value);
     const double release_ms = duration_ms * env_value;
 
     state.loop_start_seconds = static_cast<float>(loop_start_seconds);
     state.duration_ms = static_cast<float>(duration_ms);
-    state.rate_semitones = static_cast<float>(m_rate_knob->slider().getValue());
+    state.rate_semitones = static_cast<float>(get_effective_knob_value(m_rate_knob.get()));
     state.env_attack_ms = static_cast<float>(attack_ms);
     state.env_release_ms = static_cast<float>(release_ms);
     state.play_forward = true;
     state.layer = layer;
-    state.pan = static_cast<float>(m_pan_knob->slider().getValue());
-    float spread_amount = m_spread_knob != nullptr ? static_cast<float>(m_spread_knob->slider().getValue()) : 0.0f;
-    float reverse_probability = m_direction_knob != nullptr ? static_cast<float>(m_direction_knob->slider().getValue()) : 0.0f;
+    state.pan = static_cast<float>(get_effective_knob_value(m_pan_knob.get()));
+    float spread_amount = m_spread_knob != nullptr ? static_cast<float>(get_effective_knob_value(m_spread_knob.get())) : 0.0f;
+    float reverse_probability = m_direction_knob != nullptr ? static_cast<float>(get_effective_knob_value(m_direction_knob.get())) : 0.0f;
 
     // TODO: modify loop_start according to spread
     m_engine.apply_spread_randomization(state, spread_amount);
@@ -642,7 +717,7 @@ void MainComponent::update_record_labels()
     m_record_status_label.setText("record status: " + status, juce::dontSendNotification);
     m_record_button.setToggleState(m_engine.is_record_enabled(), juce::dontSendNotification);
     m_display.set_record_layer(layer_index);
-    if (m_layer_select_knob != nullptr)
+    if (m_layer_select_knob != nullptr && !m_layer_select_knob->has_lfo_assignment())
         m_layer_select_knob->slider().setValue(static_cast<double>(layer_index + 1), juce::dontSendNotification);
     sync_manual_state_from_controls();
 }
@@ -662,11 +737,12 @@ void MainComponent::apply_pattern_settings(bool request_rearm)
         return;
     }
 
-    clock->set_pattern_length(static_cast<int>(m_pattern_length_knob->slider().getValue()));
-    clock->set_skip_probability(static_cast<float>(m_pattern_skip_knob->slider().getValue()));
+    const double length_value = get_effective_knob_value(m_pattern_length_knob.get());
+    clock->set_pattern_length(juce::jlimit(1, 128, static_cast<int>(std::round(length_value))));
+    clock->set_skip_probability(static_cast<float>(juce::jlimit(0.0, 1.0, get_effective_knob_value(m_pattern_skip_knob.get()))));
 
-    double base_bpm = m_pattern_tempo_knob->slider().getValue();
-    double subdiv = m_pattern_subdiv_knob != nullptr ? m_pattern_subdiv_knob->slider().getValue() : 0.0;
+    double base_bpm = juce::jmax(1.0, get_effective_knob_value(m_pattern_tempo_knob.get()));
+    double subdiv = m_pattern_subdiv_knob != nullptr ? get_effective_knob_value(m_pattern_subdiv_knob.get()) : 0.0;
     double multiplier = std::pow(2.0, subdiv);
     double effective_bpm = juce::jlimit(1.0, 2000.0, base_bpm * multiplier);
     clock->set_bpm(static_cast<float>(effective_bpm));
@@ -752,6 +828,7 @@ LayerCakePresetData MainComponent::capture_knobset_data() const
     data.master_gain_db = m_master_gain_knob != nullptr
                               ? static_cast<float>(m_master_gain_knob->slider().getValue())
                               : 0.0f;
+    data.clock_enabled = m_clock_button.getToggleState();
     data.manual_state = m_manual_state;
     data.manual_state.should_trigger = false;
     data.record_layer = m_engine.get_record_layer();
@@ -786,7 +863,36 @@ LayerCakePresetData MainComponent::capture_knobset_data() const
     capture(m_pattern_tempo_knob.get());
     capture(m_pattern_subdiv_knob.get());
 
+    capture_lfo_state(data);
+
     return data;
+}
+
+void MainComponent::capture_lfo_state(LayerCakePresetData& data) const
+{
+    const size_t slotCount = juce::jmin(m_lfo_slots.size(), data.lfo_slots.size());
+    for (size_t i = 0; i < slotCount; ++i)
+    {
+        const auto& slot = m_lfo_slots[i];
+        auto& slotData = data.lfo_slots[i];
+        slotData.mode = static_cast<int>(slot.generator.get_mode());
+        slotData.rate_hz = slot.generator.get_rate_hz();
+        slotData.depth = slot.generator.get_depth();
+    }
+
+    data.lfo_assignments.clear();
+    for (auto* knob : m_lfo_enabled_knobs)
+    {
+        if (knob == nullptr)
+            continue;
+        const int assignment = knob->lfo_assignment_index();
+        if (assignment < 0)
+            continue;
+        const auto& parameterId = knob->parameter_id();
+        if (parameterId.isEmpty())
+            continue;
+        data.lfo_assignments.set(juce::Identifier(parameterId), assignment);
+    }
 }
 
 LayerCakePresetData MainComponent::capture_pattern_data() const
@@ -849,8 +955,56 @@ void MainComponent::apply_knobset(const LayerCakePresetData& data, bool update_p
     applyValue(m_pattern_tempo_knob.get(), true);
     applyValue(m_pattern_subdiv_knob.get(), true);
 
+    apply_lfo_state(data);
+
+    m_clock_button.setToggleState(data.clock_enabled, juce::dontSendNotification);
+    update_auto_grain_settings();
+
     if (update_pattern_engine && pattern_knob_touched)
         apply_pattern_settings(true);
+}
+
+void MainComponent::apply_lfo_state(const LayerCakePresetData& data)
+{
+    const size_t slotCount = juce::jmin(m_lfo_slots.size(), data.lfo_slots.size());
+    const int maxMode = static_cast<int>(flower::LfoWaveform::SmoothRandom);
+
+    for (size_t i = 0; i < slotCount; ++i)
+    {
+        auto& slot = m_lfo_slots[i];
+        const auto& slotData = data.lfo_slots[i];
+        const int modeIndex = juce::jlimit(0, maxMode, slotData.mode);
+        slot.generator.set_mode(static_cast<flower::LfoWaveform>(modeIndex));
+        slot.generator.set_rate_hz(juce::jlimit(0.01f, 20.0f, slotData.rate_hz));
+        slot.generator.set_depth(juce::jlimit(0.0f, 1.0f, slotData.depth));
+        slot.generator.reset_phase();
+        m_lfo_last_values[i].store(slot.generator.get_last_value(), std::memory_order_relaxed);
+        if (slot.widget != nullptr)
+            slot.widget->sync_controls_from_generator();
+    }
+
+    for (auto* knob : m_lfo_enabled_knobs)
+    {
+        if (knob == nullptr)
+            continue;
+
+        knob->set_lfo_assignment_index(-1);
+        knob->clear_modulation_indicator();
+
+        const auto& parameterId = knob->parameter_id();
+        if (parameterId.isEmpty())
+            continue;
+
+        const auto identifier = juce::Identifier(parameterId);
+        if (const juce::var* value = data.lfo_assignments.getVarPointer(identifier))
+        {
+            const int index = static_cast<int>(*value);
+            if (index >= 0 && index < static_cast<int>(m_lfo_slots.size()))
+                knob->set_lfo_assignment_index(index);
+        }
+    }
+
+    update_all_modulation_overlays();
 }
 
 void MainComponent::apply_pattern_snapshot(const LayerCakePresetData& data)
@@ -886,21 +1040,169 @@ void MainComponent::sync_manual_state_from_controls()
 {
     const int layer = m_engine.get_record_layer();
     const double recorded_seconds = get_layer_recorded_seconds(layer);
-    m_manual_state.loop_start_seconds = static_cast<float>(juce::jlimit(0.0, recorded_seconds,
-        m_loop_start_knob->slider().getValue() * recorded_seconds));
-    const double duration_ms = m_duration_knob->slider().getValue();
+    const double loop_start_normalized = (m_loop_start_knob != nullptr)
+        ? juce::jlimit(0.0, 1.0, get_effective_knob_value(m_loop_start_knob.get()))
+        : 0.0;
+    m_manual_state.loop_start_seconds = static_cast<float>(juce::jlimit(0.0, recorded_seconds, loop_start_normalized * recorded_seconds));
+    const double duration_ms = get_effective_knob_value(m_duration_knob.get());
     m_manual_state.duration_ms = static_cast<float>(duration_ms);
-    m_manual_state.rate_semitones = static_cast<float>(m_rate_knob->slider().getValue());
-    const double env_value = m_env_knob != nullptr ? juce::jlimit(0.0, 1.0, m_env_knob->slider().getValue())
+    m_manual_state.rate_semitones = static_cast<float>(get_effective_knob_value(m_rate_knob.get()));
+    const double env_value = m_env_knob != nullptr ? juce::jlimit(0.0, 1.0, get_effective_knob_value(m_env_knob.get()))
                                                    : 0.5;
     m_manual_state.env_attack_ms = static_cast<float>(duration_ms * (1.0 - env_value));
     m_manual_state.env_release_ms = static_cast<float>(duration_ms * env_value);
     m_manual_state.play_forward = true;
-    m_manual_state.pan = static_cast<float>(m_pan_knob->slider().getValue());
+    m_manual_state.pan = static_cast<float>(get_effective_knob_value(m_pan_knob.get()));
     m_manual_state.layer = layer;
     m_manual_state.should_trigger = false;
-    m_display.set_position_indicator(static_cast<float>(m_loop_start_knob->slider().getValue()));
+    m_display.set_position_indicator(static_cast<float>(loop_start_normalized));
     update_auto_grain_settings();
+}
+
+void MainComponent::advance_lfos(double now_ms)
+{
+    for (size_t i = 0; i < m_lfo_slots.size(); ++i)
+    {
+        auto& slot = m_lfo_slots[i];
+        const float rawValue = slot.generator.advance(now_ms);
+        const float scaled = rawValue * slot.generator.get_depth();
+        m_lfo_last_values[i].store(scaled, std::memory_order_relaxed);
+    }
+}
+
+void MainComponent::register_knob_for_lfo(LayerCakeKnob* knob)
+{
+    if (knob == nullptr)
+    {
+        DBG("MainComponent::register_knob_for_lfo early return (null knob)");
+        return;
+    }
+
+    knob->set_lfo_highlight_colour(m_custom_look_and_feel.getKnobLabelColour());
+    knob->set_lfo_drop_handler([this](LayerCakeKnob& target, int lfoIndex) {
+        assign_lfo_to_knob(lfoIndex, target);
+    });
+    knob->set_context_menu_builder([this, knob](juce::PopupMenu& menu) {
+        if (knob == nullptr)
+            return;
+        const int assignment = knob->lfo_assignment_index();
+        if (assignment < 0 || assignment >= static_cast<int>(m_lfo_slots.size()))
+            return;
+        juce::PopupMenu::Item removeItem("Remove LFO");
+        removeItem.setColour(m_lfo_slots[static_cast<size_t>(assignment)].accent);
+        removeItem.setAction([this, knob]() { remove_lfo_from_knob(*knob); });
+        menu.addItem(removeItem);
+    });
+
+    m_lfo_enabled_knobs.push_back(knob);
+}
+
+void MainComponent::assign_lfo_to_knob(int lfo_index, LayerCakeKnob& knob)
+{
+    if (lfo_index < 0 || lfo_index >= static_cast<int>(m_lfo_slots.size()))
+    {
+        DBG("MainComponent::assign_lfo_to_knob early return (invalid index)");
+        return;
+    }
+
+    knob.set_lfo_assignment_index(lfo_index);
+    DBG("MainComponent::assign_lfo_to_knob parameter=" + knob.parameter_id()
+        + " lfo=" + juce::String(lfo_index + 1));
+    update_all_modulation_overlays();
+}
+
+void MainComponent::remove_lfo_from_knob(LayerCakeKnob& knob)
+{
+    if (!knob.has_lfo_assignment())
+    {
+        DBG("MainComponent::remove_lfo_from_knob early return (no assignment)");
+        return;
+    }
+
+    knob.set_lfo_assignment_index(-1);
+    knob.clear_modulation_indicator();
+    DBG("MainComponent::remove_lfo_from_knob parameter=" + knob.parameter_id());
+}
+
+void MainComponent::update_all_modulation_overlays()
+{
+    for (auto* knob : m_lfo_enabled_knobs)
+    {
+        if (knob == nullptr)
+            continue;
+
+        const int assignment = knob->lfo_assignment_index();
+        if (assignment < 0 || assignment >= static_cast<int>(m_lfo_slots.size()))
+        {
+            knob->clear_modulation_indicator();
+            continue;
+        }
+
+        const auto range = knob->slider().getRange();
+        const double span = range.getLength();
+        if (span <= 0.0)
+        {
+            DBG("MainComponent::update_all_modulation_overlays early return (invalid span)");
+            continue;
+        }
+
+        const double effective_value = get_effective_knob_value(knob);
+        const float normalized = static_cast<float>((effective_value - range.getStart()) / span);
+        knob->set_modulation_indicator(normalized, m_lfo_slots[static_cast<size_t>(assignment)].accent);
+    }
+}
+
+double MainComponent::get_effective_knob_value(const LayerCakeKnob* knob) const
+{
+    if (knob == nullptr)
+    {
+        DBG("MainComponent::get_effective_knob_value early return (null knob)");
+        return 0.0;
+    }
+
+    const double base_value = knob->slider().getValue();
+    const int assignment = knob->lfo_assignment_index();
+    if (assignment < 0 || assignment >= static_cast<int>(m_lfo_slots.size()))
+        return base_value;
+
+    const auto range = knob->slider().getRange();
+    const double span = range.getLength();
+    if (span <= 0.0)
+    {
+        DBG("MainComponent::get_effective_knob_value early return (non-positive span)");
+        return base_value;
+    }
+
+    const double base_normalized = juce::jlimit(0.0, 1.0, (base_value - range.getStart()) / span);
+    const double offset = static_cast<double>(m_lfo_last_values[static_cast<size_t>(assignment)].load(std::memory_order_relaxed));
+    const double mod_normalized = juce::jlimit(0.0, 1.0, base_normalized + offset * 0.5);
+    return range.getStart() + mod_normalized * span;
+}
+
+void MainComponent::update_record_layer_from_lfo()
+{
+    if (m_layer_select_knob == nullptr)
+        return;
+
+    const int assignment = m_layer_select_knob->lfo_assignment_index();
+    if (assignment < 0)
+        return;
+
+    const double effective_value = get_effective_knob_value(m_layer_select_knob.get());
+    const int desired_layer = juce::jlimit(0,
+                                           static_cast<int>(LayerCakeEngine::kNumLayers) - 1,
+                                           static_cast<int>(std::round(effective_value)) - 1);
+    if (desired_layer != m_engine.get_record_layer())
+        m_engine.set_record_layer(desired_layer);
+}
+
+void MainComponent::update_master_gain_from_knob()
+{
+    if (m_master_gain_knob == nullptr)
+        return;
+
+    const float gain = static_cast<float>(get_effective_knob_value(m_master_gain_knob.get()));
+    m_engine.set_master_gain_db(gain);
 }
 
 void MainComponent::update_auto_grain_settings()

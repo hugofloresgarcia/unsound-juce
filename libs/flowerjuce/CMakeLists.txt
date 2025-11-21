@@ -38,6 +38,7 @@ target_sources(flowerjuce PRIVATE
     DSP/MultiChannelLoudnessMeter.cpp
     DSP/PeakMeter.cpp
     DSP/KnobSweepRecorder.cpp
+    DSP/LfoUGen.cpp
 )
 
 # DSP headers
@@ -47,6 +48,7 @@ target_sources(flowerjuce PRIVATE
     DSP/MultiChannelLoudnessMeter.h
     DSP/PeakMeter.h
     DSP/KnobSweepRecorder.h
+    DSP/LfoUGen.h
 )
 
 # Utils source files (removed - Utils directory doesn't exist)

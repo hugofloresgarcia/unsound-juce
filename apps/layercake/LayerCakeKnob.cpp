@@ -107,6 +107,13 @@ void LayerCakeKnob::paint(juce::Graphics& g)
     g.setColour(frame);
     g.drawEllipse(circle, 1.4f);
 
+    if (m_drag_highlight)
+    {
+        auto highlightCircle = circle.expanded(6.0f);
+        g.setColour(m_active_drag_colour.withAlpha(0.45f));
+        g.drawEllipse(highlightCircle, 2.0f);
+    }
+
     const float startAngle = juce::MathConstants<float>::pi * 1.2f;
     const float sweepAngle = juce::MathConstants<float>::pi * 1.6f;
     const double range = m_config.maxValue - m_config.minValue;
@@ -140,6 +147,29 @@ void LayerCakeKnob::paint(juce::Graphics& g)
                                 true);
     g.setColour(track);
     g.strokePath(indicatorPath, juce::PathStrokeType(2.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+    if (m_modulation_indicator_value.has_value())
+    {
+        const float modNormalized = juce::jlimit(0.0f, 1.0f, m_modulation_indicator_value.value());
+        const float modAngle = startAngle + modNormalized * sweepAngle;
+        const float modRadius = trackRadius + 6.0f;
+        juce::Path modPath;
+        modPath.addCentredArc(circle.getCentreX(),
+                              circle.getCentreY(),
+                              modRadius,
+                              modRadius,
+                              0.0f,
+                              startAngle,
+                              modAngle,
+                              true);
+        auto saturatedColour = m_modulation_indicator_colour;
+        saturatedColour = saturatedColour.withMultipliedSaturation(2.0f).brighter(0.3f);
+        const auto brightColour = saturatedColour.withAlpha(0.95f);
+        g.setColour(brightColour);
+        g.strokePath(modPath, juce::PathStrokeType(2.5f,
+                                                   juce::PathStrokeType::curved,
+                                                   juce::PathStrokeType::rounded));
+    }
 
     auto centre = circle.getCentre();
     const float pointerLength = circle.getWidth() * 0.38f;
@@ -211,14 +241,77 @@ void LayerCakeKnob::lookAndFeelChanged()
 
 void LayerCakeKnob::mouseDown(const juce::MouseEvent& event)
 {
-    if (sweep_recorder_enabled() && event.mods.isPopupMenu())
+    if (event.mods.isPopupMenu())
     {
-        DBG("LayerCakeKnob::mouseDown early return (handled recorder menu)");
-        show_recorder_menu(event);
-        return;
+        if (show_context_menu(event))
+            return;
     }
 
     juce::Component::mouseDown(event);
+}
+
+bool LayerCakeKnob::isInterestedInDragSource(const juce::DragAndDropTarget::SourceDetails& details)
+{
+    int lfoIndex = -1;
+    juce::Colour accent;
+    juce::String label;
+    juce::ignoreUnused(label);
+    if (m_lfo_drop_handler == nullptr)
+        return false;
+    return LfoDragHelpers::parse_description(details.description, lfoIndex, accent, label, false);
+}
+
+void LayerCakeKnob::itemDragEnter(const juce::DragAndDropTarget::SourceDetails& details)
+{
+    int lfoIndex = -1;
+    juce::Colour accent;
+    juce::String label;
+    juce::ignoreUnused(lfoIndex, label);
+
+    if (!LfoDragHelpers::parse_description(details.description, lfoIndex, accent, label, false))
+    {
+        DBG("LayerCakeKnob::itemDragEnter early return (invalid payload)");
+        return;
+    }
+
+    m_active_drag_colour = accent.isTransparent() ? m_lfo_highlight_colour : accent;
+    m_drag_highlight = true;
+    repaint();
+}
+
+void LayerCakeKnob::itemDragExit(const juce::DragAndDropTarget::SourceDetails& details)
+{
+    juce::ignoreUnused(details);
+    if (m_drag_highlight)
+    {
+        m_drag_highlight = false;
+        repaint();
+    }
+}
+
+void LayerCakeKnob::itemDropped(const juce::DragAndDropTarget::SourceDetails& details)
+{
+    int lfoIndex = -1;
+    juce::Colour accent;
+    juce::String label;
+    juce::ignoreUnused(accent, label);
+
+    m_drag_highlight = false;
+    repaint();
+
+    if (!LfoDragHelpers::parse_description(details.description, lfoIndex, accent, label, true))
+    {
+        DBG("LayerCakeKnob::itemDropped early return (description parse failed)");
+        return;
+    }
+
+    if (m_lfo_drop_handler == nullptr)
+    {
+        DBG("LayerCakeKnob::itemDropped early return (missing drop handler)");
+        return;
+    }
+
+    m_lfo_drop_handler(*this, lfoIndex);
 }
 
 void LayerCakeKnob::register_midi_parameter()
@@ -317,13 +410,14 @@ void LayerCakeKnob::sliderDragEnded(juce::Slider* slider)
 void LayerCakeKnob::apply_look_and_feel_colours()
 {
     auto& laf = getLookAndFeel();
-    juce::Colour knobLabelColour = juce::Colour(0xfff25f5c);
-    juce::Colour valueColour = knobLabelColour.brighter(0.35f);
+    const juce::Colour kSoftWhite(0xfff4f4f2);
+    juce::Colour knobLabelColour = kSoftWhite;
+    juce::Colour valueColour = kSoftWhite;
 
     if (auto* layercake = dynamic_cast<LayerCakeLookAndFeel*>(&laf))
     {
         knobLabelColour = layercake->getKnobLabelColour();
-        valueColour = knobLabelColour.brighter(0.15f);
+        valueColour = knobLabelColour;
     }
 
     m_label.setColour(juce::Label::textColourId, knobLabelColour);
@@ -386,33 +480,37 @@ void LayerCakeKnob::timerCallback()
         update_timer_activity();
 }
 
-void LayerCakeKnob::show_recorder_menu(const juce::MouseEvent& event)
+bool LayerCakeKnob::show_context_menu(const juce::MouseEvent& event)
 {
+    juce::PopupMenu menu;
+
     if (sweep_recorder_enabled())
     {
-        juce::PopupMenu menu;
         const bool canRecord = m_recorder_state != RecorderState::Recording;
         const bool canClear = m_recorder_state != RecorderState::Idle;
-        menu.addItem(1, "Record sweep", canRecord);
-        menu.addItem(2, "Clear sweep", canClear);
 
-        auto callback = juce::ModalCallbackFunction::create([this](int result)
-        {
-            if (result == 1)
-                arm_sweep_recorder();
-            else if (result == 2)
-                clear_sweep_recorder("menu");
-        });
+        menu.addItem(juce::PopupMenu::Item("Record sweep")
+                         .setEnabled(canRecord)
+                         .setAction([this]() { arm_sweep_recorder(); }));
 
-        juce::Rectangle<int> screenArea(event.getScreenX(), event.getScreenY(), 1, 1);
-        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this)
-                                                  .withTargetScreenArea(screenArea),
-                           callback);
+        menu.addItem(juce::PopupMenu::Item("Clear sweep")
+                         .setEnabled(canClear)
+                         .setAction([this]() { clear_sweep_recorder("menu"); }));
     }
-    else
+
+    if (m_context_menu_builder != nullptr)
+        m_context_menu_builder(menu);
+
+    if (menu.getNumItems() == 0)
     {
-        DBG("LayerCakeKnob::show_recorder_menu skipped (recorder disabled)");
+        DBG("LayerCakeKnob::show_context_menu early return (no items to show)");
+        return false;
     }
+
+    juce::Rectangle<int> screenArea(event.getScreenX(), event.getScreenY(), 1, 1);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this)
+                                              .withTargetScreenArea(screenArea));
+    return true;
 }
 
 void LayerCakeKnob::arm_sweep_recorder()
@@ -567,6 +665,61 @@ void LayerCakeKnob::sync_recorder_idle_value()
 {
     if (sweep_recorder_enabled())
         m_sweep_recorder.set_idle_value(static_cast<float>(m_slider.getValue()));
+}
+
+void LayerCakeKnob::set_context_menu_builder(const std::function<void(juce::PopupMenu&)>& builder)
+{
+    m_context_menu_builder = builder;
+}
+
+void LayerCakeKnob::set_lfo_drop_handler(const std::function<void(LayerCakeKnob&, int)>& handler)
+{
+    m_lfo_drop_handler = handler;
+}
+
+void LayerCakeKnob::set_lfo_highlight_colour(juce::Colour colour)
+{
+    m_lfo_highlight_colour = colour;
+    m_active_drag_colour = colour;
+}
+
+void LayerCakeKnob::set_modulation_indicator(std::optional<float> normalizedValue, juce::Colour colour)
+{
+    if (!normalizedValue.has_value())
+    {
+        if (m_modulation_indicator_value.has_value())
+        {
+            m_modulation_indicator_value.reset();
+            repaint();
+        }
+        return;
+    }
+
+    const float clamped = juce::jlimit(0.0f, 1.0f, normalizedValue.value());
+    const bool changed = !m_modulation_indicator_value.has_value()
+                      || std::abs(m_modulation_indicator_value.value() - clamped) > 0.001f
+                      || m_modulation_indicator_colour != colour;
+
+    if (!changed)
+        return;
+
+    m_modulation_indicator_value = clamped;
+    m_modulation_indicator_colour = colour;
+    repaint();
+}
+
+void LayerCakeKnob::clear_modulation_indicator()
+{
+    if (m_modulation_indicator_value.has_value())
+    {
+        m_modulation_indicator_value.reset();
+        repaint();
+    }
+}
+
+void LayerCakeKnob::set_lfo_assignment_index(int index)
+{
+    m_lfo_assignment_index.store(index, std::memory_order_relaxed);
 }
 
 } // namespace LayerCakeApp

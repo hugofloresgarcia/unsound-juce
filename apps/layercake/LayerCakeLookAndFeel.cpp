@@ -4,6 +4,7 @@ namespace
 {
 constexpr float kButtonBorderThickness = 1.6f;
 constexpr float kInnerBorderThickness = 0.9f;
+const juce::Colour kSoftWhite(0xfff4f4f2);
 
 juce::Colour getAccentForButton(const juce::Button& button)
 {
@@ -18,7 +19,7 @@ LayerCakeLookAndFeel::LayerCakeLookAndFeel()
     m_background = juce::Colours::black;
     m_panel = juce::Colour(0xff050d17);
     m_border = juce::Colour(0xff2a3147);
-    m_terminal = juce::Colour(0xffffaEa5).brighter();
+    m_terminal = kSoftWhite;
     m_scanline = juce::Colour(0x3300b5ff);
     m_accentCyan = juce::Colour(0xff35c0ff);
     m_accentMagenta = juce::Colour(0xfff45bff);

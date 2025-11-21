@@ -9,6 +9,13 @@
 
 struct LayerCakePresetData
 {
+    struct LfoSlotData
+    {
+        int mode{0};
+        float rate_hz{0.5f};
+        float depth{0.5f};
+    };
+
     float master_gain_db{0.0f};
     GrainState manual_state;
     int record_layer{0};
@@ -16,7 +23,10 @@ struct LayerCakePresetData
     float pattern_subdivision{0.0f};
     float spread_amount{0.0f};
     float reverse_probability{0.0f};
+    bool clock_enabled{false};
     juce::NamedValueSet knob_values;
+    std::array<LfoSlotData, 3> lfo_slots{};
+    juce::NamedValueSet lfo_assignments;
 };
 
 using LayerBufferArray = std::array<LayerBufferSnapshot, LayerCakeEngine::kNumLayers>;

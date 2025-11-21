@@ -11,6 +11,10 @@
 #include "LayerCakeLibraryManager.h"
 #include "LibraryBrowserWindow.h"
 #include "LayerCakeKnob.h"
+#include "LayerCakeLfoWidget.h"
+#include <array>
+#include <vector>
+#include <atomic>
 
 namespace LayerCakeApp
 {
@@ -26,6 +30,7 @@ private:
 };
 
 class MainComponent : public juce::Component,
+                      public juce::DragAndDropContainer,
                       public juce::AudioIODeviceCallback,
                       public juce::KeyListener,
                       private juce::Timer
@@ -76,6 +81,16 @@ private:
     void request_pattern_rearm();
     void rearm_pattern_clock();
     void handle_pattern_button();
+    void advance_lfos(double now_ms);
+    void register_knob_for_lfo(LayerCakeKnob* knob);
+    void assign_lfo_to_knob(int lfo_index, LayerCakeKnob& knob);
+    void remove_lfo_from_knob(LayerCakeKnob& knob);
+    void update_all_modulation_overlays();
+    double get_effective_knob_value(const LayerCakeKnob* knob) const;
+    void update_record_layer_from_lfo();
+    void update_master_gain_from_knob();
+    void capture_lfo_state(LayerCakePresetData& data) const;
+    void apply_lfo_state(const LayerCakePresetData& data);
 
     LayerCakeEngine m_engine;
     juce::AudioDeviceManager m_device_manager;
@@ -120,6 +135,16 @@ private:
     int m_pattern_edit_depth{0};
     bool m_pattern_rearm_requested{false};
     bool m_loading_knob_values{false};
+    struct LfoSlot
+    {
+        flower::LayerCakeLfoUGen generator;
+        std::unique_ptr<LayerCakeLfoWidget> widget;
+        juce::Colour accent;
+        juce::String label;
+    };
+    std::array<LfoSlot, 3> m_lfo_slots;
+    std::array<std::atomic<float>, 3> m_lfo_last_values;
+    std::vector<LayerCakeKnob*> m_lfo_enabled_knobs;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

@@ -9,20 +9,21 @@ constexpr float kHighlightAlpha = 0.35f;
 constexpr float kPlayheadSway = 6.0f;
 constexpr float kBaseSquiggleCycles = 2.0f;
 constexpr float kLaneSpacing = 10.0f;
+const juce::Colour kSoftWhite(0xfff4f4f2);
 }
 
 LayerCakeDisplay::LayerCakeDisplay(LayerCakeEngine& engine)
     : m_engine(engine)
 {
     m_palette = {
-        juce::Colour(0xfff7e4c6),
-        juce::Colour(0xfff27d72),
-        juce::Colour(0xffa5d9ff),
-        juce::Colour(0xffd7bce8),
-        juce::Colour(0xff8dd18c),
-        juce::Colour(0xffe9f19c),
-        juce::Colour(0xfffcb879),
-        juce::Colour(0xffe06666)
+        juce::Colour(0xfffd5e53).darker(0.35f), // coral
+        juce::Colour(0xff35c0ff).darker(0.3f),  // cyan
+        juce::Colour(0xfff2b950).darker(0.35f), // amber
+        juce::Colour(0xff7d6bff).darker(0.3f),  // indigo
+        juce::Colour(0xff63ff87).darker(0.25f), // mint
+        juce::Colour(0xfff45bff).darker(0.3f),  // magenta
+        juce::Colour(0xffff8154).darker(0.35f), // tangerine
+        juce::Colour(0xff50f2d4).darker(0.3f)   // teal
     };
 
     m_invaders.reserve(6);
@@ -43,6 +44,7 @@ LayerCakeDisplay::LayerCakeDisplay(LayerCakeEngine& engine)
     refresh_waveforms();
     refresh_grains();
     startTimerHz(30);
+    regenerate_funfetti_texture(kDisplaySize + 120, kDisplaySize + 120);
 }
 
 void LayerCakeDisplay::paint(juce::Graphics& g)
@@ -59,18 +61,29 @@ void LayerCakeDisplay::paint(juce::Graphics& g)
     const float separator_thickness = 1.0f;
 
     auto bounds = getLocalBounds().toFloat();
-    g.fillAll(juce::Colour(0xff050505));
+    g.fillAll(juce::Colour(0xffffcccc));
 
     auto frame = bounds.withSizeKeepingCentre(static_cast<float>(kDisplaySize + 80),
                                               static_cast<float>(kDisplaySize + 90));
-    g.setColour(juce::Colour(0xff202020));
+    g.setColour(juce::Colour(0xff101010));
     g.fillRoundedRectangle(frame, frame_corner_radius);
-    g.setColour(juce::Colour(0xff3d3d3d));
-    g.drawRoundedRectangle(frame, frame_corner_radius, 4.0f);
+    g.setColour(kSoftWhite.withAlpha(0.35f));
+    g.drawRoundedRectangle(frame, frame_corner_radius, 3.0f);
 
     auto display = get_display_area();
-    g.setColour(juce::Colour(0xff050505));
-    g.fillRoundedRectangle(display, screen_corner_radius);
+    const int texWidth = juce::jmax(32, static_cast<int>(std::ceil(display.getWidth())));
+    const int texHeight = juce::jmax(32, static_cast<int>(std::ceil(display.getHeight())));
+    if (m_funfetti_texture.isNull()
+        || m_funfetti_texture.getWidth() != texWidth
+        || m_funfetti_texture.getHeight() != texHeight)
+    {
+        regenerate_funfetti_texture(texWidth, texHeight);
+    }
+    {
+        juce::Graphics::ScopedSaveState state(g);
+        g.setTiledImageFill(m_funfetti_texture, display.getX(), display.getY(), 1.0f);
+        g.fillRoundedRectangle(display, screen_corner_radius);
+    }
 
     const float position_indicator = m_position_indicator.load();
     const bool show_position = position_indicator >= 0.0f && position_indicator <= 1.0f;
@@ -90,10 +103,10 @@ void LayerCakeDisplay::paint(juce::Graphics& g)
         const bool is_record_layer = layer == m_record_layer;
         const float layer_mix = num_layers > 1 ? static_cast<float>(layer) / static_cast<float>(num_layers - 1)
                                                : 0.0f;
-        juce::Colour lane_colour = juce::Colours::black
-                                       .interpolatedWith(juce::Colour(0xffbbeeff), 0.35f + 0.35f * layer_mix);
+        juce::Colour layer_colour = m_palette[static_cast<size_t>(layer) % m_palette.size()];
+        juce::Colour lane_colour = layer_colour.darker(is_record_layer ? 0.35f : 0.55f).withAlpha(0.9f);
         if (is_record_layer)
-            lane_colour = lane_colour.brighter(0.2f);
+            lane_colour = lane_colour.brighter(0.25f);
         g.setColour(lane_colour);
         g.fillRoundedRectangle(lane, lane_corner_radius);
 
@@ -102,7 +115,8 @@ void LayerCakeDisplay::paint(juce::Graphics& g)
         waveform_bounds[static_cast<size_t>(layer)] = inner_lane;
 
         auto indicator_rect = indicator_area.reduced(4.0f, indicator_vertical_padding);
-        g.setColour(is_record_layer ? juce::Colour(0xffd83c3c) : juce::Colour(0xff2b2b2b));
+        const juce::Colour indicatorColour = layer_colour;
+        g.setColour(is_record_layer ? indicatorColour.brighter(0.2f) : indicatorColour.withAlpha(0.55f));
         g.fillRoundedRectangle(indicator_rect, indicator_corner_radius);
         g.setColour(juce::Colour(0xfff6f1d3));
         g.drawRoundedRectangle(indicator_rect, indicator_corner_radius, 1.5f);
@@ -110,7 +124,7 @@ void LayerCakeDisplay::paint(juce::Graphics& g)
         g.drawText(indicator_text, indicator_rect, juce::Justification::centred);
     }
 
-    g.setColour(juce::Colour(0x22101010));
+    g.setColour(kSoftWhite.withAlpha(0.08f));
     for (int layer = 1; layer < num_layers; ++layer)
     {
         const float y = display.getY() + layer * (lane_height + lane_spacing) - lane_spacing * 0.5f;
@@ -128,7 +142,7 @@ void LayerCakeDisplay::paint(juce::Graphics& g)
         if (area.isEmpty())
             continue;
 
-        juce::Colour wave_colour = juce::Colour(0xfff1e8c8).withAlpha(0.25f);
+        juce::Colour wave_colour = m_palette[layer % m_palette.size()].withAlpha(0.4f);
         g.setColour(wave_colour);
 
         juce::Path path;
@@ -310,6 +324,51 @@ void LayerCakeDisplay::update_invaders(float width, float height)
             inv.velocity.y *= -1.0f;
         inv.position.x = juce::jlimit(0.0f, width, inv.position.x);
         inv.position.y = juce::jlimit(0.0f, height, inv.position.y);
+    }
+}
+
+void LayerCakeDisplay::regenerate_funfetti_texture(int width, int height)
+{
+    if (width <= 0 || height <= 0)
+        return;
+
+    m_funfetti_texture = juce::Image(juce::Image::RGB, width, height, false);
+    juce::Graphics ig(m_funfetti_texture);
+    juce::Random rng;
+
+    for (int y = 0; y < height; ++y)
+    {
+        for (int x = 0; x < width; ++x)
+        {
+            const float hue = rng.nextFloat();
+            const float sat = 0.55f + rng.nextFloat() * 0.35f;
+            const float brightness = 0.65f + rng.nextFloat() * 0.35f;
+            const auto colour = juce::Colour::fromHSV(hue, sat, brightness, 1.0f);
+            m_funfetti_texture.setPixelAt(x, y, colour);
+        }
+    }
+
+    // overlay glitchy stripes for datamosh vibe
+    for (int stripe = 0; stripe < 40; ++stripe)
+    {
+        const float alpha = 0.15f + rng.nextFloat() * 0.25f;
+        auto colour = juce::Colour::fromHSV(rng.nextFloat(),
+                                            0.3f + rng.nextFloat() * 0.4f,
+                                            0.8f,
+                                            alpha);
+        const bool horizontal = rng.nextBool();
+        if (horizontal)
+        {
+            const int y = rng.nextInt(height);
+            ig.setColour(colour);
+            ig.fillRect(0, y, width, rng.nextInt(3) + 1);
+        }
+        else
+        {
+            const int x = rng.nextInt(width);
+            ig.setColour(colour);
+            ig.fillRect(x, 0, rng.nextInt(3) + 1, height);
+        }
     }
 }
 

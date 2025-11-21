@@ -33,6 +33,7 @@ private:
     bool has_supported_audio_extension(const juce::File& file) const;
     juce::Colour colour_for_voice(size_t voice_index);
     void update_invaders(float width, float height);
+    void regenerate_funfetti_texture(int width, int height);
 
     LayerCakeEngine& m_engine;
     int m_record_layer{0};
@@ -50,6 +51,7 @@ private:
     };
     std::vector<Invader> m_invaders;
     int m_waveform_counter{0};
+    juce::Image m_funfetti_texture;
 };
 
 
