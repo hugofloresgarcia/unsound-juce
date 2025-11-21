@@ -46,7 +46,7 @@ private:
     void adjust_record_layer(int delta);
     void toggle_record_enable();
     void trigger_manual_grain();
-    GrainState build_manual_grain_state() const;
+    GrainState build_manual_grain_state();
     void update_record_labels();
     void update_meter();
     void apply_pattern_settings(bool request_rearm = false);

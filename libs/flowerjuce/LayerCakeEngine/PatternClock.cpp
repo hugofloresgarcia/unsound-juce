@@ -118,7 +118,7 @@ void PatternClock::advance_step()
 void PatternClock::handle_record_step()
 {
     m_pattern_steps[m_current_step] = m_pending_record_state;
-    m_pattern_steps[m_current_step].skip_randomization = true;
+    // m_pattern_steps[m_current_step].skip_randomization = true;
     ++m_recorded_steps;
 
     const auto recorded_state = m_pattern_steps[m_current_step];
@@ -140,11 +140,15 @@ void PatternClock::handle_playback_step()
 
 void PatternClock::trigger_step_state(const GrainState& state)
 {
-    if (!m_enabled.load())
+    if (!m_enabled.load()){
+        DBG("PatternClock: not enabled. will not trigger step");
         return;
+    }
 
-    if (should_skip_step())
+    if (should_skip_step()){
+        DBG("PatternClock: rskip skipping skep.");
         return;
+    }
 
     GrainState local_state = state;
 
@@ -155,8 +159,10 @@ void PatternClock::trigger_step_state(const GrainState& state)
         local_state.should_trigger = true;
     }
 
-    if (!local_state.should_trigger)
+    if (!local_state.should_trigger){
+        DBG("PatternClock: local state suggested we shouldn't trigger.");
         return;
+    }
 
     m_engine.trigger_grain(local_state, true);
 }
@@ -187,7 +193,6 @@ void PatternClock::prime_pending_state()
         const juce::SpinLock::ScopedLockType lock(m_auto_state_lock);
         m_pending_record_state = m_auto_fire_state;
         m_pending_record_state.should_trigger = true;
-        m_pending_record_state.skip_randomization = false;
     }
 }
 
@@ -200,7 +205,6 @@ void PatternClock::set_auto_fire_state(const GrainState& state)
 {
     const juce::SpinLock::ScopedLockType lock(m_auto_state_lock);
     m_auto_fire_state = state;
-    m_auto_fire_state.skip_randomization = false;
 }
 
 void PatternClock::get_snapshot(PatternSnapshot& snapshot) const

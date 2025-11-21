@@ -17,10 +17,7 @@ struct GrainState
     bool play_forward{true};
     int layer{0};
     float pan{0.5f};                  // 0.0 = left, 1.0 = right
-    float spread_amount{0.0f};        // 0.0 = none, 1.0 = max randomization
-    float reverse_probability{0.0f};  // probability of reversing playback
     bool should_trigger{false};       // false indicates a "null" GrainState entry
-    bool skip_randomization{false};   // true when this state should play exactly as stored
 
     bool is_valid() const noexcept { return should_trigger; }
 };

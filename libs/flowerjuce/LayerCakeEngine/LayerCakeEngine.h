@@ -53,6 +53,8 @@ public:
     void capture_all_layer_snapshots(std::array<LayerBufferSnapshot, kNumLayers>& snapshots) const;
     void apply_layer_snapshot(int layer_index, const LayerBufferSnapshot& snapshot);
 
+    void apply_spread_randomization(GrainState& state, float spread_amount);
+    void apply_direction_randomization(GrainState& state, float reverse_prob);
 private:
     void allocate_layers(double sample_rate);
     void rebuild_write_head();
@@ -63,9 +65,6 @@ private:
                                   int num_input_channels,
                                   int buffer_sample_index,
                                   size_t absolute_sample_index);
-    void apply_randomization(GrainState& state);
-    void apply_spread_randomization(GrainState& state);
-    void apply_direction_randomization(GrainState& state);
 
     std::array<TapeLoop, kNumLayers> m_layers;
     std::array<std::unique_ptr<GrainVoice>, kNumVoices> m_voices;

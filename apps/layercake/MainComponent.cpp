@@ -131,7 +131,7 @@ MainComponent::MainComponent()
     addAndMakeVisible(m_record_button);
 
     configureControlButton(m_clock_button, "[clk]", kAccentAmber, true);
-    m_clock_button.setToggleState(true, juce::dontSendNotification);
+    m_clock_button.setToggleState(false, juce::dontSendNotification);
     m_clock_button.setTooltip("Toggle clocked auto grains");
     m_clock_button.onClick = [this]() { update_auto_grain_settings(); };
     addAndMakeVisible(m_clock_button);
@@ -490,7 +490,7 @@ void MainComponent::trigger_manual_grain()
     m_engine.trigger_grain(state);
 }
 
-GrainState MainComponent::build_manual_grain_state() const
+GrainState MainComponent::build_manual_grain_state()
 {
     GrainState state;
     const int layer = m_engine.get_record_layer();
@@ -521,9 +521,14 @@ GrainState MainComponent::build_manual_grain_state() const
     state.play_forward = true;
     state.layer = layer;
     state.pan = static_cast<float>(m_pan_knob->slider().getValue());
-    state.spread_amount = m_spread_knob != nullptr ? static_cast<float>(m_spread_knob->slider().getValue()) : 0.0f;
-    state.reverse_probability = m_direction_knob != nullptr ? static_cast<float>(m_direction_knob->slider().getValue()) : 0.0f;
-    state.skip_randomization = false;
+    float spread_amount = m_spread_knob != nullptr ? static_cast<float>(m_spread_knob->slider().getValue()) : 0.0f;
+    float reverse_probability = m_direction_knob != nullptr ? static_cast<float>(m_direction_knob->slider().getValue()) : 0.0f;
+
+    // TODO: modify loop_start according to spread
+    m_engine.apply_spread_randomization(state, spread_amount);
+    m_engine.apply_direction_randomization(state, reverse_probability);
+    // TODO, modify direction according to reverse prob. 
+
     state.should_trigger = true;
     return state;
 }
@@ -719,15 +724,10 @@ void MainComponent::sync_manual_state_from_controls()
                                                    : 0.5;
     m_manual_state.env_attack_ms = static_cast<float>(duration_ms * (1.0 - env_value));
     m_manual_state.env_release_ms = static_cast<float>(duration_ms * env_value);
-    m_manual_state.spread_amount = m_spread_knob != nullptr ? static_cast<float>(m_spread_knob->slider().getValue())
-                                                            : 0.0f;
-    m_manual_state.reverse_probability = m_direction_knob != nullptr ? static_cast<float>(m_direction_knob->slider().getValue())
-                                                                     : 0.0f;
     m_manual_state.play_forward = true;
     m_manual_state.pan = static_cast<float>(m_pan_knob->slider().getValue());
     m_manual_state.layer = layer;
     m_manual_state.should_trigger = false;
-    m_manual_state.skip_randomization = false;
     m_display.set_position_indicator(static_cast<float>(m_loop_start_knob->slider().getValue()));
     update_auto_grain_settings();
 }

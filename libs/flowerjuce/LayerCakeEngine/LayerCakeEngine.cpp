@@ -247,31 +247,20 @@ void LayerCakeEngine::trigger_grain(const GrainState& state, bool triggered_by_p
         return;
     }
 
-    apply_randomization(queued_state);
 
+    // record the grain into the pattern.
     if (!triggered_by_pattern_clock && m_pattern_clock != nullptr)
     {
-        auto recorded_state = queued_state;
-        recorded_state.skip_randomization = true;
-        m_pattern_clock->capture_step_grain(recorded_state);
+        m_pattern_clock->capture_step_grain(queued_state);
     }
 
     const juce::SpinLock::ScopedLockType lock(m_grain_queue_lock);
     m_pending_grains.push_back(queued_state);
 }
 
-void LayerCakeEngine::apply_randomization(GrainState& state)
+void LayerCakeEngine::apply_spread_randomization(GrainState& state, float spread_amount) 
 {
-    if (state.skip_randomization)
-        return;
-
-    apply_spread_randomization(state);
-    apply_direction_randomization(state);
-}
-
-void LayerCakeEngine::apply_spread_randomization(GrainState& state)
-{
-    const float spread = juce::jlimit(0.0f, 1.0f, state.spread_amount);
+    const float spread = juce::jlimit(0.0f, 1.0f, spread_amount);
     if (spread <= 0.0f)
         return;
 
@@ -302,9 +291,9 @@ void LayerCakeEngine::apply_spread_randomization(GrainState& state)
     state.loop_start_seconds = static_cast<float>(new_start);
 }
 
-void LayerCakeEngine::apply_direction_randomization(GrainState& state)
+void LayerCakeEngine::apply_direction_randomization(GrainState& state, float reverse_prob) 
 {
-    const float probability = juce::jlimit(0.0f, 1.0f, state.reverse_probability);
+    const float probability = juce::jlimit(0.0f, 1.0f, reverse_prob);
     if (probability <= 0.0f)
     {
         state.play_forward = true;

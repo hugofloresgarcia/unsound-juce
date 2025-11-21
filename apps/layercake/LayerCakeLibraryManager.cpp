@@ -28,9 +28,6 @@ juce::var grain_state_to_var(const GrainState& state)
     obj->setProperty("playForward", state.play_forward);
     obj->setProperty("layer", state.layer);
     obj->setProperty("pan", state.pan);
-    obj->setProperty("spreadAmount", state.spread_amount);
-    obj->setProperty("reverseProbability", state.reverse_probability);
-    obj->setProperty("skipRandomization", state.skip_randomization);
     obj->setProperty("shouldTrigger", state.should_trigger);
     return obj;
 }
@@ -52,18 +49,6 @@ bool grain_state_from_var(const juce::var& value, GrainState& out_state)
     out_state.play_forward = obj->getProperty("playForward");
     out_state.layer = static_cast<int>(obj->getProperty("layer"));
     out_state.pan = static_cast<float>(obj->getProperty("pan"));
-    if (obj->hasProperty("spreadAmount"))
-        out_state.spread_amount = static_cast<float>(obj->getProperty("spreadAmount"));
-    else
-        out_state.spread_amount = 0.0f;
-    if (obj->hasProperty("reverseProbability"))
-        out_state.reverse_probability = static_cast<float>(obj->getProperty("reverseProbability"));
-    else
-        out_state.reverse_probability = 0.0f;
-    if (obj->hasProperty("skipRandomization"))
-        out_state.skip_randomization = static_cast<bool>(obj->getProperty("skipRandomization"));
-    else
-        out_state.skip_randomization = false;
     out_state.should_trigger = static_cast<bool>(obj->getProperty("shouldTrigger"));
     return true;
 }
