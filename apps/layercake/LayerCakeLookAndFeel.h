@@ -39,6 +39,10 @@ public:
     juce::Colour getPanelColour() const noexcept { return m_panel; }
     juce::Colour getWaveformColour() const noexcept { return m_waveform_colour; }
     juce::Colour getKnobLabelColour() const noexcept { return m_knob_label_colour; }
+    juce::Colour getKnobRecorderIdleColour() const noexcept;
+    juce::Colour getKnobRecorderArmedColour() const noexcept;
+    juce::Colour getKnobRecorderRecordingColour() const noexcept;
+    juce::Colour getKnobRecorderPlayingColour() const noexcept;
     juce::Colour getLayerColour(size_t index) const noexcept;
 
     juce::Colour getControlAccentColour(ControlButtonType type) const noexcept;

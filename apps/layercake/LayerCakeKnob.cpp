@@ -11,6 +11,9 @@ constexpr int kLabelHeight = 18;
 constexpr int kLabelGap = 4;
 constexpr int kValueAreaPadding = 6;
 constexpr int kValueLabelInset = 8;
+constexpr int kRecorderButtonSize = 22;
+constexpr int kRecorderButtonMargin = 6;
+constexpr double kBlinkIntervalMs = 320.0;
 }
 
 LayerCakeKnob::LayerCakeKnob(const Config& config, Shared::MidiLearnManager* midiManager)
@@ -28,10 +31,13 @@ LayerCakeKnob::LayerCakeKnob(const Config& config, Shared::MidiLearnManager* mid
     m_slider.setAlpha(0.0f);
     m_slider.setInterceptsMouseClicks(true, true);
     m_slider.addListener(this);
+    if (sweep_recorder_enabled())
+        m_slider.addMouseListener(this, true);
     addAndMakeVisible(m_slider);
 
     m_label.setText(config.labelText, juce::dontSendNotification);
     m_label.setJustificationType(juce::Justification::centred);
+    m_label.addMouseListener(this, false);
     addAndMakeVisible(m_label);
 
     m_value_label.setJustificationType(juce::Justification::centred);
@@ -39,7 +45,23 @@ LayerCakeKnob::LayerCakeKnob(const Config& config, Shared::MidiLearnManager* mid
                                      .withName(juce::Font::getDefaultMonospacedFontName())
                                      .withHeight(16.0f)));
     m_value_label.setInterceptsMouseClicks(false, false);
+    m_value_label.addMouseListener(this, false);
     addAndMakeVisible(m_value_label);
+
+    if (sweep_recorder_enabled())
+    {
+        m_recorder_button = std::make_unique<KnobRecorderButton>();
+        if (m_recorder_button != nullptr)
+        {
+            m_recorder_button->onPressed = [this]() { handle_touch_begin(true); };
+            m_recorder_button->onReleased = [this]() { handle_touch_end(); };
+            addAndMakeVisible(m_recorder_button.get());
+            update_recorder_button();
+        }
+    }
+
+    m_sweep_recorder.prepare(44100.0);
+    m_sweep_recorder.set_idle_value(static_cast<float>(m_slider.getValue()));
 
     register_midi_parameter();
     update_value_label();
@@ -49,6 +71,10 @@ LayerCakeKnob::LayerCakeKnob(const Config& config, Shared::MidiLearnManager* mid
 LayerCakeKnob::~LayerCakeKnob()
 {
     m_slider.removeListener(this);
+    if (sweep_recorder_enabled())
+        m_slider.removeMouseListener(this);
+    m_label.removeMouseListener(this);
+    m_value_label.removeMouseListener(this);
     if (m_mouse_listener != nullptr)
         m_slider.removeMouseListener(m_mouse_listener.get());
 
@@ -120,26 +146,79 @@ void LayerCakeKnob::paint(juce::Graphics& g)
     juce::Point<float> pointer(centre.x  + pointerLength * std::cos(angle - (4*3.1415)/8),
                                centre.y  + pointerLength * std::sin(angle - (4*3.1415)/8));
 
-    // g.setColour(accent);
-    // g.drawLine(centre.x, centre.y, pointer.x, pointer.y, 2.4f);
     g.fillEllipse(pointer.x - 3.0f, pointer.y - 3.0f, 6.0f, 6.0f);
+
+    if (sweep_recorder_enabled())
+    {
+        const auto recorderColour = accent.withAlpha(0.45f);
+        switch (m_recorder_state)
+        {
+            case RecorderState::Armed:
+                if (m_blink_visible)
+                {
+                    g.setColour(recorderColour);
+                    g.drawEllipse(circle, 2.0f);
+                }
+                break;
+            case RecorderState::Recording:
+                g.setColour(recorderColour.brighter(0.2f));
+                g.drawEllipse(circle.reduced(4.0f), 2.0f);
+                break;
+            case RecorderState::Looping:
+                g.setColour(recorderColour.withAlpha(0.35f));
+                g.drawEllipse(circle.reduced(6.0f), 1.6f);
+                break;
+            case RecorderState::Idle:
+            default:
+                break;
+        }
+    }
 }
 
 void LayerCakeKnob::resized()
 {
+    const int labelHeight = kLabelHeight;
+    const int labelGap = kLabelGap;
+    const int valuePadding = kValueAreaPadding;
+    const int valueInset = kValueLabelInset;
+    const int recorderButtonSize = kRecorderButtonSize;
+    const int recorderButtonMargin = kRecorderButtonMargin;
+
     auto bounds = getLocalBounds();
-    auto labelBounds = bounds.removeFromBottom(kLabelHeight);
-    labelBounds.removeFromTop(kLabelGap);
+    auto labelBounds = bounds.removeFromBottom(labelHeight);
+    labelBounds.removeFromTop(labelGap);
     m_label.setBounds(labelBounds);
 
-    auto valueBounds = bounds.reduced(kValueAreaPadding);
+    auto valueBounds = bounds.reduced(valuePadding);
     m_slider.setBounds(valueBounds);
-    m_value_label.setBounds(valueBounds.reduced(kValueLabelInset));
+    m_value_label.setBounds(valueBounds.reduced(valueInset));
+
+    if (m_recorder_button != nullptr)
+    {
+        juce::Rectangle<int> buttonBounds(recorderButtonSize, recorderButtonSize);
+        const int targetX = valueBounds.getRight() - recorderButtonMargin - recorderButtonSize;
+        const int targetY = valueBounds.getY() + recorderButtonMargin;
+        buttonBounds.setPosition(targetX, targetY);
+        m_recorder_button->setBounds(buttonBounds);
+        m_recorder_button->toFront(false);
+    }
 }
 
 void LayerCakeKnob::lookAndFeelChanged()
 {
     apply_look_and_feel_colours();
+}
+
+void LayerCakeKnob::mouseDown(const juce::MouseEvent& event)
+{
+    if (sweep_recorder_enabled() && event.mods.isPopupMenu())
+    {
+        DBG("LayerCakeKnob::mouseDown early return (handled recorder menu)");
+        show_recorder_menu(event);
+        return;
+    }
+
+    juce::Component::mouseDown(event);
 }
 
 void LayerCakeKnob::register_midi_parameter()
@@ -194,10 +273,45 @@ void LayerCakeKnob::sliderValueChanged(juce::Slider* slider)
     }
 
     if (slider != &m_slider)
+    {
+        DBG("LayerCakeKnob::sliderValueChanged early return (mismatched slider)");
         return;
+    }
 
     update_value_label();
+    sync_recorder_idle_value();
+
+    if (sweep_recorder_enabled() && m_sweep_recorder.is_recording() && !m_is_applying_loop_value)
+    {
+        const double now_ms = juce::Time::getMillisecondCounterHiRes();
+        m_sweep_recorder.push_sample(now_ms, static_cast<float>(m_slider.getValue()));
+    }
+
     repaint();
+}
+
+void LayerCakeKnob::sliderDragStarted(juce::Slider* slider)
+{
+    if (slider == &m_slider)
+    {
+        handle_touch_begin(false);
+    }
+    else
+    {
+        DBG("LayerCakeKnob::sliderDragStarted early return (mismatched slider)");
+    }
+}
+
+void LayerCakeKnob::sliderDragEnded(juce::Slider* slider)
+{
+    if (slider == &m_slider)
+    {
+        handle_touch_end();
+    }
+    else
+    {
+        DBG("LayerCakeKnob::sliderDragEnded early return (mismatched slider)");
+    }
 }
 
 void LayerCakeKnob::apply_look_and_feel_colours()
@@ -214,6 +328,245 @@ void LayerCakeKnob::apply_look_and_feel_colours()
 
     m_label.setColour(juce::Label::textColourId, knobLabelColour);
     m_value_label.setColour(juce::Label::textColourId, valueColour);
+
+    if (m_recorder_button != nullptr)
+    {
+        juce::Colour idleColour = knobLabelColour.withAlpha(0.35f);
+        juce::Colour armedColour = knobLabelColour.brighter(0.25f);
+        juce::Colour recordingColour = juce::Colours::red;
+        juce::Colour playingColour = juce::Colours::green;
+        juce::Colour borderColour = valueColour;
+
+        if (auto* layercake = dynamic_cast<LayerCakeLookAndFeel*>(&laf))
+        {
+            idleColour = layercake->getKnobRecorderIdleColour();
+            armedColour = layercake->getKnobRecorderArmedColour();
+            recordingColour = layercake->getKnobRecorderRecordingColour();
+            playingColour = layercake->getKnobRecorderPlayingColour();
+            borderColour = layercake->getControlAccentColour(LayerCakeLookAndFeel::ControlButtonType::Trigger);
+        }
+
+        m_recorder_button->setColour(KnobRecorderButton::idleColourId, idleColour);
+        m_recorder_button->setColour(KnobRecorderButton::armedColourId, armedColour);
+        m_recorder_button->setColour(KnobRecorderButton::recordingColourId, recordingColour);
+        m_recorder_button->setColour(KnobRecorderButton::playingColourId, playingColour);
+        m_recorder_button->setColour(KnobRecorderButton::textColourId, valueColour);
+        m_recorder_button->setColour(KnobRecorderButton::borderColourId, borderColour);
+    }
+}
+
+void LayerCakeKnob::timerCallback()
+{
+    const bool shouldLoop = (m_recorder_state == RecorderState::Looping) && m_sweep_recorder.is_playing();
+    if (shouldLoop)
+    {
+        const double now_ms = juce::Time::getMillisecondCounterHiRes();
+        const float loopValue = m_sweep_recorder.get_value(now_ms);
+        const juce::ScopedValueSetter<bool> playbackSetter(m_is_applying_loop_value, true);
+        m_slider.setValue(loopValue, juce::sendNotificationSync);
+    }
+
+    if (m_recorder_state == RecorderState::Armed)
+    {
+        const double now_ms = juce::Time::getMillisecondCounterHiRes();
+        if (now_ms - m_last_blink_toggle_ms >= kBlinkIntervalMs)
+        {
+            m_last_blink_toggle_ms = now_ms;
+            m_blink_visible = !m_blink_visible;
+            repaint();
+        }
+    }
+    else if (m_blink_visible)
+    {
+        m_blink_visible = false;
+        repaint();
+    }
+
+    if (!shouldLoop)
+        update_timer_activity();
+}
+
+void LayerCakeKnob::show_recorder_menu(const juce::MouseEvent& event)
+{
+    if (sweep_recorder_enabled())
+    {
+        juce::PopupMenu menu;
+        const bool canRecord = m_recorder_state != RecorderState::Recording;
+        const bool canClear = m_recorder_state != RecorderState::Idle;
+        menu.addItem(1, "Record sweep", canRecord);
+        menu.addItem(2, "Clear sweep", canClear);
+
+        auto callback = juce::ModalCallbackFunction::create([this](int result)
+        {
+            if (result == 1)
+                arm_sweep_recorder();
+            else if (result == 2)
+                clear_sweep_recorder("menu");
+        });
+
+        juce::Rectangle<int> screenArea(event.getScreenX(), event.getScreenY(), 1, 1);
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this)
+                                                  .withTargetScreenArea(screenArea),
+                           callback);
+    }
+    else
+    {
+        DBG("LayerCakeKnob::show_recorder_menu skipped (recorder disabled)");
+    }
+}
+
+void LayerCakeKnob::arm_sweep_recorder()
+{
+    if (sweep_recorder_enabled())
+    {
+        m_sweep_recorder.arm();
+        update_recorder_state(RecorderState::Armed);
+        update_blink_state(true);
+        DBG("LayerCakeKnob::arm_sweep_recorder armed");
+    }
+    else
+    {
+        DBG("LayerCakeKnob::arm_sweep_recorder skipped (recorder disabled)");
+    }
+}
+
+void LayerCakeKnob::clear_sweep_recorder(const juce::String& reason)
+{
+    if (sweep_recorder_enabled())
+    {
+        DBG("LayerCakeKnob::clear_sweep_recorder reason=" + reason);
+        m_sweep_recorder.clear();
+        update_recorder_state(RecorderState::Idle);
+        update_blink_state(true);
+    }
+    else
+    {
+        DBG("LayerCakeKnob::clear_sweep_recorder skipped (recorder disabled)");
+    }
+}
+
+void LayerCakeKnob::update_recorder_state(RecorderState next_state)
+{
+    if (m_recorder_state != next_state)
+    {
+        m_recorder_state = next_state;
+        update_recorder_button();
+        update_timer_activity();
+        repaint();
+    }
+}
+
+void LayerCakeKnob::begin_sweep_recording(double now_ms)
+{
+    if (sweep_recorder_enabled())
+    {
+        m_sweep_recorder.begin_record(now_ms);
+        m_sweep_recorder.push_sample(now_ms, static_cast<float>(m_slider.getValue()));
+        update_recorder_state(RecorderState::Recording);
+    }
+    else
+    {
+        DBG("LayerCakeKnob::begin_sweep_recording skipped (recorder disabled)");
+    }
+}
+
+void LayerCakeKnob::finish_sweep_recording()
+{
+    if (sweep_recorder_enabled())
+    {
+        const double now_ms = juce::Time::getMillisecondCounterHiRes();
+        m_sweep_recorder.push_sample(now_ms, static_cast<float>(m_slider.getValue()));
+        m_sweep_recorder.end_record();
+
+        if (m_sweep_recorder.is_playing())
+            update_recorder_state(RecorderState::Looping);
+        else
+            update_recorder_state(RecorderState::Idle);
+    }
+    else
+    {
+        DBG("LayerCakeKnob::finish_sweep_recording skipped (recorder disabled)");
+    }
+}
+
+void LayerCakeKnob::handle_touch_begin(bool initiated_by_button)
+{
+    if (sweep_recorder_enabled())
+    {
+        if (m_recorder_state == RecorderState::Looping)
+            clear_sweep_recorder("touch");
+
+        if (m_recorder_state == RecorderState::Armed)
+            begin_sweep_recording(juce::Time::getMillisecondCounterHiRes());
+    }
+    else
+    {
+        DBG("LayerCakeKnob::handle_touch_begin skipped (recorder disabled)");
+    }
+
+    juce::ignoreUnused(initiated_by_button);
+}
+
+void LayerCakeKnob::handle_touch_end()
+{
+    if (sweep_recorder_enabled())
+    {
+        if (m_recorder_state == RecorderState::Recording)
+            finish_sweep_recording();
+    }
+    else
+    {
+        DBG("LayerCakeKnob::handle_touch_end skipped (recorder disabled)");
+    }
+}
+
+void LayerCakeKnob::update_recorder_button()
+{
+    if (m_recorder_button != nullptr)
+    {
+        auto status = KnobRecorderButton::Status::Idle;
+        switch (m_recorder_state)
+        {
+            case RecorderState::Armed: status = KnobRecorderButton::Status::Armed; break;
+            case RecorderState::Recording: status = KnobRecorderButton::Status::Recording; break;
+            case RecorderState::Looping: status = KnobRecorderButton::Status::Playing; break;
+            case RecorderState::Idle:
+            default: status = KnobRecorderButton::Status::Idle; break;
+        }
+
+        m_recorder_button->setStatus(status);
+    }
+}
+
+void LayerCakeKnob::update_timer_activity()
+{
+    if (sweep_recorder_enabled())
+    {
+        const bool needsTimer = (m_recorder_state == RecorderState::Armed)
+                             || (m_recorder_state == RecorderState::Looping && m_sweep_recorder.is_playing());
+        if (needsTimer && !isTimerRunning())
+            startTimerHz(60);
+        else if (!needsTimer && isTimerRunning())
+            stopTimer();
+    }
+}
+
+void LayerCakeKnob::update_blink_state(bool force_reset)
+{
+    if (force_reset)
+        m_blink_visible = false;
+
+    if (m_recorder_state == RecorderState::Armed)
+    {
+        m_last_blink_toggle_ms = juce::Time::getMillisecondCounterHiRes();
+        m_blink_visible = true;
+    }
+}
+
+void LayerCakeKnob::sync_recorder_idle_value()
+{
+    if (sweep_recorder_enabled())
+        m_sweep_recorder.set_idle_value(static_cast<float>(m_slider.getValue()));
 }
 
 } // namespace LayerCakeApp

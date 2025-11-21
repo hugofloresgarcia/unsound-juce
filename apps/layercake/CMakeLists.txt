@@ -20,6 +20,8 @@ target_sources(LayerCakeApp PRIVATE
     LibraryBrowserWindow.h
     LayerCakeKnob.cpp
     LayerCakeKnob.h
+    KnobRecorderButton.cpp
+    KnobRecorderButton.h
 )
 
 target_link_libraries(LayerCakeApp PRIVATE

@@ -104,7 +104,8 @@ MainComponent::MainComponent()
     m_record_status_label.setColour(juce::Label::textColourId, kAccentMagenta);
     addAndMakeVisible(m_record_status_label);
 
-    auto makeKnob = [this](const LayerCakeKnob::Config& config) {
+    auto makeKnob = [this](LayerCakeKnob::Config config, bool enableRecorder = true) {
+        config.enableSweepRecorder = enableRecorder;
         auto knob = std::make_unique<LayerCakeKnob>(config, &m_midi_learn_manager);
         addAndMakeVisible(knob.get());
         return knob;
@@ -125,7 +126,7 @@ MainComponent::MainComponent()
 
     m_loop_start_knob = makeKnob({ "position", 0.0, 1.0, 0.5, 0.001, "", "layercake_position" });
     bindManualKnob(m_loop_start_knob.get());
-    m_duration_knob = makeKnob({ "duration", 10.0, 1000.0, 300.0, 1.0, " ms", "layercake_duration" });
+    m_duration_knob = makeKnob({ "duration", 10.0, 5000.0, 300.0, 1.0, " ms", "layercake_duration" });
     bindManualKnob(m_duration_knob.get());
     m_rate_knob = makeKnob({ "rate", -24.0, 24.0, 0.0, 0.1, " st", "layercake_rate" });
     bindManualKnob(m_rate_knob.get());

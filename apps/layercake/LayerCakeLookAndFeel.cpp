@@ -179,6 +179,26 @@ juce::Colour LayerCakeLookAndFeel::getLayerColour(size_t index) const noexcept
     return m_layer_colours[index % m_layer_colours.size()];
 }
 
+juce::Colour LayerCakeLookAndFeel::getKnobRecorderIdleColour() const noexcept
+{
+    return m_knob_label_colour.withAlpha(0.35f);
+}
+
+juce::Colour LayerCakeLookAndFeel::getKnobRecorderArmedColour() const noexcept
+{
+    return getControlAccentColour(ControlButtonType::Record).brighter(0.35f);
+}
+
+juce::Colour LayerCakeLookAndFeel::getKnobRecorderRecordingColour() const noexcept
+{
+    return getControlAccentColour(ControlButtonType::Record);
+}
+
+juce::Colour LayerCakeLookAndFeel::getKnobRecorderPlayingColour() const noexcept
+{
+    return getControlAccentColour(ControlButtonType::Clock);
+}
+
 juce::Colour LayerCakeLookAndFeel::getControlAccentColour(ControlButtonType type) const noexcept
 {
     switch (type)
