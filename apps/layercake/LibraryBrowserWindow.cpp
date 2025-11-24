@@ -174,7 +174,15 @@ LibraryBrowserComponent::LibraryBrowserComponent(LayerCakeLibraryManager& manage
       m_capture_knobset_fn(std::move(capture_knobset_fn)),
       m_apply_knobset_fn(std::move(apply_knobset_fn))
 {
-    auto configureColumn = [this](ColumnWidgets& widgets, ColumnType type, const juce::String& placeholder)
+    const juce::Colour paletteBorder(0xfffd5e53);
+    const juce::Colour patternBorder(0xff63ff87);
+    const juce::Colour knobsetBorder(0xfff2b950);
+    const juce::Colour sceneBorder(0xff35c0ff);
+
+    auto configureColumn = [this](ColumnWidgets& widgets,
+                                  ColumnType type,
+                                  const juce::String& placeholder,
+                                  juce::Colour borderColour)
     {
         widgets.title.setText(column_title(type).toLowerCase(), juce::dontSendNotification);
         widgets.title.setJustificationType(juce::Justification::centred);
@@ -188,19 +196,25 @@ LibraryBrowserComponent::LibraryBrowserComponent(LayerCakeLibraryManager& manage
         widgets.save_button.setButtonText("save");
         widgets.save_button.addListener(this);
         widgets.save_button.setWantsKeyboardFocus(false);
+        widgets.save_button.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+        widgets.save_button.setColour(juce::TextButton::buttonOnColourId, borderColour.withAlpha(0.4f));
+        widgets.save_button.setColour(juce::ComboBox::outlineColourId, borderColour);
+        widgets.save_button.setColour(juce::TextButton::textColourOffId, borderColour);
+        widgets.save_button.setColour(juce::TextButton::textColourOnId, borderColour);
         addAndMakeVisible(widgets.save_button);
 
         widgets.list_box.setRowHeight(kRowHeight);
-        widgets.list_box.setOutlineThickness(0);
+        widgets.list_box.setOutlineThickness(2);
+        widgets.list_box.setColour(juce::ListBox::outlineColourId, borderColour);
         widgets.model = std::make_unique<ColumnModel>(*this, type);
         widgets.list_box.setModel(widgets.model.get());
         addAndMakeVisible(widgets.list_box);
     };
 
-    configureColumn(m_palette_widgets, ColumnType::Palette, "new palette name");
-    configureColumn(m_pattern_widgets, ColumnType::Pattern, "new pattern name");
-    configureColumn(m_knobset_widgets, ColumnType::Knobset, "new knobset name");
-    configureColumn(m_scene_widgets, ColumnType::Scene, "new scene name");
+    configureColumn(m_palette_widgets, ColumnType::Palette, "new palette name", paletteBorder);
+    configureColumn(m_pattern_widgets, ColumnType::Pattern, "new pattern name", patternBorder);
+    configureColumn(m_knobset_widgets, ColumnType::Knobset, "new knobset name", knobsetBorder);
+    configureColumn(m_scene_widgets, ColumnType::Scene, "new scene name", sceneBorder);
 
     refresh_lists();
 }
@@ -245,9 +259,11 @@ void LibraryBrowserComponent::resized()
         auto title_area = column_area.removeFromTop(titleHeight);
         widgets.title.setBounds(title_area.reduced(0, titleVerticalPadding));
         column_area.removeFromTop(editorSpacing);
-        widgets.name_editor.setBounds(column_area.removeFromTop(editorHeight));
-        column_area.removeFromTop(editorSpacing);
-        widgets.save_button.setBounds(column_area.removeFromTop(buttonHeight));
+        auto editorRow = column_area.removeFromTop(editorHeight);
+        const int buttonWidth = 80;
+        auto buttonArea = editorRow.removeFromRight(buttonWidth);
+        widgets.save_button.setBounds(buttonArea);
+        widgets.name_editor.setBounds(editorRow.reduced(0, 1));
         column_area.removeFromTop(listSpacing);
         widgets.list_box.setBounds(column_area);
     };

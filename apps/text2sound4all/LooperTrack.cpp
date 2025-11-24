@@ -136,7 +136,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
       midiLearnManager(midiManager),
       trackIdPrefix("track" + juce::String(index)),
       pannerType(stringToPannerType(pannerTypeStr)),
-      stereoPanSlider(juce::Slider::LinearHorizontal, juce::Slider::NoTextBox),
+      stereoPanSlider(juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox),
       panLabel("pan", "pan"),
       panCoordLabel("coord", "0.50, 0.50")
 {
@@ -392,6 +392,7 @@ LooperTrack::LooperTrack(MultiTrackLooperEngine& engine, int index, std::functio
         panner = std::make_unique<StereoPanner>();
         stereoPanSlider.setRange(0.0, 1.0, 0.01);
         stereoPanSlider.setValue(0.5); // Center
+        stereoPanSlider.setDoubleClickReturnValue(true, 0.5);
         stereoPanSlider.onValueChange = [this] {
             if (auto* stereoPanner = dynamic_cast<StereoPanner*>(panner.get()))
             {
@@ -678,31 +679,55 @@ void LooperTrack::resized()
 {
     // Layout constants
     const int componentMargin = 5;
+    const int spacingSmall = 5;
+    
+    // Header
     const int trackLabelHeight = 20;
     const int resetButtonSize = 20;
-    const int spacingSmall = 5;
+    
+    // Text prompt
+    const int textPromptLabelHeight = 15;
     const int textPromptHeight = 30;
+    
+    // Controls
     const int buttonHeight = 30;
     const int generateButtonHeight = 30;
-    const int knobAreaHeight = 210; // Increased to fit 3 knobs (speed, duration, cutoff)
-    const int controlsHeight = 230; // Increased to accommodate level control + 3 knobs + autogen toggle
-    const int cutoffKnobSize = 50; // Smaller to match path control knobs
+    const int knobAreaHeight = 210; // Fits speed, duration, cutoff
+    const int controlsHeight = 230; // Level control + knobs + autogen
+    const int cutoffKnobSize = 50;
     const int cutoffLabelHeight = 12;
     
+    // Variation + labels
     const int labelHeight = 15;
-    const int textPromptLabelHeight = 15;
-    const int variationSelectorHeight = 25; // Smaller height for smaller font
-    const int pannerHeight = 150; // 2D panner height
+    const int variationSelectorHeight = 25;
+    
+    // Panner sizing
+    const int panner2DBaseHeight = 150;
+    const int stereoPannerDiameter = 70;
+    const int stereoPannerPadding = 10;
+    const int stereoPannerBaseHeight = stereoPannerDiameter + stereoPannerPadding;
+    
+    // Path controls (2D only)
+    const int pathButtonHeight = 54;
+    const int pathControlKnobSize = 60;
+    const int pathControlKnobLabelHeight = 15;
+    const int pathControlKnobSpacing = 10;
+    
+    // Maximum waveform height - prevents waveform from growing too large
+    const int maxWaveformHeight = 50;
+    
+    const bool has2DPanner = (panner2DComponent != nullptr && panner2DComponent->isVisible());
+    const bool hasStereoPanner = (pannerType == PannerType::Stereo && stereoPanSlider.isVisible());
+    const bool hasPanner = (panner != nullptr);
+    const int basePannerHeight = hasPanner ? (has2DPanner ? panner2DBaseHeight : (hasStereoPanner ? stereoPannerBaseHeight : 0)) : 0;
+    
     const int totalBottomHeight = textPromptLabelHeight + spacingSmall +
                                   textPromptHeight + spacingSmall +
                                   controlsHeight + spacingSmall +
                                   generateButtonHeight + spacingSmall +
                                   buttonHeight + spacingSmall +
                                   labelHeight + spacingSmall +
-                                  pannerHeight;
-    
-    // Maximum waveform height - prevents waveform from growing too large
-    const int maxWaveformHeight = 50;
+                                  basePannerHeight;
     
     auto bounds = getLocalBounds().reduced(componentMargin);
     
@@ -719,9 +744,10 @@ void LooperTrack::resized()
     const int availableHeight = bounds.getHeight();
     const int extraHeight = juce::jmax(0, availableHeight - minRequiredHeight);
     
-    // Add extra space to panner height
-    const int actualPannerHeight = pannerHeight + extraHeight;
-    const int actualTotalBottomHeight = totalBottomHeight - pannerHeight + actualPannerHeight;
+    // Distribute extra space: prioritize 2D panner, otherwise allow lower UI to grow
+    const int pannerExtraHeight = has2DPanner ? extraHeight : 0;
+    const int actualPannerHeight = hasPanner ? (basePannerHeight + pannerExtraHeight) : 0;
+    const int actualTotalBottomHeight = totalBottomHeight - basePannerHeight + actualPannerHeight + (extraHeight - pannerExtraHeight);
     
     // Reserve space for controls at bottom (with extra space for panner)
     auto bottomArea = bounds.removeFromBottom(actualTotalBottomHeight);
@@ -819,19 +845,29 @@ void LooperTrack::resized()
         }
         
         // Limit panner height to its width (keep it square)
-        const int pannerMaxHeight = bottomArea.getWidth();
-        const int finalPannerHeight = juce::jmin(actualPannerHeight, pannerMaxHeight);
-        auto pannerArea = bottomArea.removeFromTop(finalPannerHeight);
-        if (pannerType == PannerType::Stereo && stereoPanSlider.isVisible())
+        if (hasStereoPanner)
         {
-            stereoPanSlider.setBounds(pannerArea);
+            auto stereoArea = bottomArea.removeFromTop(stereoPannerBaseHeight);
+            juce::Rectangle<int> knobBounds(0, 0, stereoPannerDiameter, stereoPannerDiameter);
+            knobBounds = knobBounds.withCentre(stereoArea.getCentre());
+            stereoPanSlider.setBounds(knobBounds);
+            
+            if (pathGeneratorButtons != nullptr)
+            {
+                pathGeneratorButtons->setBounds(0, 0, 0, 0);
+            }
+            pathSpeedKnob.setBounds(0, 0, 0, 0);
+            pathSpeedLabel.setBounds(0, 0, 0, 0);
+            pathScaleKnob.setBounds(0, 0, 0, 0);
+            pathScaleLabel.setBounds(0, 0, 0, 0);
         }
-        else if (panner2DComponent != nullptr && panner2DComponent->isVisible())
+        else if (has2DPanner && panner2DComponent != nullptr)
         {
+            const int pannerMaxHeight = bottomArea.getWidth();
+            const int finalPannerHeight = juce::jmin(actualPannerHeight, pannerMaxHeight);
+            auto pannerArea = bottomArea.removeFromTop(finalPannerHeight);
             panner2DComponent->setBounds(pannerArea);
             
-            // Path buttons below panner (two rows)
-            const int pathButtonHeight = 54; // Height for two rows (25 + 4 spacing + 25)
             auto pathButtonArea = bottomArea.removeFromTop(pathButtonHeight);
             if (pathGeneratorButtons != nullptr)
             {
@@ -840,21 +876,17 @@ void LooperTrack::resized()
             
             bottomArea.removeFromTop(spacingSmall);
             
-            // Path control knobs
-            const int knobSize = 60;
-            const int knobLabelHeight = 15;
-            const int knobSpacing = 10;
-            auto knobArea = bottomArea.removeFromTop(knobSize + knobLabelHeight);
+            auto knobArea = bottomArea.removeFromTop(pathControlKnobSize + pathControlKnobLabelHeight);
             
             // Speed knob
-            auto speedKnobArea = knobArea.removeFromLeft(knobSize);
-            pathSpeedKnob.setBounds(speedKnobArea.removeFromTop(knobSize));
+            auto speedKnobArea = knobArea.removeFromLeft(pathControlKnobSize);
+            pathSpeedKnob.setBounds(speedKnobArea.removeFromTop(pathControlKnobSize));
             pathSpeedLabel.setBounds(speedKnobArea);
-            knobArea.removeFromLeft(knobSpacing);
+            knobArea.removeFromLeft(pathControlKnobSpacing);
             
             // Scale knob
-            auto scaleKnobArea = knobArea.removeFromLeft(knobSize);
-            pathScaleKnob.setBounds(scaleKnobArea.removeFromTop(knobSize));
+            auto scaleKnobArea = knobArea.removeFromLeft(pathControlKnobSize);
+            pathScaleKnob.setBounds(scaleKnobArea.removeFromTop(pathControlKnobSize));
             pathScaleLabel.setBounds(scaleKnobArea);
         }
         else

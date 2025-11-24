@@ -34,6 +34,7 @@ private:
     juce::Colour colour_for_voice(size_t voice_index);
     void update_invaders(float width, float height);
     void regenerate_funfetti_texture(int width, int height);
+    void animate_funfetti_texture();
 
     LayerCakeEngine& m_engine;
     int m_record_layer{0};
@@ -52,6 +53,9 @@ private:
     std::vector<Invader> m_invaders;
     int m_waveform_counter{0};
     juce::Image m_funfetti_texture;
+    juce::Point<float> m_noise_scroll{0.0f, 0.0f};
+    juce::Point<float> m_noise_velocity{0.18f, -0.11f};
+    double m_noise_phase{0.0};
 };
 
 

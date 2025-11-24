@@ -13,30 +13,37 @@
 #include "LayerCakeKnob.h"
 #include "LayerCakeLfoWidget.h"
 #include <array>
+#include <optional>
 #include <vector>
 #include <atomic>
 
 namespace LayerCakeApp
 {
 
-class VerticalMeter : public juce::Component
+class MultiChannelMeter : public juce::Component
 {
 public:
-    void setLevel(double level);
+    static constexpr int kMaxChannels = 8;
+
+    void setLevels(const std::vector<double>& levels);
     void paint(juce::Graphics& g) override;
 
 private:
-    double m_level_value{0.0};
+    juce::Colour colour_for_db(double db) const;
+
+    std::array<double, kMaxChannels> m_levels{};
+    int m_active_channels{1};
 };
 
 class MainComponent : public juce::Component,
                       public juce::DragAndDropContainer,
                       public juce::AudioIODeviceCallback,
                       public juce::KeyListener,
-                      private juce::Timer
+                      private juce::Timer,
+                      private juce::ChangeListener
 {
 public:
-    MainComponent();
+    explicit MainComponent(std::optional<juce::AudioDeviceManager::AudioDeviceSetup> initialDeviceSetup = std::nullopt);
     ~MainComponent() override;
 
     void paint(juce::Graphics& g) override;
@@ -57,7 +64,7 @@ public:
 private:
     void timerCallback() override;
 
-    void configure_audio_device();
+    void configure_audio_device(std::optional<juce::AudioDeviceManager::AudioDeviceSetup> initialSetup);
     void adjust_record_layer(int delta);
     void toggle_record_enable();
     void trigger_manual_grain();
@@ -91,6 +98,14 @@ private:
     void update_master_gain_from_knob();
     void capture_lfo_state(LayerCakePresetData& data) const;
     void apply_lfo_state(const LayerCakePresetData& data);
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
+    void refresh_input_channel_selector();
+    void rebuild_input_channel_buttons();
+    void update_input_channel_layout();
+    void sync_input_toggle_states();
+    void set_all_input_channels(bool shouldEnable);
+    void apply_selected_input_channels();
+    int count_selected_input_channels() const;
 
     LayerCakeEngine m_engine;
     juce::AudioDeviceManager m_device_manager;
@@ -102,20 +117,18 @@ private:
     juce::Label m_record_layer_label;
     juce::Label m_record_status_label;
     std::unique_ptr<LayerCakeKnob> m_master_gain_knob;
-    VerticalMeter m_master_meter;
+    MultiChannelMeter m_master_meter;
 
     std::unique_ptr<LayerCakeKnob> m_loop_start_knob;
     std::unique_ptr<LayerCakeKnob> m_duration_knob;
     std::unique_ptr<LayerCakeKnob> m_rate_knob;
     std::unique_ptr<LayerCakeKnob> m_env_knob;
-    std::unique_ptr<LayerCakeKnob> m_spread_knob;
     std::unique_ptr<LayerCakeKnob> m_direction_knob;
     std::unique_ptr<LayerCakeKnob> m_pan_knob;
     std::unique_ptr<LayerCakeKnob> m_layer_select_knob;
     juce::TextButton m_trigger_button;
     juce::TextButton m_record_button;
 
-    juce::TextButton m_preset_button;
     juce::TextButton m_clock_button;
     juce::TextButton m_pattern_button;
     juce::Label m_pattern_status_label;
@@ -125,7 +138,8 @@ private:
     std::unique_ptr<LayerCakeKnob> m_pattern_subdiv_knob;
 
     LayerCakeDisplay m_display;
-    std::atomic<float> m_meter_value{0.0f};
+    std::array<std::atomic<float>, MultiChannelMeter::kMaxChannels> m_meter_levels;
+    std::atomic<int> m_meter_channel_count{1};
     bool m_device_ready{false};
     LayerCakeLibraryManager m_library_manager;
     std::unique_ptr<LibraryBrowserComponent> m_preset_panel;
@@ -142,9 +156,20 @@ private:
         juce::Colour accent;
         juce::String label;
     };
-    std::array<LfoSlot, 3> m_lfo_slots;
-    std::array<std::atomic<float>, 3> m_lfo_last_values;
+    static constexpr size_t kNumLfoSlots = LayerCakePresetData::kNumLfos;
+    std::array<LfoSlot, kNumLfoSlots> m_lfo_slots;
+    std::array<std::atomic<float>, kNumLfoSlots> m_lfo_last_values;
     std::vector<LayerCakeKnob*> m_lfo_enabled_knobs;
+    juce::Label m_input_section_label;
+    juce::Label m_input_section_hint;
+    juce::TextButton m_input_select_all_button;
+    juce::TextButton m_input_clear_button;
+    juce::Viewport m_input_viewport;
+    juce::Component m_input_toggle_container;
+    juce::OwnedArray<juce::ToggleButton> m_input_channel_buttons;
+    std::vector<char> m_input_channel_selection;
+    juce::StringArray m_input_channel_names;
+    bool m_updating_input_toggles{false};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

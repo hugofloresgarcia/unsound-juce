@@ -1,5 +1,6 @@
 #include "LayerCakeKnob.h"
 #include "LayerCakeLookAndFeel.h"
+#include "LfoDragHelpers.h"
 #include <cmath>
 
 namespace LayerCakeApp
@@ -14,6 +15,9 @@ constexpr int kValueLabelInset = 8;
 constexpr int kRecorderButtonSize = 22;
 constexpr int kRecorderButtonMargin = 6;
 constexpr double kBlinkIntervalMs = 320.0;
+constexpr int kLfoButtonSize = 18;
+constexpr int kLfoButtonMargin = 8;
+const juce::Colour kSoftWhite(0xfff4f4f2);
 }
 
 LayerCakeKnob::LayerCakeKnob(const Config& config, Shared::MidiLearnManager* midiManager)
@@ -60,6 +64,30 @@ LayerCakeKnob::LayerCakeKnob(const Config& config, Shared::MidiLearnManager* mid
         }
     }
 
+    m_lfo_button = std::make_unique<LfoAssignmentButton>();
+    if (m_lfo_button != nullptr)
+    {
+        m_lfo_button->onClicked = [this]()
+        {
+            if (!has_lfo_assignment())
+            {
+                DBG("LayerCakeKnob lfo button click early return (no assignment)");
+                return;
+            }
+
+            if (m_lfo_release_handler != nullptr)
+            {
+                m_lfo_release_handler();
+            }
+            else
+            {
+                DBG("LayerCakeKnob lfo button click early return (release handler missing)");
+            }
+        };
+        addAndMakeVisible(m_lfo_button.get());
+        refresh_lfo_button_state();
+    }
+
     m_sweep_recorder.prepare(44100.0);
     m_sweep_recorder.set_idle_value(static_cast<float>(m_slider.getValue()));
 
@@ -75,8 +103,6 @@ LayerCakeKnob::~LayerCakeKnob()
         m_slider.removeMouseListener(this);
     m_label.removeMouseListener(this);
     m_value_label.removeMouseListener(this);
-    if (m_mouse_listener != nullptr)
-        m_slider.removeMouseListener(m_mouse_listener.get());
 
     if (m_midi_manager != nullptr && m_registered_parameter_id.isNotEmpty())
         m_midi_manager->unregisterParameter(m_registered_parameter_id);
@@ -96,10 +122,11 @@ void LayerCakeKnob::paint(juce::Graphics& g)
     const float diameter = juce::jmin(knobArea.getWidth(), knobArea.getHeight());
     auto circle = juce::Rectangle<float>(diameter, diameter).withCentre(knobArea.getCentre());
 
-    const auto surface = laf.findColour(juce::Slider::backgroundColourId).darker(0.35f);
-    const auto frame = laf.findColour(juce::Slider::rotarySliderOutlineColourId);
-    const auto track = laf.findColour(juce::Slider::trackColourId);
-    const auto accent = laf.findColour(juce::Slider::thumbColourId);
+    const auto surfaceBase = m_slider.findColour(juce::Slider::backgroundColourId, true);
+    const auto surface = surfaceBase.darker(0.1f);
+    const auto frame = m_slider.findColour(juce::Slider::rotarySliderOutlineColourId, true);
+    const auto track = m_slider.findColour(juce::Slider::trackColourId, true);
+    const auto accent = m_slider.findColour(juce::Slider::thumbColourId, true);
 
     g.setColour(surface);
     g.fillEllipse(circle);
@@ -176,6 +203,7 @@ void LayerCakeKnob::paint(juce::Graphics& g)
     juce::Point<float> pointer(centre.x  + pointerLength * std::cos(angle - (4*3.1415)/8),
                                centre.y  + pointerLength * std::sin(angle - (4*3.1415)/8));
 
+    g.setColour(accent);
     g.fillEllipse(pointer.x - 3.0f, pointer.y - 3.0f, 6.0f, 6.0f);
 
     if (sweep_recorder_enabled())
@@ -213,6 +241,8 @@ void LayerCakeKnob::resized()
     const int valueInset = kValueLabelInset;
     const int recorderButtonSize = kRecorderButtonSize;
     const int recorderButtonMargin = kRecorderButtonMargin;
+    const int lfoButtonSize = kLfoButtonSize;
+    const int lfoButtonMargin = kLfoButtonMargin;
 
     auto bounds = getLocalBounds();
     auto labelBounds = bounds.removeFromBottom(labelHeight);
@@ -232,6 +262,16 @@ void LayerCakeKnob::resized()
         m_recorder_button->setBounds(buttonBounds);
         m_recorder_button->toFront(false);
     }
+
+    if (m_lfo_button != nullptr)
+    {
+        juce::Rectangle<int> lfoBounds(lfoButtonSize, lfoButtonSize);
+        const int targetX = valueBounds.getRight() - lfoButtonMargin - lfoButtonSize;
+        const int targetY = valueBounds.getBottom() - lfoButtonMargin - lfoButtonSize;
+        lfoBounds.setPosition(targetX, targetY);
+        m_lfo_button->setBounds(lfoBounds);
+        m_lfo_button->toFront(false);
+    }
 }
 
 void LayerCakeKnob::lookAndFeelChanged()
@@ -244,7 +284,7 @@ void LayerCakeKnob::mouseDown(const juce::MouseEvent& event)
     if (event.mods.isPopupMenu())
     {
         if (show_context_menu(event))
-            return;
+        return;
     }
 
     juce::Component::mouseDown(event);
@@ -340,10 +380,6 @@ void LayerCakeKnob::register_midi_parameter()
         m_config.labelText,
         false
     });
-
-    m_learnable = std::make_unique<Shared::MidiLearnable>(*m_midi_manager, m_config.parameterId);
-    m_mouse_listener = std::make_unique<Shared::MidiLearnMouseListener>(*m_learnable, &m_slider);
-    m_slider.addMouseListener(m_mouse_listener.get(), false);
 }
 
 void LayerCakeKnob::update_value_label()
@@ -410,18 +446,24 @@ void LayerCakeKnob::sliderDragEnded(juce::Slider* slider)
 void LayerCakeKnob::apply_look_and_feel_colours()
 {
     auto& laf = getLookAndFeel();
-    const juce::Colour kSoftWhite(0xfff4f4f2);
     juce::Colour knobLabelColour = kSoftWhite;
     juce::Colour valueColour = kSoftWhite;
+    juce::Colour accentColour = laf.findColour(juce::Slider::thumbColourId);
 
+    if (m_custom_knob_colour.has_value())
+        accentColour = m_custom_knob_colour.value();
+
+    juce::Colour sliderBackground = laf.findColour(juce::Slider::backgroundColourId).darker(0.25f);
     if (auto* layercake = dynamic_cast<LayerCakeLookAndFeel*>(&laf))
-    {
-        knobLabelColour = layercake->getKnobLabelColour();
-        valueColour = knobLabelColour;
-    }
+        sliderBackground = layercake->getPanelColour().darker(0.35f);
 
     m_label.setColour(juce::Label::textColourId, knobLabelColour);
     m_value_label.setColour(juce::Label::textColourId, valueColour);
+    m_slider.setColour(juce::Slider::thumbColourId, accentColour);
+    m_slider.setColour(juce::Slider::trackColourId, accentColour.withAlpha(0.85f));
+    m_slider.setColour(juce::Slider::rotarySliderFillColourId, accentColour.withAlpha(0.6f));
+    m_slider.setColour(juce::Slider::rotarySliderOutlineColourId, accentColour.darker(0.55f));
+    m_slider.setColour(juce::Slider::backgroundColourId, sliderBackground);
 
     if (m_recorder_button != nullptr)
     {
@@ -446,6 +488,14 @@ void LayerCakeKnob::apply_look_and_feel_colours()
         m_recorder_button->setColour(KnobRecorderButton::playingColourId, playingColour);
         m_recorder_button->setColour(KnobRecorderButton::textColourId, valueColour);
         m_recorder_button->setColour(KnobRecorderButton::borderColourId, borderColour);
+    }
+
+    if (m_lfo_button != nullptr)
+    {
+        const auto idleColour = accentColour.withAlpha(0.5f);
+        m_lfo_button->setIdleColour(idleColour);
+        if (m_lfo_button_accent.has_value())
+            m_lfo_button->setAssignmentColour(m_lfo_button_accent);
     }
 }
 
@@ -483,9 +533,46 @@ void LayerCakeKnob::timerCallback()
 bool LayerCakeKnob::show_context_menu(const juce::MouseEvent& event)
 {
     juce::PopupMenu menu;
+    if (m_midi_manager != nullptr && m_config.parameterId.isNotEmpty())
+    {
+        const int currentCc = m_midi_manager->getMappingForParameter(m_config.parameterId);
+        juce::String learnLabel = "MIDI Learn...";
+        if (currentCc >= 0)
+            learnLabel += " (Currently CC " + juce::String(currentCc) + ")";
+
+        menu.addItem(juce::PopupMenu::Item(learnLabel)
+                         .setAction([this]() {
+                             if (m_midi_manager == nullptr)
+                             {
+                                 DBG("LayerCakeKnob::show_context_menu midi learn action early return (no midi manager)");
+                                 return;
+                             }
+                             m_midi_manager->startLearning(m_config.parameterId);
+                             if (auto* topLevel = getTopLevelComponent())
+                                 topLevel->repaint();
+                         }));
+
+        if (currentCc >= 0)
+        {
+            menu.addItem(juce::PopupMenu::Item("Clear MIDI Mapping")
+                             .setAction([this]() {
+                                 if (m_midi_manager == nullptr)
+                                 {
+                                     DBG("LayerCakeKnob::show_context_menu clear midi action early return (no midi manager)");
+                                     return;
+                                 }
+                                 m_midi_manager->clearMapping(m_config.parameterId);
+                                 repaint();
+                                 if (auto* topLevel = getTopLevelComponent())
+                                     topLevel->repaint();
+                             }));
+        }
+    }
 
     if (sweep_recorder_enabled())
     {
+        if (menu.getNumItems() > 0)
+            menu.addSeparator();
         const bool canRecord = m_recorder_state != RecorderState::Recording;
         const bool canClear = m_recorder_state != RecorderState::Idle;
 
@@ -720,6 +807,59 @@ void LayerCakeKnob::clear_modulation_indicator()
 void LayerCakeKnob::set_lfo_assignment_index(int index)
 {
     m_lfo_assignment_index.store(index, std::memory_order_relaxed);
+    refresh_lfo_button_state();
+}
+
+void LayerCakeKnob::set_lfo_button_accent(std::optional<juce::Colour> accent)
+{
+    m_lfo_button_accent = accent;
+    if (m_lfo_button == nullptr)
+    {
+        DBG("LayerCakeKnob::set_lfo_button_accent early return (missing button)");
+        return;
+    }
+    m_lfo_button->setAssignmentColour(accent);
+    refresh_lfo_button_state();
+}
+
+void LayerCakeKnob::set_lfo_release_handler(const std::function<void()>& handler)
+{
+    if (m_lfo_button == nullptr)
+    {
+        DBG("LayerCakeKnob::set_lfo_release_handler early return (missing button)");
+        return;
+    }
+    m_lfo_release_handler = handler;
+}
+
+void LayerCakeKnob::set_knob_colour(juce::Colour colour)
+{
+    m_custom_knob_colour = colour;
+    apply_look_and_feel_colours();
+    repaint();
+}
+
+void LayerCakeKnob::clear_knob_colour()
+{
+    if (!m_custom_knob_colour.has_value())
+        return;
+    m_custom_knob_colour.reset();
+    apply_look_and_feel_colours();
+    repaint();
+}
+
+void LayerCakeKnob::refresh_lfo_button_state()
+{
+    if (m_lfo_button == nullptr)
+    {
+        DBG("LayerCakeKnob::refresh_lfo_button_state early return (missing button)");
+        return;
+    }
+
+    const bool assigned = has_lfo_assignment();
+    m_lfo_button->setHasAssignment(assigned);
+    m_lfo_button->setAssignmentColour(m_lfo_button_accent);
+    m_lfo_button->setEnabled(assigned);
 }
 
 } // namespace LayerCakeApp

@@ -78,7 +78,9 @@ void knob_values_from_var(const juce::var& value, juce::NamedValueSet& out_knobs
     }
 }
 
-juce::var lfo_slots_to_var(const std::array<LayerCakePresetData::LfoSlotData, 3>& slots)
+using LfoSlotArray = std::array<LayerCakePresetData::LfoSlotData, LayerCakePresetData::kNumLfos>;
+
+juce::var lfo_slots_to_var(const LfoSlotArray& slots)
 {
     juce::Array<juce::var> serialized;
     for (const auto& slot : slots)
@@ -92,7 +94,7 @@ juce::var lfo_slots_to_var(const std::array<LayerCakePresetData::LfoSlotData, 3>
     return serialized;
 }
 
-void lfo_slots_from_var(const juce::var& value, std::array<LayerCakePresetData::LfoSlotData, 3>& out_slots)
+void lfo_slots_from_var(const juce::var& value, LfoSlotArray& out_slots)
 {
     if (!value.isArray())
         return;

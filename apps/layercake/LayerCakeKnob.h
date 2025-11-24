@@ -2,10 +2,9 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <flowerjuce/Components/MidiLearnManager.h>
-#include <flowerjuce/Components/MidiLearnComponent.h>
 #include <flowerjuce/DSP/KnobSweepRecorder.h>
 #include "KnobRecorderButton.h"
-#include "LfoDragHelpers.h"
+#include "LfoAssignmentButton.h"
 #include <functional>
 #include <optional>
 #include <atomic>
@@ -56,8 +55,12 @@ public:
     void set_modulation_indicator(std::optional<float> normalizedValue, juce::Colour colour);
     void clear_modulation_indicator();
     void set_lfo_assignment_index(int index);
+    void set_lfo_button_accent(std::optional<juce::Colour> accent);
+    void set_lfo_release_handler(const std::function<void()>& handler);
     int lfo_assignment_index() const { return m_lfo_assignment_index.load(std::memory_order_relaxed); }
     bool has_lfo_assignment() const { return lfo_assignment_index() >= 0; }
+    void set_knob_colour(juce::Colour colour);
+    void clear_knob_colour();
 
 private:
     enum class RecorderState
@@ -88,6 +91,7 @@ private:
     void update_timer_activity();
     void update_blink_state(bool force_reset);
     void sync_recorder_idle_value();
+    void refresh_lfo_button_state();
 
     Config m_config;
     Shared::MidiLearnManager* m_midi_manager{nullptr};
@@ -96,24 +100,26 @@ private:
     juce::Slider m_slider;
     juce::Label m_label;
     juce::Label m_value_label;
-    std::unique_ptr<Shared::MidiLearnable> m_learnable;
-    std::unique_ptr<Shared::MidiLearnMouseListener> m_mouse_listener;
     juce::String m_registered_parameter_id;
 
     KnobSweepRecorder m_sweep_recorder;
     RecorderState m_recorder_state{RecorderState::Idle};
     std::unique_ptr<KnobRecorderButton> m_recorder_button;
+    std::unique_ptr<LfoAssignmentButton> m_lfo_button;
     bool m_is_applying_loop_value{false};
     bool m_blink_visible{false};
     double m_last_blink_toggle_ms{0.0};
     std::function<void(juce::PopupMenu&)> m_context_menu_builder;
     std::function<void(LayerCakeKnob&, int)> m_lfo_drop_handler;
+    std::function<void()> m_lfo_release_handler;
     juce::Colour m_lfo_highlight_colour;
     juce::Colour m_active_drag_colour;
     bool m_drag_highlight{false};
     std::optional<float> m_modulation_indicator_value;
     juce::Colour m_modulation_indicator_colour;
     std::atomic<int> m_lfo_assignment_index{-1};
+    std::optional<juce::Colour> m_custom_knob_colour;
+    std::optional<juce::Colour> m_lfo_button_accent;
 };
 
 } // namespace LayerCakeApp

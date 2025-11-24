@@ -1,5 +1,6 @@
 #include "LayerCakeDisplay.h"
 #include <algorithm>
+#include <cmath>
 
 namespace
 {
@@ -10,6 +11,29 @@ constexpr float kPlayheadSway = 6.0f;
 constexpr float kBaseSquiggleCycles = 2.0f;
 constexpr float kLaneSpacing = 10.0f;
 const juce::Colour kSoftWhite(0xfff4f4f2);
+constexpr double kNoisePhaseDelta = 0.0125;
+
+float layered_noise(float x, float y, float phase, float freqA, float freqB)
+{
+    const float waveA = std::sin((x * freqA) + (y * freqB) + phase);
+    const float waveB = std::sin((x * freqB * 0.6f) - (y * freqA * 0.35f) - phase * 1.3f);
+    const float waveC = std::sin((x * freqA * 0.45f) + (y * freqB * 1.1f) + phase * 0.65f);
+    return (waveA + waveB + waveC) / 3.0f;
+}
+
+float wrap_value(float value, float maxValue)
+{
+    if (maxValue <= 0.0f)
+    {
+        DBG("LayerCakeDisplay::wrap_value early return (invalid max)");
+        return 0.0f;
+    }
+
+    float wrapped = std::fmod(value, maxValue);
+    if (wrapped < 0.0f)
+        wrapped += maxValue;
+    return wrapped;
+}
 }
 
 LayerCakeDisplay::LayerCakeDisplay(LayerCakeEngine& engine)
@@ -180,8 +204,9 @@ void LayerCakeDisplay::paint(juce::Graphics& g)
             lane_area.getWidth() * width_norm,
             lane_area.getHeight() * 0.8f };
 
-        auto colour = colour_for_voice(grain.voice_index);
-        g.setColour(colour.withAlpha(kHighlightAlpha));
+        const auto base_colour = colour_for_voice(grain.voice_index);
+        const auto grain_colour = base_colour.darker(0.35f);
+        g.setColour(grain_colour.withAlpha(kHighlightAlpha));
         g.fillRoundedRectangle(highlight, 6.0f);
 
         // Squiggle playhead
@@ -205,7 +230,7 @@ void LayerCakeDisplay::paint(juce::Graphics& g)
             else
                 squiggle.lineTo(x, y);
         }
-        g.setColour(colour.withAlpha(0.95f));
+        g.setColour(grain_colour.withAlpha(0.85f));
         g.strokePath(squiggle, juce::PathStrokeType(2.2f));
     }
 
@@ -241,6 +266,21 @@ void LayerCakeDisplay::timerCallback()
 
     auto display = get_display_area();
     update_invaders(display.getWidth(), display.getHeight());
+
+    if (!m_funfetti_texture.isNull())
+    {
+        const float texWidth = static_cast<float>(m_funfetti_texture.getWidth());
+        const float texHeight = static_cast<float>(m_funfetti_texture.getHeight());
+        if (texWidth > 0.0f && texHeight > 0.0f)
+        {
+            m_noise_scroll.x = wrap_value(m_noise_scroll.x + m_noise_velocity.x, texWidth);
+            m_noise_scroll.y = wrap_value(m_noise_scroll.y + m_noise_velocity.y, texHeight);
+            m_noise_phase = std::fmod(m_noise_phase + kNoisePhaseDelta,
+                                      juce::MathConstants<double>::twoPi * 4096.0);
+            animate_funfetti_texture();
+        }
+    }
+
     repaint();
 }
 
@@ -330,44 +370,77 @@ void LayerCakeDisplay::update_invaders(float width, float height)
 void LayerCakeDisplay::regenerate_funfetti_texture(int width, int height)
 {
     if (width <= 0 || height <= 0)
+    {
+        DBG("LayerCakeDisplay::regenerate_funfetti_texture early return (invalid size)");
         return;
+    }
 
-    m_funfetti_texture = juce::Image(juce::Image::RGB, width, height, false);
-    juce::Graphics ig(m_funfetti_texture);
-    juce::Random rng;
+    m_funfetti_texture = juce::Image(juce::Image::ARGB, width, height, true);
+
+    auto& rng = juce::Random::getSystemRandom();
+    m_noise_phase = rng.nextDouble() * juce::MathConstants<double>::twoPi;
+    m_noise_scroll = {
+        rng.nextFloat() * static_cast<float>(width),
+        rng.nextFloat() * static_cast<float>(height)
+    };
+
+    const float minSpeed = 0.05f;
+    const float maxSpeed = 0.45f;
+    const float speedX = minSpeed + rng.nextFloat() * (maxSpeed - minSpeed);
+    const float speedY = minSpeed + rng.nextFloat() * (maxSpeed - minSpeed);
+    m_noise_velocity = {
+        rng.nextBool() ? speedX : -speedX,
+        rng.nextBool() ? speedY : -speedY
+    };
+
+    animate_funfetti_texture();
+}
+
+void LayerCakeDisplay::animate_funfetti_texture()
+{
+    if (m_funfetti_texture.isNull())
+    {
+        DBG("LayerCakeDisplay::animate_funfetti_texture early return (texture unavailable)");
+        return;
+    }
+
+    const int width = m_funfetti_texture.getWidth();
+    const int height = m_funfetti_texture.getHeight();
+    if (width <= 0 || height <= 0)
+    {
+        DBG("LayerCakeDisplay::animate_funfetti_texture early return (invalid size)");
+        return;
+    }
+
+    juce::Image::BitmapData data(m_funfetti_texture, juce::Image::BitmapData::readWrite);
+    const float invWidth = 1.0f / static_cast<float>(width);
+    const float invHeight = 1.0f / static_cast<float>(height);
+    const float phase = static_cast<float>(m_noise_phase);
 
     for (int y = 0; y < height; ++y)
     {
+        auto* line = reinterpret_cast<juce::PixelARGB*>(data.getLinePointer(y));
+        if (line == nullptr)
+            continue;
+
+        const float ny = (static_cast<float>(y) + m_noise_scroll.y) * invHeight;
         for (int x = 0; x < width; ++x)
         {
-            const float hue = rng.nextFloat();
-            const float sat = 0.55f + rng.nextFloat() * 0.35f;
-            const float brightness = 0.65f + rng.nextFloat() * 0.35f;
-            const auto colour = juce::Colour::fromHSV(hue, sat, brightness, 1.0f);
-            m_funfetti_texture.setPixelAt(x, y, colour);
-        }
-    }
+            const float nx = (static_cast<float>(x) + m_noise_scroll.x) * invWidth;
 
-    // overlay glitchy stripes for datamosh vibe
-    for (int stripe = 0; stripe < 40; ++stripe)
-    {
-        const float alpha = 0.15f + rng.nextFloat() * 0.25f;
-        auto colour = juce::Colour::fromHSV(rng.nextFloat(),
-                                            0.3f + rng.nextFloat() * 0.4f,
-                                            0.8f,
-                                            alpha);
-        const bool horizontal = rng.nextBool();
-        if (horizontal)
-        {
-            const int y = rng.nextInt(height);
-            ig.setColour(colour);
-            ig.fillRect(0, y, width, rng.nextInt(3) + 1);
-        }
-        else
-        {
-            const int x = rng.nextInt(width);
-            ig.setColour(colour);
-            ig.fillRect(x, 0, rng.nextInt(3) + 1, height);
+            const float redNoise = layered_noise(nx * 60.0f, ny * 40.0f, phase, 28.0f, 19.0f);
+            const float greenNoise = layered_noise(nx * 48.0f, ny * 32.0f, phase * 0.85f + 0.8f, 22.0f, 17.0f);
+            const float blueNoise = layered_noise(nx * 36.0f, ny * 52.0f, phase * 1.25f + 1.6f, 31.0f, 13.0f);
+            const float flicker = layered_noise(nx * 12.0f, ny * 18.0f, phase * 0.35f, 9.0f, 7.0f);
+
+            const float r = juce::jlimit(0.0f, 1.0f, 0.55f + 0.35f * redNoise + 0.05f * flicker);
+            const float g = juce::jlimit(0.0f, 1.0f, 0.5f + 0.35f * greenNoise - 0.04f * flicker);
+            const float b = juce::jlimit(0.0f, 1.0f, 0.6f + 0.35f * blueNoise + 0.03f * flicker);
+
+            line[x].setARGB(255,
+                            static_cast<juce::uint8>(r * 255.0f),
+                            static_cast<juce::uint8>(g * 255.0f),
+                            static_cast<juce::uint8>(b * 255.0f));
         }
     }
 }

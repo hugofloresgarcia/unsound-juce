@@ -9,6 +9,7 @@
 
 struct LayerCakePresetData
 {
+    static constexpr size_t kNumLfos = 4;
     struct LfoSlotData
     {
         int mode{0};
@@ -25,7 +26,7 @@ struct LayerCakePresetData
     float reverse_probability{0.0f};
     bool clock_enabled{false};
     juce::NamedValueSet knob_values;
-    std::array<LfoSlotData, 3> lfo_slots{};
+    std::array<LfoSlotData, kNumLfos> lfo_slots{};
     juce::NamedValueSet lfo_assignments;
 };
 

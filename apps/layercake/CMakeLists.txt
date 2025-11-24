@@ -22,9 +22,13 @@ target_sources(LayerCakeApp PRIVATE
     LayerCakeKnob.h
     KnobRecorderButton.cpp
     KnobRecorderButton.h
+    LfoAssignmentButton.cpp
+    LfoAssignmentButton.h
     LayerCakeLfoWidget.cpp
     LayerCakeLfoWidget.h
     LfoDragHelpers.h
+    StartupDialog.cpp
+    StartupDialog.h
 )
 
 target_link_libraries(LayerCakeApp PRIVATE

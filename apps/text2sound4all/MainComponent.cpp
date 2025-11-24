@@ -82,7 +82,8 @@ MainComponent::MainComponent(int numTracks, const juce::String& pannerType)
     const int trackSpacing = 5;       // Space between tracks
     const int horizontalMargin = 20;  // Left + right margins
     const int topControlsHeight = 40 + 10 + 40 + 10; // Title + spacing + buttons + spacing
-    const int fixedTrackHeight = 900; // Increased height to prevent panner from being squished
+    const bool useCompactStereoLayout = pannerType.equalsIgnoreCase("stereo");
+    const int fixedTrackHeight = useCompactStereoLayout ? 520 : 900; // Stereo panner needs less vertical space
     const int verticalMargin = 20;    // Top + bottom margins
     
     int windowWidth = (fixedTrackWidth * actualNumTracks) + (trackSpacing * (actualNumTracks - 1)) + horizontalMargin;

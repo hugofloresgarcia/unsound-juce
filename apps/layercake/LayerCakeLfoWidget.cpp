@@ -1,7 +1,6 @@
 #include "LayerCakeLfoWidget.h"
 #include "LfoDragHelpers.h"
 #include <cmath>
-#include <limits>
 
 namespace LayerCakeApp
 {
@@ -9,6 +8,7 @@ namespace LayerCakeApp
 namespace
 {
 constexpr int kPreviewSamples = 128;
+const juce::Colour kSoftWhite(0xfff4f4f2);
 
 flower::LfoWaveform waveform_from_index(int index)
 {
@@ -47,7 +47,7 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
     m_drag_label = "LFO " + juce::String(lfo_index + 1);
 
     m_title_label.setText(m_drag_label, juce::dontSendNotification);
-    m_title_label.setJustificationType(juce::Justification::centred);
+    m_title_label.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(m_title_label);
 
     m_mode_selector.addItem("sine", 1);
@@ -80,6 +80,7 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
     if (m_rate_knob != nullptr)
     {
         configure_knob(*m_rate_knob, true);
+        m_rate_knob->set_knob_colour(m_accent_colour);
         addAndMakeVisible(m_rate_knob.get());
     }
 
@@ -87,16 +88,8 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
     if (m_depth_knob != nullptr)
     {
         configure_knob(*m_depth_knob, false);
+        m_depth_knob->set_knob_colour(m_accent_colour.darker(0.2f));
         addAndMakeVisible(m_depth_knob.get());
-    }
-
-    m_rate_octave_button = std::make_unique<juce::TextButton>("8va");
-    if (m_rate_octave_button != nullptr)
-    {
-        m_rate_octave_button->setClickingTogglesState(true);
-        m_rate_octave_button->setTooltip("Quantize rate to octave steps");
-        m_rate_octave_button->onClick = [this]() { handle_octave_button(); };
-        addAndMakeVisible(m_rate_octave_button.get());
     }
 
     m_wave_preview = std::make_unique<WavePreview>(*this);
@@ -122,21 +115,19 @@ void LayerCakeLfoWidget::paint(juce::Graphics& g)
 void LayerCakeLfoWidget::resized()
 {
     const int margin = 6;
-    const int titleHeight = 20;
-    const int selectorHeight = 24;
+    const int headerHeight = 24;
     const int previewHeight = juce::jmax(40, static_cast<int>(getHeight() * 0.3f));
     const int knobSize = 52;
-    const int knobStackHeight = knobSize + 16;
+    const int knobStackHeight = knobSize + 26;
     const int knobSpacing = 8;
 
     auto bounds = getLocalBounds().reduced(margin);
 
-    auto titleArea = bounds.removeFromTop(titleHeight);
-    m_title_label.setBounds(titleArea);
-    bounds.removeFromTop(4);
-
-    auto selectorArea = bounds.removeFromTop(selectorHeight);
+    auto headerArea = bounds.removeFromTop(headerHeight);
+    const int selectorWidth = juce::jmax(70, headerArea.getWidth() / 3);
+    auto selectorArea = headerArea.removeFromRight(selectorWidth);
     m_mode_selector.setBounds(selectorArea);
+    m_title_label.setBounds(headerArea);
     bounds.removeFromTop(6);
 
     auto previewArea = bounds.removeFromTop(previewHeight);
@@ -150,7 +141,6 @@ void LayerCakeLfoWidget::resized()
     {
         auto rateBounds = rateArea.withHeight(knobStackHeight);
         m_rate_knob->setBounds(rateBounds);
-        update_rate_switch_bounds();
     }
     knobsArea.removeFromLeft(knobSpacing);
     if (m_depth_knob != nullptr)
@@ -241,18 +231,11 @@ void LayerCakeLfoWidget::notify_settings_changed()
 void LayerCakeLfoWidget::configure_knob(LayerCakeKnob& knob, bool isRateKnob)
 {
     knob.slider().setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    knob.slider().onValueChange = [this, isRateKnob, &knob]() {
-        if (isRateKnob && m_quantize_rate && !m_updating_rate_slider)
-        {
-            const double quantized = quantize_rate(knob.slider().getValue());
-            if (std::abs(quantized - knob.slider().getValue()) > 1.0e-4)
-            {
-                const juce::ScopedValueSetter<bool> guard(m_updating_rate_slider, true);
-                knob.slider().setValue(quantized, juce::sendNotificationSync);
-            }
-        }
+    knob.slider().onValueChange = [this]() {
         update_generator_settings(true);
     };
+    if (isRateKnob)
+        knob.set_knob_colour(m_accent_colour);
 }
 
 void LayerCakeLfoWidget::timerCallback()
@@ -271,61 +254,6 @@ void LayerCakeLfoWidget::timerCallback()
     m_last_depth = depth;
     m_last_mode = mode;
     refresh_wave_preview();
-}
-
-double LayerCakeLfoWidget::quantize_rate(double value) const
-{
-    static constexpr double baseValues[] = {
-        0.0625, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0
-    };
-
-    const double min = m_rate_knob != nullptr ? m_rate_knob->slider().getMinimum() : 0.05;
-    const double max = m_rate_knob != nullptr ? m_rate_knob->slider().getMaximum() : 12.0;
-
-    double best = value;
-    double bestDiff = std::numeric_limits<double>::max();
-    for (double candidate : baseValues)
-    {
-        if (candidate < min || candidate > max)
-            continue;
-        const double diff = std::abs(candidate - value);
-        if (diff < bestDiff)
-        {
-            bestDiff = diff;
-            best = candidate;
-        }
-    }
-    return best;
-}
-
-void LayerCakeLfoWidget::handle_octave_button()
-{
-    if (m_rate_octave_button == nullptr || m_rate_knob == nullptr)
-        return;
-
-    m_quantize_rate = m_rate_octave_button->getToggleState();
-    if (m_quantize_rate)
-    {
-        const double quantized = quantize_rate(m_rate_knob->slider().getValue());
-        const juce::ScopedValueSetter<bool> guard(m_updating_rate_slider, true);
-        m_rate_knob->slider().setValue(quantized, juce::sendNotificationSync);
-    }
-}
-
-void LayerCakeLfoWidget::update_rate_switch_bounds()
-{
-    if (m_rate_octave_button == nullptr || m_rate_knob == nullptr)
-        return;
-
-    const int buttonSize = 22;
-    auto knobBounds = m_rate_knob->getBounds();
-    auto targetBR = knobBounds.getBottomRight() - juce::Point<int>(6, 4);
-    juce::Rectangle<int> btnBounds(targetBR.x - buttonSize,
-                                   targetBR.y - buttonSize,
-                                   buttonSize,
-                                   buttonSize);
-    m_rate_octave_button->setBounds(btnBounds);
-    m_rate_octave_button->toFront(false);
 }
 
 //==============================================================================

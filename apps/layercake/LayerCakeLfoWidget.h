@@ -51,10 +51,6 @@ private:
     void notify_settings_changed();
     void configure_knob(LayerCakeKnob& knob, bool isRateKnob);
     void timerCallback() override;
-    double quantize_rate(double value) const;
-    void handle_octave_button();
-    void update_rate_switch_bounds();
-
     flower::LayerCakeLfoUGen& m_generator;
     juce::Colour m_accent_colour;
     int m_lfo_index{0};
@@ -62,15 +58,12 @@ private:
     juce::ComboBox m_mode_selector;
     std::unique_ptr<LayerCakeKnob> m_rate_knob;
     std::unique_ptr<LayerCakeKnob> m_depth_knob;
-    std::unique_ptr<juce::TextButton> m_rate_octave_button;
     std::unique_ptr<WavePreview> m_wave_preview;
     juce::String m_drag_label;
     std::function<void()> m_settings_changed_callback;
     float m_last_rate{ -1.0f };
     float m_last_depth{ -1.0f };
     int m_last_mode{ -1 };
-    bool m_quantize_rate{false};
-    bool m_updating_rate_slider{false};
 };
 
 } // namespace LayerCakeApp

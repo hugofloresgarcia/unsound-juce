@@ -1,119 +1,67 @@
-# Neural Tape Looper 
+# flowerjuce
 
-A JUCE-based multitrack audio looper application with support for AI-powered sound generation, spatial audio panning, and MIDI control.
+hugo flowers' collection of digital musical instruments built with JUCE. 
 
----
+## installation
 
-## Features
+you'll need to have **cmake** and **git-lfs** installed on your machine.
 
-- **Multiple Frontends**: Choose from Basic, Text2Sound, VampNet, or WhAM interfaces
-- **Multitrack Looping**: Up to 8 independent looper tracks (configurable)
-- **Real-time Recording & Playback**: Low-latency audio processing
-- **Variable-speed Playback**: 0.25x to 4.0x speed control
-- **AI Integration**: Text-to-sound and VampNet audio generation via Gradio
-- **Spatial Audio**: Multiple panner types (Stereo, Quad, CLEAT 16-channel)
-- **MIDI Learn**: Map MIDI CC controls to any parameter
-- **Click Synth & Sampler**: Built-in click generation and sample playback
-- **Token Visualization**: Visualize VampNet model tokens in real-time
-- **Cross-platform**: macOS, Windows, and Linux support
+first, clone the repo and get the submodules:
 
----
-
-## Quick Start
-
-### Installation
-
-#### Prerequisites
-
-- **CMake** 3.22 or higher
-- **C++17** compatible compiler
-  - macOS: Xcode 12+
-  - Windows: Visual Studio 2019+
-  - Linux: GCC 9+ or Clang 10+
-- **JUCE Framework** (included as submodule)
-- **Git LFS** (for large asset files)
-  - macOS: `brew install git-lfs`
-  - Windows: Download from [git-lfs.github.io](https://git-lfs.github.io/)
-  - Linux: `sudo apt install git-lfs` or `sudo yum install git-lfs`
-
-#### Setup
-
-1. **Install and initialize Git LFS** (if not already done)
-```bash
-git lfs install
-```
-
-2. **Clone the repository**
 ```bash
 git clone https://github.com/hugofloresgarcia/unsound-juce.git
 cd unsound-juce
-```
-
-**Note**: This repository uses Git LFS to store large model files. Make sure Git LFS is installed and initialized before cloning, or run `git lfs pull` after cloning to download the LFS-tracked files.
-
-3. **Initialize JUCE submodule**
-```bash
 git submodule update --init --recursive
 ```
 
-4. **Build the project**
+then, build the project.
 
-**macOS/Linux:**
+**macOS:**
+
 ```bash
 mkdir build && cd build
 cmake ..
 cmake --build . --config Release
 ```
 
-**Windows:**
+**windows:**
+
 ```bash
 mkdir build && cd build
 cmake -G "Visual Studio 17 2022" ..
 cmake --build . --config Release
 ```
 
-4. **Run**
-- macOS: `build/apps/basic/Release/Basic.app` (or `text2sound`, `vampnet`, `wham`)
-- Linux: `build/apps/basic/Release/Basic` (or `text2sound`, `vampnet`, `wham`)
-- Windows: `build\apps\basic\Release\Basic.exe` (or `text2sound`, `vampnet`, `wham`)
+you'll find the apps in `build/apps/text2sound4all/Release` and `build/apps/layercake/Release`.
 
----
+## text2sound4all
 
-## Available Applications
+![Text2Sound4All UI](assets/text2sound4all.png)
 
-### Basic
-Minimal looper interface with essential recording and playback controls.
+text2sound4all is a multitrack looper that lets you generate sounds from text prompts using stable audio open small.
 
-### Text2Sound
-Extended interface with AI text-to-sound generation. Enter text prompts to generate audio.
+## the CLEAT panner
 
-### VampNet
-VampNet audio variation generation. Uses existing audio as input to generate variations.
+the CLEAT panner is a specialized spatialization tool designed for high-density speaker arrays (specifically the 16-channel CLEAT system). it goes beyond standard panning with a suite of generative and reactive features.
 
-### WhAM
-Advanced frontend featuring:
-- Token visualization for VampNet models
-- Click synth for metronome/click tracks
-- Sampler for loading and triggering audio samples
-- Full MIDI learn support
-- Keyboard shortcuts for track selection and recording
+![Main 2D Panner UI](assets/cleat_panner.png)
 
----
+### features
 
-## Plugins
+**onset triggers**
+make your sound move when it hits. the panner analyzes the amplitude of your audio and can trigger spatial movements or path changes based on onset detection. this creates an organic, audio-reactive spatialization that breathes with your sound.
 
-### CLEAT Panner
-A VST3/AU plugin for spatial audio panning across 16 channels (4x4 grid). Supports:
-- 2D panning (X/Y coordinates)
-- Gain power control for panning curves
-- Real-time channel level visualization
+**path generation**
+don't want to draw paths manually? the path generator creates automated spatial trajectories for you. you can control the complexity and shape of the paths to generate evolving spatial patterns.
 
-Build location: `build/plugins/cleatpanner/Release/`
+![Path Gen Buttons](assets/path_gen.png)
 
----
+**trajectory recording**
+perform your spatialization and keep it. the trajectory recorder lets you grab the panner puck, move it around, and record that movement as a loopable trajectory.
 
-## Documentation
 
-See `DEVELOPER.md` for detailed architecture documentation and development guide.
+## layercake
 
----
+![LayerCake UI](assets/text2sound4all.png)
+
+layercake is a standalone instrument for layering and manipulating audio samples with neural synthesis features. it allows for complex texture generation and sound design through an intuitive interface.

@@ -3,46 +3,82 @@
 #include <flowerjuce/LayerCakeEngine/PatternClock.h>
 #include <flowerjuce/LayerCakeEngine/Metro.h>
 #include <cmath>
+#include <algorithm>
 
 namespace LayerCakeApp
 {
 
-void VerticalMeter::setLevel(double level)
+void MultiChannelMeter::setLevels(const std::vector<double>& levels)
 {
-    const double clamped = juce::jlimit(0.0, 1.0, level);
-    if (std::abs(clamped - m_level_value) >= 0.0005)
+    const int desired_channels = juce::jlimit(1,
+                                              kMaxChannels,
+                                              static_cast<int>(levels.empty() ? 1 : levels.size()));
+    bool changed = desired_channels != m_active_channels;
+
+    for (int i = 0; i < desired_channels; ++i)
     {
-        m_level_value = clamped;
+        const double clamped = juce::jlimit(0.0, 1.0, levels.empty() ? 0.0 : levels[static_cast<size_t>(i)]);
+        changed = changed || std::abs(clamped - m_levels[static_cast<size_t>(i)]) > 0.0005;
+        m_levels[static_cast<size_t>(i)] = clamped;
+    }
+
+    for (int i = desired_channels; i < kMaxChannels; ++i)
+        m_levels[static_cast<size_t>(i)] = 0.0;
+
+    if (desired_channels != m_active_channels)
+        m_active_channels = desired_channels;
+
+    if (changed)
         repaint();
+}
+
+void MultiChannelMeter::paint(juce::Graphics& g)
+{
+    auto area = getLocalBounds().toFloat().reduced(2.0f);
+    if (area.isEmpty())
+        return;
+
+    const int channels = juce::jmax(1, m_active_channels);
+    const float spacing = channels > 1 ? 4.0f : 0.0f;
+    const float total_spacing = spacing * static_cast<float>(channels - 1);
+    const float slot_width = juce::jmax(6.0f, (area.getWidth() - total_spacing) / static_cast<float>(channels));
+    const float corner = juce::jmin(6.0f, slot_width * 0.4f);
+
+    auto slotArea = area;
+    for (int channel = 0; channel < channels; ++channel)
+    {
+        juce::Rectangle<float> slot(slotArea.removeFromLeft(slot_width));
+        slotArea.removeFromLeft(spacing);
+
+        const auto background = findColour(juce::ProgressBar::backgroundColourId).withAlpha(0.85f);
+        const auto outline = findColour(juce::Slider::trackColourId).withAlpha(0.45f);
+
+        g.setColour(background);
+        g.fillRoundedRectangle(slot, corner);
+
+        auto fill_bounds = slot.reduced(2.0f);
+        const float level = static_cast<float>(juce::jlimit(0.0, 1.0, m_levels[static_cast<size_t>(channel)]));
+        const float fill_height = fill_bounds.getHeight() * level;
+        if (fill_height > 0.0f)
+        {
+            auto filled = fill_bounds.removeFromBottom(fill_height);
+            const double db = static_cast<double>(juce::Decibels::gainToDecibels(level, -60.0f));
+            g.setColour(colour_for_db(db));
+            g.fillRoundedRectangle(filled, corner * 0.5f);
+        }
+
+        g.setColour(outline);
+        g.drawRoundedRectangle(slot, corner, 1.0f);
     }
 }
 
-void VerticalMeter::paint(juce::Graphics& g)
+juce::Colour MultiChannelMeter::colour_for_db(double db) const
 {
-    auto meter_bounds = getLocalBounds().toFloat().reduced(2.0f);
-    if (!meter_bounds.isEmpty())
-    {
-        const float corner_radius = juce::jmin(8.0f, meter_bounds.getWidth() * 0.45f);
-        const auto background = findColour(juce::ProgressBar::backgroundColourId).withAlpha(0.85f);
-        const auto outline = findColour(juce::Slider::trackColourId).withAlpha(0.7f);
-        const auto foreground = findColour(juce::ProgressBar::foregroundColourId);
-
-        g.setColour(background);
-        g.fillRoundedRectangle(meter_bounds, corner_radius);
-
-        g.setColour(outline);
-        g.drawRoundedRectangle(meter_bounds, corner_radius, 1.4f);
-
-        auto fill_bounds = meter_bounds.reduced(3.0f);
-        const float fill_height = fill_bounds.getHeight() * static_cast<float>(m_level_value);
-        if (fill_height > 0.0f)
-        {
-            auto active_region = fill_bounds.removeFromBottom(fill_height);
-            const float fill_corner = juce::jmin(corner_radius * 0.6f, active_region.getWidth() * 0.45f);
-            g.setColour(foreground);
-            g.fillRoundedRectangle(active_region, fill_corner);
-        }
-    }
+    if (db < -18.0)
+        return juce::Colour(0xff4caf50); // green
+    if (db < -6.0)
+        return juce::Colour(0xfffbc02d); // yellow
+    return juce::Colour(0xfff44336);     // red
 }
 
 namespace
@@ -56,6 +92,9 @@ const juce::Colour kAccentAmber(0xfff2b950);
 const juce::Colour kAccentRed(0xfff25f5c);
 const juce::Colour kAccentIndigo(0xff7d6bff);
 const juce::Colour kSoftWhite(0xfff4f4f2);
+const juce::Colour kBlueGrey(0xff5d6f85);
+const juce::Colour kWarmMagenta(0xfff25f8c);
+const juce::Colour kPatternGreen(0xff63ff87);
 // const juce::Colour kTerminalGreen(0xff63ff87);
 
 void configureControlButton(juce::TextButton& button,
@@ -70,16 +109,19 @@ void configureControlButton(juce::TextButton& button,
 }
 }
 
-MainComponent::MainComponent()
+MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDeviceSetup> initialDeviceSetup)
     : m_title_label("title", "layercake"),
       m_record_layer_label("recordLayer", ""),
       m_record_status_label("recordStatus", ""),
       m_trigger_button("trg"),
       m_record_button("rec"),
-      m_preset_button("pre"),
       m_clock_button("clk"),
       m_pattern_button("pr"),
       m_pattern_status_label("patternStatus", ""),
+      m_input_section_label("inputSectionLabel", "record inputs"),
+      m_input_section_hint("inputSectionHint", "choose which inputs feed LayerCake"),
+      m_input_select_all_button("enable all"),
+      m_input_clear_button("disable all"),
       m_display(m_engine),
       m_midi_learn_overlay(m_midi_learn_manager)
 {
@@ -88,8 +130,13 @@ MainComponent::MainComponent()
     setLookAndFeel(&m_custom_look_and_feel);
 
     addKeyListener(this);
+    m_device_manager.addChangeListener(this);
 
     addAndMakeVisible(m_display);
+
+    for (auto& meter_level : m_meter_levels)
+        meter_level.store(0.0f, std::memory_order_relaxed);
+    m_meter_channel_count.store(1, std::memory_order_relaxed);
 
     for (auto& value : m_lfo_last_values)
         value.store(0.0f, std::memory_order_relaxed);
@@ -138,9 +185,12 @@ MainComponent::MainComponent()
     }
 
     m_title_label.setJustificationType(juce::Justification::centredLeft);
-    m_title_label.setFont(juce::Font(juce::FontOptions()
-                                         .withName(juce::Font::getDefaultMonospacedFontName())
-                                         .withHeight(20.0f)));
+    juce::FontOptions titleOptions;
+    titleOptions = titleOptions.withName(juce::Font::getDefaultMonospacedFontName())
+                               .withHeight(48.0f);
+    juce::Font titleFont(titleOptions);
+    titleFont.setBold(true);
+    m_title_label.setFont(titleFont);
     addAndMakeVisible(m_title_label);
 
     m_record_layer_label.setJustificationType(juce::Justification::centredLeft);
@@ -151,12 +201,39 @@ MainComponent::MainComponent()
     m_record_status_label.setColour(juce::Label::textColourId, kSoftWhite);
     addAndMakeVisible(m_record_status_label);
 
+    m_input_section_label.setJustificationType(juce::Justification::centredLeft);
+    m_input_section_label.setColour(juce::Label::textColourId, kSoftWhite);
+    m_input_section_label.setFont(juce::Font(juce::FontOptions().withHeight(20.0f).withStyle("bold")));
+    addAndMakeVisible(m_input_section_label);
+
+    m_input_section_hint.setJustificationType(juce::Justification::centredLeft);
+    m_input_section_hint.setColour(juce::Label::textColourId, kSoftWhite.withAlpha(0.8f));
+    m_input_section_hint.setFont(juce::Font(juce::FontOptions().withHeight(14.0f)));
+    addAndMakeVisible(m_input_section_hint);
+
+    configureControlButton(m_input_select_all_button, "enable all", LayerCakeLookAndFeel::ControlButtonType::Preset, false);
+    m_input_select_all_button.onClick = [this]() { set_all_input_channels(true); };
+    addAndMakeVisible(m_input_select_all_button);
+
+    configureControlButton(m_input_clear_button, "disable all", LayerCakeLookAndFeel::ControlButtonType::Preset, false);
+    m_input_clear_button.onClick = [this]() { set_all_input_channels(false); };
+    addAndMakeVisible(m_input_clear_button);
+
+    m_input_viewport.setScrollBarsShown(true, false);
+    m_input_viewport.setViewedComponent(&m_input_toggle_container, false);
+    addAndMakeVisible(m_input_viewport);
+
     auto makeKnob = [this](LayerCakeKnob::Config config, bool enableRecorder = true) {
         config.enableSweepRecorder = enableRecorder;
         auto knob = std::make_unique<LayerCakeKnob>(config, &m_midi_learn_manager);
         register_knob_for_lfo(knob.get());
         addAndMakeVisible(knob.get());
         return knob;
+    };
+
+    auto tintKnob = [](LayerCakeKnob* knob, juce::Colour colour) {
+        if (knob != nullptr)
+            knob->set_knob_colour(colour);
     };
 
     auto bindManualKnob = [this](LayerCakeKnob* knob) {
@@ -168,26 +245,32 @@ MainComponent::MainComponent()
     };
 
     m_master_gain_knob = makeKnob({ "master gain", -24.0, 6.0, 0.0, 0.1, " dB", "layercake_master_gain" });
+    tintKnob(m_master_gain_knob.get(), kSoftWhite);
     m_master_gain_knob->slider().onValueChange = [this]() {
         const float gain = static_cast<float>(get_effective_knob_value(m_master_gain_knob.get()));
         m_engine.set_master_gain_db(gain);
     };
 
     m_loop_start_knob = makeKnob({ "position", 0.0, 1.0, 0.5, 0.001, "", "layercake_position" });
+    tintKnob(m_loop_start_knob.get(), kBlueGrey);
     bindManualKnob(m_loop_start_knob.get());
     m_duration_knob = makeKnob({ "duration", 10.0, 5000.0, 300.0, 1.0, " ms", "layercake_duration" });
+    tintKnob(m_duration_knob.get(), kBlueGrey);
     bindManualKnob(m_duration_knob.get());
     m_rate_knob = makeKnob({ "rate", -24.0, 24.0, 0.0, 0.1, " st", "layercake_rate" });
+    tintKnob(m_rate_knob.get(), kWarmMagenta);
     bindManualKnob(m_rate_knob.get());
     m_env_knob = makeKnob({ "env", 0.0, 1.0, 0.5, 0.01, "", "layercake_env" });
+    tintKnob(m_env_knob.get(), kWarmMagenta);
     bindManualKnob(m_env_knob.get());
-    m_spread_knob = makeKnob({ "spread", 0.0, 1.0, 0.0, 0.01, "", "layercake_spread" });
-    bindManualKnob(m_spread_knob.get());
     m_direction_knob = makeKnob({ "direction", 0.0, 1.0, 0.5, 0.01, "", "layercake_direction" });
+    tintKnob(m_direction_knob.get(), kWarmMagenta);
     bindManualKnob(m_direction_knob.get());
     m_pan_knob = makeKnob({ "pan", 0.0, 1.0, 0.5, 0.01, "", "layercake_pan" });
+    tintKnob(m_pan_knob.get(), kWarmMagenta);
     bindManualKnob(m_pan_knob.get());
     m_layer_select_knob = makeKnob({ "layer", 1.0, static_cast<double>(LayerCakeEngine::kNumLayers), 1.0, 1.0, "", "layercake_layer_select" });
+    tintKnob(m_layer_select_knob.get(), kBlueGrey);
     m_layer_select_knob->slider().setDoubleClickReturnValue(true, 1.0);
     m_layer_select_knob->slider().onValueChange = [this]() {
         const double effective = get_effective_knob_value(m_layer_select_knob.get());
@@ -204,6 +287,7 @@ MainComponent::MainComponent()
                              m_custom_look_and_feel.findColour(juce::ProgressBar::foregroundColourId));
     m_master_meter.setColour(juce::ProgressBar::backgroundColourId,
                              m_custom_look_and_feel.findColour(juce::ProgressBar::backgroundColourId));
+    m_master_meter.setLevels({ 0.0 });
     addAndMakeVisible(m_master_meter);
 
     configureControlButton(m_trigger_button,
@@ -254,25 +338,22 @@ MainComponent::MainComponent()
     };
 
     m_pattern_length_knob = makeKnob({ "pattern length", 1.0, 128.0, 16.0, 1.0, "", "layercake_pattern_length" });
+    tintKnob(m_pattern_length_knob.get(), kPatternGreen);
     configurePatternKnob(*m_pattern_length_knob, true);
 
     m_pattern_skip_knob = makeKnob({ "rskip", 0.0, 1.0, 0.0, 0.01, "", "layercake_pattern_rskip" });
+    tintKnob(m_pattern_skip_knob.get(), kPatternGreen);
     configurePatternKnob(*m_pattern_skip_knob, false);
 
     m_pattern_tempo_knob = makeKnob({ "tempo", 10.0, 600.0, 90.0, 0.1, " bpm", "layercake_pattern_tempo" });
+    tintKnob(m_pattern_tempo_knob.get(), kPatternGreen);
     configurePatternKnob(*m_pattern_tempo_knob, true);
 
     m_pattern_subdiv_knob = makeKnob({ "subdiv", -3.0, 3.0, 0.0, 1.0, "", "layercake_pattern_subdiv" });
+    tintKnob(m_pattern_subdiv_knob.get(), kPatternGreen);
     m_pattern_subdiv_knob->slider().setDoubleClickReturnValue(true, 0.0);
     m_pattern_subdiv_knob->slider().setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     configurePatternKnob(*m_pattern_subdiv_knob, true);
-
-    configureControlButton(m_preset_button,
-                           "pre",
-                           LayerCakeLookAndFeel::ControlButtonType::Preset,
-                           false);
-    m_preset_button.onClick = [this]() { open_library_window(); };
-    addAndMakeVisible(m_preset_button);
 
     auto capturePattern = [this]() { return capture_pattern_data(); };
     auto captureLayers = [this]() { return capture_layer_buffers(); };
@@ -311,7 +392,8 @@ MainComponent::MainComponent()
         m_midi_learn_manager.loadMappings(m_midi_mappings_file);
 
     setSize(1500, 900);
-    configure_audio_device();
+    configure_audio_device(std::move(initialDeviceSetup));
+    refresh_input_channel_selector();
     startTimerHz(30);
     m_manual_state.loop_start_seconds = 0.0f;
     m_manual_state.duration_ms = 250.0f;
@@ -337,6 +419,7 @@ MainComponent::~MainComponent()
 {
     DBG("LayerCakeApp::MainComponent dtor");
     stopTimer();
+    m_device_manager.removeChangeListener(this);
     if (m_preset_panel != nullptr)
         m_preset_panel->setLookAndFeel(nullptr);
     if (m_midi_mappings_file != juce::File())
@@ -372,6 +455,7 @@ void MainComponent::resized()
     const int sectionSpacing = 18;
     const int rowSpacing = 12;
 
+    const int titleHeight = 64;
     const int labelHeight = 28;
 
     const int knobDiameter = 86;
@@ -382,7 +466,8 @@ void MainComponent::resized()
     const int knobGridColumns = 4;
 
     const int buttonHeight = 22;
-    const int meterWidth = 32;
+    const int meterWidth = 40;
+    const int meterHeight = 120;
     const int meterSpacing = 18;
     const int patternTransportHeight = 36;
 
@@ -398,12 +483,17 @@ void MainComponent::resized()
     const int lfoMargin = 10;
     const int lfoSlotMinWidth = 120;
     const int lfoVerticalGap = 12;
+    const int inputSectionLabelHeight = 26;
+    const int inputSectionHintHeight = 18;
+    const int inputSectionButtonHeight = 24;
+    const int inputSectionViewportHeight = 120;
+    const int inputSectionSpacing = 8;
 
     auto bounds = getLocalBounds().reduced(marginOuter);
     auto titleGlobalArea = juce::Rectangle<int>(bounds.getX(),
                                                 bounds.getY(),
                                                 displayPanelWidth,
-                                                labelHeight);
+                                                titleHeight);
     m_title_label.setBounds(titleGlobalArea);
 
     const int presetPanelWidth = m_preset_panel_visible ? presetPanelWidthExpanded : presetPanelWidthCollapsed;
@@ -419,8 +509,11 @@ void MainComponent::resized()
         m_preset_panel->setBounds({});
     }
 
-    auto meterArea = bounds.removeFromRight(meterWidth);
+    auto meterSlice = bounds.removeFromRight(meterWidth);
     bounds.removeFromRight(meterSpacing);
+    auto meterArea = meterSlice;
+    if (meterArea.getHeight() > meterHeight)
+        meterArea = meterArea.withHeight(meterHeight).withY(meterSlice.getBottom() - meterHeight);
     m_master_meter.setBounds(meterArea);
 
     auto displayColumn = bounds.removeFromLeft(displayPanelWidth);
@@ -431,7 +524,6 @@ void MainComponent::resized()
 
     bounds.removeFromLeft(sectionSpacing);
     auto panel = bounds;
-    const int knobGridX = panel.getX();
 
     panel.removeFromTop(labelHeight);
     panel.removeFromTop(rowSpacing);
@@ -442,30 +534,57 @@ void MainComponent::resized()
     m_record_status_label.setBounds(recordArea);
     panel.removeFromTop(rowSpacing);
 
-    auto masterArea = panel.removeFromTop(knobStackHeight);
-    m_master_gain_knob->setBounds(masterArea.withWidth(knobDiameter)
-                                           .withHeight(knobStackHeight));
-    panel.removeFromTop(sectionSpacing);
+    const int inputSelectorHeight = inputSectionLabelHeight
+                                    + inputSectionHintHeight
+                                    + inputSectionButtonHeight
+                                    + inputSectionViewportHeight
+                                    + inputSectionSpacing * 3;
+    auto inputSelector = panel.removeFromTop(inputSelectorHeight);
+    auto inputLabelArea = inputSelector.removeFromTop(inputSectionLabelHeight);
+    m_input_section_label.setBounds(inputLabelArea);
+    inputSelector.removeFromTop(inputSectionSpacing);
+    auto inputHintArea = inputSelector.removeFromTop(inputSectionHintHeight);
+    m_input_section_hint.setBounds(inputHintArea);
+    inputSelector.removeFromTop(inputSectionSpacing);
+    auto inputButtonRow = inputSelector.removeFromTop(inputSectionButtonHeight);
+    auto enableAllArea = inputButtonRow.removeFromLeft(inputButtonRow.getWidth() / 2);
+    m_input_select_all_button.setBounds(enableAllArea.reduced(2));
+    m_input_clear_button.setBounds(inputButtonRow.reduced(2));
+    inputSelector.removeFromTop(inputSectionSpacing);
+    auto inputViewportArea = inputSelector.removeFromTop(inputSectionViewportHeight);
+    m_input_viewport.setBounds(inputViewportArea);
+    update_input_channel_layout();
+    panel.removeFromTop(rowSpacing);
 
-    const int manualRows = 2;
-    const int manualHeight = manualRows * knobStackHeight + (manualRows - 1) * knobSpacing;
-    auto manualArea = panel.removeFromTop(manualHeight);
-    auto placeManualKnob = [&](LayerCakeKnob* knob, int row, int col)
+    const int knobGridRows = 4;
+    const int knobGridHeight = knobGridRows * knobStackHeight + (knobGridRows - 1) * knobSpacing;
+    auto knobGridArea = panel.removeFromTop(knobGridHeight);
+    const int knobGridX = knobGridArea.getX();
+    const int knobGridY = knobGridArea.getY();
+    auto cellBounds = [&](int row, int col) {
+        const int x = knobGridX + col * (knobDiameter + knobSpacing);
+        const int y = knobGridY + row * (knobStackHeight + knobSpacing);
+        return juce::Rectangle<int>(x, y, knobDiameter, knobStackHeight);
+    };
+    auto placeCell = [&](LayerCakeKnob* knob, int row, int col)
     {
         if (knob == nullptr)
             return;
-        const int x = manualArea.getX() + col * (knobDiameter + knobSpacing);
-        const int y = manualArea.getY() + row * (knobStackHeight + knobSpacing);
-        knob->setBounds(x, y, knobDiameter, knobStackHeight);
+        knob->setBounds(cellBounds(row, col));
     };
-    placeManualKnob(m_loop_start_knob.get(), 0, 0);
-    placeManualKnob(m_duration_knob.get(), 0, 1);
-    placeManualKnob(m_rate_knob.get(), 0, 2);
-    placeManualKnob(m_layer_select_knob.get(), 0, 3);
-    placeManualKnob(m_env_knob.get(), 1, 0);
-    placeManualKnob(m_spread_knob.get(), 1, 1);
-    placeManualKnob(m_pan_knob.get(), 1, 2);
-    placeManualKnob(m_direction_knob.get(), 1, 3);
+
+    placeCell(m_master_gain_knob.get(), 0, 3);
+    placeCell(m_env_knob.get(), 1, 0);
+    placeCell(m_direction_knob.get(), 1, 2);
+    placeCell(m_pan_knob.get(), 1, 3);
+    placeCell(m_pattern_length_knob.get(), 2, 0);
+    placeCell(m_pattern_skip_knob.get(), 2, 1);
+    placeCell(m_rate_knob.get(), 2, 2);
+    placeCell(m_layer_select_knob.get(), 2, 3);
+    placeCell(m_pattern_tempo_knob.get(), 3, 0);
+    placeCell(m_pattern_subdiv_knob.get(), 3, 1);
+    placeCell(m_loop_start_knob.get(), 3, 2);
+    placeCell(m_duration_knob.get(), 3, 3);
 
     panel.removeFromTop(rowSpacing);
     auto gridButtonArea = panel.removeFromTop(buttonHeight);
@@ -477,34 +596,14 @@ void MainComponent::resized()
         return juce::Rectangle<int>(x, y, width, height);
     };
     const int buttonRowY = gridButtonArea.getY();
-    m_trigger_button.setBounds(gridCellBounds(0, 1, buttonRowY, buttonHeight));
+    m_clock_button.setBounds(gridCellBounds(0, 1, buttonRowY, buttonHeight));
     m_record_button.setBounds(gridCellBounds(1, 1, buttonRowY, buttonHeight));
-    m_preset_button.setBounds(gridCellBounds(2, 1, buttonRowY, buttonHeight));
-    panel.removeFromTop(sectionSpacing);
-
-    auto patternArea = panel.removeFromTop(knobStackHeight);
-    auto placePatternKnob = [&](LayerCakeKnob& knob, int col)
-    {
-        juce::Rectangle<int> knobBounds(patternArea.getX() + col * (knobDiameter + knobSpacing),
-                                        patternArea.getY(),
-                                        knobDiameter,
-                                        knobStackHeight);
-        knob.setBounds(knobBounds);
-        return knobBounds;
-    };
-    placePatternKnob(*m_pattern_length_knob, 0);
-    placePatternKnob(*m_pattern_skip_knob, 1);
-    placePatternKnob(*m_pattern_tempo_knob, 2);
-    if (m_pattern_subdiv_knob != nullptr)
-        placePatternKnob(*m_pattern_subdiv_knob, 3);
+    m_pattern_button.setBounds(gridCellBounds(2, 1, buttonRowY, buttonHeight));
+    m_trigger_button.setBounds(gridCellBounds(3, 1, buttonRowY, buttonHeight));
 
     panel.removeFromTop(rowSpacing);
-    auto patternTransport = panel.removeFromTop(buttonHeight);
-    const int transportRowY = patternTransport.getY();
-    m_clock_button.setBounds(gridCellBounds(0, 1, transportRowY, buttonHeight));
-    m_pattern_button.setBounds(gridCellBounds(1, 1, transportRowY, buttonHeight));
-    auto statusBounds = gridCellBounds(2, 2, transportRowY, buttonHeight);
-    m_pattern_status_label.setBounds(statusBounds);
+    auto statusRow = panel.removeFromTop(buttonHeight);
+    m_pattern_status_label.setBounds(statusRow);
     panel.removeFromTop(sectionSpacing);
 
     auto lfoRowBounds = lfoArea.reduced(lfoMargin);
@@ -528,13 +627,66 @@ void MainComponent::resized()
     m_midi_learn_overlay.setBounds(getLocalBounds());
 }
 
-void MainComponent::configure_audio_device()
+void MainComponent::configure_audio_device(std::optional<juce::AudioDeviceManager::AudioDeviceSetup> initialSetup)
 {
     juce::String error = m_device_manager.initialise(1, 2, nullptr, true);
     if (error.isNotEmpty())
     {
         DBG("Audio device init error: " + error);
+        return;
     }
+
+    if (initialSetup.has_value())
+    {
+        const auto findDeviceType = [this](const juce::AudioDeviceManager::AudioDeviceSetup& setup)
+        {
+            juce::String deviceType;
+            const auto& deviceTypes = m_device_manager.getAvailableDeviceTypes();
+            for (int i = 0; i < deviceTypes.size(); ++i)
+            {
+                auto* type = deviceTypes[i];
+                if (type == nullptr)
+                    continue;
+
+                const auto outputDevices = type->getDeviceNames(false);
+                const auto inputDevices = type->getDeviceNames(true);
+
+                bool foundDevice = setup.outputDeviceName.isNotEmpty()
+                                   && outputDevices.contains(setup.outputDeviceName);
+                if (!foundDevice && setup.inputDeviceName.isNotEmpty())
+                    foundDevice = inputDevices.contains(setup.inputDeviceName);
+
+                if (foundDevice)
+                {
+                    deviceType = type->getTypeName();
+                    break;
+                }
+            }
+            return deviceType;
+        };
+
+        const auto deviceType = findDeviceType(*initialSetup);
+        if (deviceType.isNotEmpty())
+        {
+            m_device_manager.setCurrentAudioDeviceType(deviceType, false);
+            DBG("Audio device type switched to: " + deviceType);
+        }
+        else
+        {
+            DBG("Audio device type not found for startup selection");
+        }
+
+        auto setupError = m_device_manager.setAudioDeviceSetup(*initialSetup, true);
+        if (setupError.isNotEmpty())
+        {
+            DBG("Audio device setup apply error: " + setupError);
+        }
+        else
+        {
+            DBG("Audio device setup from startup dialog applied");
+        }
+    }
+
     m_device_manager.addAudioCallback(this);
 }
 
@@ -554,6 +706,10 @@ void MainComponent::audioDeviceAboutToStart(juce::AudioIODevice* device)
     apply_pattern_settings(false);
     update_auto_grain_settings();
     m_device_ready = true;
+    const int meter_channels = juce::jmax(1, juce::jmin(MultiChannelMeter::kMaxChannels, outputs));
+    m_meter_channel_count.store(meter_channels, std::memory_order_relaxed);
+    for (auto& meter_level : m_meter_levels)
+        meter_level.store(0.0f, std::memory_order_relaxed);
     DBG("Audio device started sampleRate=" + juce::String(sample_rate) + " block=" + juce::String(block_size));
 }
 
@@ -561,6 +717,9 @@ void MainComponent::audioDeviceStopped()
 {
     DBG("Audio device stopped");
     m_device_ready = false;
+    m_meter_channel_count.store(1, std::memory_order_relaxed);
+    for (auto& meter_level : m_meter_levels)
+        meter_level.store(0.0f, std::memory_order_relaxed);
 }
 
 void MainComponent::audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
@@ -593,18 +752,24 @@ void MainComponent::audioDeviceIOCallbackWithContext(const float* const* inputCh
                            numOutputChannels,
                            numSamples);
 
-    float peak = 0.0f;
-    for (int channel = 0; channel < numOutputChannels; ++channel)
+    const int meter_channels = juce::jmax(1, juce::jmin(MultiChannelMeter::kMaxChannels, numOutputChannels));
+    for (int channel = 0; channel < meter_channels; ++channel)
     {
-        const float* channel_data = outputChannelData[channel];
-        if (channel_data == nullptr)
-            continue;
-        for (int sample = 0; sample < numSamples; ++sample)
+        float peak = 0.0f;
+        if (channel < numOutputChannels)
         {
-            peak = juce::jmax(peak, std::abs(channel_data[sample]));
+            const float* channel_data = outputChannelData[channel];
+            if (channel_data != nullptr)
+            {
+                for (int sample = 0; sample < numSamples; ++sample)
+                    peak = juce::jmax(peak, std::abs(channel_data[sample]));
+            }
         }
+        m_meter_levels[static_cast<size_t>(channel)].store(peak, std::memory_order_relaxed);
     }
-    m_meter_value.store(peak);
+    for (int channel = meter_channels; channel < MultiChannelMeter::kMaxChannels; ++channel)
+        m_meter_levels[static_cast<size_t>(channel)].store(0.0f, std::memory_order_relaxed);
+    m_meter_channel_count.store(meter_channels, std::memory_order_relaxed);
 }
 
 bool MainComponent::keyPressed(const juce::KeyPress& key, juce::Component*)
@@ -696,11 +861,9 @@ GrainState MainComponent::build_manual_grain_state()
     state.play_forward = true;
     state.layer = layer;
     state.pan = static_cast<float>(get_effective_knob_value(m_pan_knob.get()));
-    float spread_amount = m_spread_knob != nullptr ? static_cast<float>(get_effective_knob_value(m_spread_knob.get())) : 0.0f;
     float reverse_probability = m_direction_knob != nullptr ? static_cast<float>(get_effective_knob_value(m_direction_knob.get())) : 0.0f;
 
-    // TODO: modify loop_start according to spread
-    m_engine.apply_spread_randomization(state, spread_amount);
+    // Spread parameter removed; randomization disabled for manual grains.
     m_engine.apply_direction_randomization(state, reverse_probability);
     // TODO, modify direction according to reverse prob. 
 
@@ -724,8 +887,19 @@ void MainComponent::update_record_labels()
 
 void MainComponent::update_meter()
 {
-    const double new_value = juce::jlimit(0.0, 1.0, static_cast<double>(m_meter_value.load()));
-    m_master_meter.setLevel(new_value);
+    const int channel_count = juce::jlimit(1,
+                                           MultiChannelMeter::kMaxChannels,
+                                           m_meter_channel_count.load(std::memory_order_relaxed));
+    std::vector<double> levels;
+    levels.reserve(channel_count);
+    for (int i = 0; i < channel_count; ++i)
+    {
+        const double level = juce::jlimit(0.0,
+                                          1.0,
+                                          static_cast<double>(m_meter_levels[static_cast<size_t>(i)].load(std::memory_order_relaxed)));
+        levels.push_back(level);
+    }
+    m_master_meter.setLevels(levels);
 }
 
 void MainComponent::apply_pattern_settings(bool request_rearm)
@@ -832,9 +1006,6 @@ LayerCakePresetData MainComponent::capture_knobset_data() const
     data.manual_state = m_manual_state;
     data.manual_state.should_trigger = false;
     data.record_layer = m_engine.get_record_layer();
-    data.spread_amount = m_spread_knob != nullptr
-                             ? static_cast<float>(m_spread_knob->slider().getValue())
-                             : 0.0f;
     data.reverse_probability = m_direction_knob != nullptr
                                    ? static_cast<float>(m_direction_knob->slider().getValue())
                                    : 0.0f;
@@ -854,7 +1025,6 @@ LayerCakePresetData MainComponent::capture_knobset_data() const
     capture(m_duration_knob.get());
     capture(m_rate_knob.get());
     capture(m_env_knob.get());
-    capture(m_spread_knob.get());
     capture(m_direction_knob.get());
     capture(m_pan_knob.get());
     capture(m_layer_select_knob.get());
@@ -946,7 +1116,6 @@ void MainComponent::apply_knobset(const LayerCakePresetData& data, bool update_p
     applyValue(m_duration_knob.get(), false);
     applyValue(m_rate_knob.get(), false);
     applyValue(m_env_knob.get(), false);
-    applyValue(m_spread_knob.get(), false);
     applyValue(m_direction_knob.get(), false);
     applyValue(m_pan_knob.get(), false);
     applyValue(m_layer_select_knob.get(), false);
@@ -990,6 +1159,7 @@ void MainComponent::apply_lfo_state(const LayerCakePresetData& data)
 
         knob->set_lfo_assignment_index(-1);
         knob->clear_modulation_indicator();
+        knob->set_lfo_button_accent(std::nullopt);
 
         const auto& parameterId = knob->parameter_id();
         if (parameterId.isEmpty())
@@ -1000,7 +1170,10 @@ void MainComponent::apply_lfo_state(const LayerCakePresetData& data)
         {
             const int index = static_cast<int>(*value);
             if (index >= 0 && index < static_cast<int>(m_lfo_slots.size()))
+            {
                 knob->set_lfo_assignment_index(index);
+                knob->set_lfo_button_accent(m_lfo_slots[static_cast<size_t>(index)].accent);
+            }
         }
     }
 
@@ -1082,12 +1255,18 @@ void MainComponent::register_knob_for_lfo(LayerCakeKnob* knob)
     knob->set_lfo_drop_handler([this](LayerCakeKnob& target, int lfoIndex) {
         assign_lfo_to_knob(lfoIndex, target);
     });
+    knob->set_lfo_release_handler([this, knob]() {
+        remove_lfo_from_knob(*knob);
+    });
+    knob->set_lfo_button_accent(std::nullopt);
     knob->set_context_menu_builder([this, knob](juce::PopupMenu& menu) {
         if (knob == nullptr)
             return;
         const int assignment = knob->lfo_assignment_index();
         if (assignment < 0 || assignment >= static_cast<int>(m_lfo_slots.size()))
             return;
+        if (menu.getNumItems() > 0)
+            menu.addSeparator();
         juce::PopupMenu::Item removeItem("Remove LFO");
         removeItem.setColour(m_lfo_slots[static_cast<size_t>(assignment)].accent);
         removeItem.setAction([this, knob]() { remove_lfo_from_knob(*knob); });
@@ -1106,6 +1285,7 @@ void MainComponent::assign_lfo_to_knob(int lfo_index, LayerCakeKnob& knob)
     }
 
     knob.set_lfo_assignment_index(lfo_index);
+    knob.set_lfo_button_accent(m_lfo_slots[static_cast<size_t>(lfo_index)].accent);
     DBG("MainComponent::assign_lfo_to_knob parameter=" + knob.parameter_id()
         + " lfo=" + juce::String(lfo_index + 1));
     update_all_modulation_overlays();
@@ -1121,6 +1301,7 @@ void MainComponent::remove_lfo_from_knob(LayerCakeKnob& knob)
 
     knob.set_lfo_assignment_index(-1);
     knob.clear_modulation_indicator();
+    knob.set_lfo_button_accent(std::nullopt);
     DBG("MainComponent::remove_lfo_from_knob parameter=" + knob.parameter_id());
 }
 
@@ -1150,6 +1331,184 @@ void MainComponent::update_all_modulation_overlays()
         const float normalized = static_cast<float>((effective_value - range.getStart()) / span);
         knob->set_modulation_indicator(normalized, m_lfo_slots[static_cast<size_t>(assignment)].accent);
     }
+}
+
+void MainComponent::changeListenerCallback(juce::ChangeBroadcaster* source)
+{
+    if (source != &m_device_manager)
+    {
+        DBG("MainComponent::changeListenerCallback early return (unexpected source)");
+        return;
+    }
+
+    refresh_input_channel_selector();
+}
+
+void MainComponent::refresh_input_channel_selector()
+{
+    auto* device = m_device_manager.getCurrentAudioDevice();
+    if (device == nullptr)
+    {
+        DBG("MainComponent::refresh_input_channel_selector early return (no device)");
+        m_input_channel_names.clear();
+        m_input_channel_selection.clear();
+        rebuild_input_channel_buttons();
+        return;
+    }
+
+    m_input_channel_names = device->getInputChannelNames();
+    const int numInputs = m_input_channel_names.size();
+    m_input_channel_selection.assign(static_cast<size_t>(juce::jmax(0, numInputs)),
+                                     static_cast<char>(1));
+
+    juce::AudioDeviceManager::AudioDeviceSetup setup;
+    m_device_manager.getAudioDeviceSetup(setup);
+    if (!setup.useDefaultInputChannels && setup.inputChannels.getHighestBit() >= 0)
+    {
+        for (int i = 0; i < numInputs; ++i)
+        {
+            const bool enabled = setup.inputChannels[i];
+            m_input_channel_selection[static_cast<size_t>(i)] = enabled ? static_cast<char>(1) : static_cast<char>(0);
+        }
+    }
+
+    rebuild_input_channel_buttons();
+}
+
+void MainComponent::rebuild_input_channel_buttons()
+{
+    m_input_channel_buttons.clear(true);
+
+    m_updating_input_toggles = true;
+    for (int i = 0; i < m_input_channel_names.size(); ++i)
+    {
+        auto button = std::make_unique<juce::ToggleButton>();
+        button->setButtonText(juce::String(i + 1) + ". " + m_input_channel_names[i]);
+        const bool initialState = juce::isPositiveAndBelow(i, static_cast<int>(m_input_channel_selection.size()))
+                                  ? (m_input_channel_selection[static_cast<size_t>(i)] != 0)
+                                  : true;
+        button->setToggleState(initialState, juce::dontSendNotification);
+        const int channelIndex = i;
+        button->onClick = [this, channelIndex]()
+        {
+            if (m_updating_input_toggles)
+                return;
+            if (!juce::isPositiveAndBelow(channelIndex, static_cast<int>(m_input_channel_selection.size())))
+            {
+                DBG("MainComponent::rebuild_input_channel_buttons onClick early return (index OOB)");
+                return;
+            }
+            auto* toggle = m_input_channel_buttons[channelIndex];
+            if (toggle == nullptr)
+            {
+                DBG("MainComponent::rebuild_input_channel_buttons onClick early return (missing toggle)");
+                return;
+            }
+            m_input_channel_selection[static_cast<size_t>(channelIndex)] = toggle->getToggleState() ? static_cast<char>(1) : static_cast<char>(0);
+            DBG("MainComponent::input routing update channel=" + juce::String(channelIndex)
+                + " state=" + juce::String(toggle->getToggleState() ? "on" : "off"));
+            apply_selected_input_channels();
+        };
+        auto* raw = m_input_channel_buttons.add(button.release());
+        m_input_toggle_container.addAndMakeVisible(raw);
+    }
+    m_updating_input_toggles = false;
+    update_input_channel_layout();
+    sync_input_toggle_states();
+}
+
+void MainComponent::update_input_channel_layout()
+{
+    const int buttonHeight = 24;
+    const int buttonSpacing = 6;
+    const int width = juce::jmax(0, m_input_viewport.getViewWidth() - 4);
+    int y = 0;
+
+    for (auto* button : m_input_channel_buttons)
+    {
+        if (button == nullptr)
+            continue;
+
+        button->setBounds(0, y, width, buttonHeight);
+        y += buttonHeight + buttonSpacing;
+    }
+
+    m_input_toggle_container.setSize(width, y);
+}
+
+void MainComponent::sync_input_toggle_states()
+{
+    m_updating_input_toggles = true;
+    for (int i = 0; i < m_input_channel_buttons.size(); ++i)
+    {
+        if (!juce::isPositiveAndBelow(i, static_cast<int>(m_input_channel_selection.size())))
+            continue;
+
+        if (auto* button = m_input_channel_buttons[i])
+            button->setToggleState(m_input_channel_selection[static_cast<size_t>(i)] != 0, juce::dontSendNotification);
+    }
+    m_updating_input_toggles = false;
+}
+
+void MainComponent::set_all_input_channels(bool shouldEnable)
+{
+    if (m_input_channel_selection.empty())
+    {
+        DBG("MainComponent::set_all_input_channels early return (no inputs)");
+        return;
+    }
+
+    std::fill(m_input_channel_selection.begin(),
+              m_input_channel_selection.end(),
+              shouldEnable ? static_cast<char>(1) : static_cast<char>(0));
+    DBG("MainComponent::set_all_input_channels state=" + juce::String(shouldEnable ? "all" : "none")
+        + " count=" + juce::String(count_selected_input_channels()));
+    sync_input_toggle_states();
+    apply_selected_input_channels();
+}
+
+void MainComponent::apply_selected_input_channels()
+{
+    if (m_input_channel_selection.empty())
+    {
+        DBG("MainComponent::apply_selected_input_channels early return (no selection data)");
+        return;
+    }
+
+    juce::AudioDeviceManager::AudioDeviceSetup setup;
+    m_device_manager.getAudioDeviceSetup(setup);
+
+    setup.inputChannels.clear();
+    int enabled = 0;
+    for (int i = 0; i < static_cast<int>(m_input_channel_selection.size()); ++i)
+    {
+        if (m_input_channel_selection[static_cast<size_t>(i)] != 0)
+        {
+            setup.inputChannels.setBit(i, true);
+            ++enabled;
+        }
+    }
+    setup.useDefaultInputChannels = false;
+
+    auto error = m_device_manager.setAudioDeviceSetup(setup, true);
+    if (error.isNotEmpty())
+    {
+        DBG("MainComponent::apply_selected_input_channels error: " + error);
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "LayerCake",
+                                               "Unable to update input routing:\n" + error);
+        refresh_input_channel_selector();
+        return;
+    }
+
+    DBG("MainComponent::apply_selected_input_channels applied channels=" + juce::String(enabled));
+}
+
+int MainComponent::count_selected_input_channels() const
+{
+    return static_cast<int>(std::count(m_input_channel_selection.begin(),
+                                       m_input_channel_selection.end(),
+                                       static_cast<char>(1)));
 }
 
 double MainComponent::get_effective_knob_value(const LayerCakeKnob* knob) const
