@@ -65,3 +65,7 @@ perform your spatialization and keep it. the trajectory recorder lets you grab t
 ![LayerCake UI](assets/text2sound4all.png)
 
 layercake is a standalone instrument for layering and manipulating audio samples with neural synthesis features. it allows for complex texture generation and sound design through an intuitive interface.
+
+## bugs?
+
+if you run into any trouble or find a bug, please [open an issue](https://github.com/hugofloresgarcia/unsound-juce/issues) on github.

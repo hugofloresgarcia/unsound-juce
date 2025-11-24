@@ -6,9 +6,7 @@ text2sound4all is a multitrack looper that lets you generate sounds from text pr
 
 ## download
 
-you can download the latest release (v0.0.1) from the releases page:
-
-[download v0.0.1](https://github.com/hugofloresgarcia/unsound-juce/releases/tag/v0.0.1)
+you can download the latest release (v0.0.1) from the releases page: [download v0.0.1](https://github.com/hugofloresgarcia/unsound-juce/releases/tag/v0.0.1)
 
 ## setting up the backend
 
@@ -22,3 +20,6 @@ however, the public space runs on a cpu and is **very slow**. for a reasonable s
 4. once your space is running, copy the url (e.g. `https://huggingface.co/spaces/{your-username}/saos`).
 5. paste this url into the configuration dialog when you launch text2sound4all.
 
+## bugs?
+
+if you find any bugs or issues, please [open an issue](https://github.com/hugofloresgarcia/unsound-juce/issues) on the github repo!
