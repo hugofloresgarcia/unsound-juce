@@ -1,52 +1,67 @@
-# Neural Tape Looper 
+# flowerjuce
 
----
+hugo flowers' collection of digital musical instruments built with JUCE. 
 
-## Quick Start
+## installation
 
-### Installation
+you'll need to have **cmake** and **git-lfs** installed on your machine.
 
-#### Prerequisites
+first, clone the repo and get the submodules:
 
-- **CMake** 3.22 or higher
-- **C++17** compatible compiler
-  - macOS: Xcode 12+
-  - Windows: Visual Studio 2019+
-  - Linux: GCC 9+ or Clang 10+
-- **JUCE Framework** (included as submodule)
-
-#### Setup
-
-1. **Clone the repository**
 ```bash
 git clone https://github.com/hugofloresgarcia/unsound-juce.git
 cd unsound-juce
-```
-
-2. **Initialize JUCE submodule**
-```bash
 git submodule update --init --recursive
 ```
 
-3. **Build the project**
+then, build the project.
 
-**macOS/Linux:**
+**macOS:**
+
 ```bash
 mkdir build && cd build
 cmake ..
 cmake --build . --config Release
 ```
 
-**Windows:**
+**windows:**
+
 ```bash
 mkdir build && cd build
 cmake -G "Visual Studio 17 2022" ..
 cmake --build . --config Release
 ```
 
-4. **Run**
-- macOS: `build/TapeLooper_artefacts/Release/Tape Looper.app`
-- Linux: `build/TapeLooper_artefacts/Release/Tape\ Looper`
-- Windows: `build\TapeLooper_artefacts\Release\Tape Looper.exe`
+you'll find the apps in `build/apps/text2sound4all/Release` and `build/apps/layercake/Release`.
 
----
+## text2sound4all
+
+![Text2Sound4All UI](assets/text2sound4all.png)
+
+text2sound4all is a multitrack looper that lets you generate sounds from text prompts using stable audio open small.
+
+## the CLEAT panner
+
+the CLEAT panner is a specialized spatialization tool designed for high-density speaker arrays (specifically the 16-channel CLEAT system). it goes beyond standard panning with a suite of generative and reactive features.
+
+![Main 2D Panner UI](assets/cleat_panner.png)
+
+### features
+
+**onset triggers**
+make your sound move when it hits. the panner analyzes the amplitude of your audio and can trigger spatial movements or path changes based on onset detection. this creates an organic, audio-reactive spatialization that breathes with your sound.
+
+**path generation**
+don't want to draw paths manually? the path generator creates automated spatial trajectories for you. you can control the complexity and shape of the paths to generate evolving spatial patterns.
+
+![Path Gen Buttons](assets/path_gen.png)
+
+**trajectory recording**
+perform your spatialization and keep it. the trajectory recorder lets you grab the panner puck, move it around, and record that movement as a loopable trajectory.
+
+
+## layercake
+
+![LayerCake UI](assets/text2sound4all.png)
+
+layercake is a standalone instrument for layering and manipulating audio samples with neural synthesis features. it allows for complex texture generation and sound design through an intuitive interface.
