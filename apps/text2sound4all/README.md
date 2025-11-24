@@ -4,7 +4,7 @@
 
 text2sound4all is a multitrack looper that lets you generate sounds from text prompts using stable audio open small. it is an open source version of [unsound objects](https://hugofloresgarcia.art/interfaces.md#unsound-objects-2025), an instrument/spatial improvisation instrument/piece where a performer co-creates acoustic environments with a generative neural network.  
 
-i presented text2sound4all (and the accompanying )
+i presented text2sound4all (and the accompanying 2D panner for the CLEAT system) at the [`making multichannel music`](https://cleat.info) lecture series at elastic arts. 
 
 ## download
 
