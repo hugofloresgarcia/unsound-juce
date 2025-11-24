@@ -88,7 +88,7 @@ void PatternClock::advance_step()
             handle_playback_step();
             break;
         case Mode::Idle:
-            DBG("PatternClock: handling idle step;");
+            // DBG("PatternClock: handling idle step;");
             handle_idle_step();
         default:
             break;

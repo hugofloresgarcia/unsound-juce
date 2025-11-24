@@ -281,6 +281,34 @@ bool read_json_file(const juce::File& file, juce::var& out_var, const juce::Stri
 
     return true;
 }
+
+juce::File resolve_folder(const juce::File& root, const juce::String& name)
+{
+    const auto raw = juce::File::createLegalFileName(name);
+    if (raw.isNotEmpty())
+    {
+        const auto f = root.getChildFile(raw);
+        if (f.exists())
+            return f;
+    }
+
+    const auto trimmed = juce::File::createLegalFileName(name.trim());
+    return root.getChildFile(trimmed);
+}
+
+juce::File resolve_file(const juce::File& root, const juce::String& name, const juce::String& ext)
+{
+    const auto raw = juce::File::createLegalFileName(name);
+    if (raw.isNotEmpty())
+    {
+        const auto f = root.getChildFile(raw + ext);
+        if (f.existsAsFile())
+            return f;
+    }
+
+    const auto trimmed = juce::File::createLegalFileName(name.trim());
+    return root.getChildFile(trimmed + ext);
+}
 } // namespace
 
 LayerCakeLibraryManager::LayerCakeLibraryManager()
@@ -328,7 +356,7 @@ bool LayerCakeLibraryManager::load_palette(const juce::String& name, LayerBuffer
         return false;
     }
 
-    auto folder = palette_folder(sanitized);
+    auto folder = resolve_folder(palettes_root(), name);
     if (!folder.exists())
     {
         DBG("LayerCakeLibraryManager::load_palette missing folder=" + folder.getFullPathName());
@@ -352,7 +380,7 @@ bool LayerCakeLibraryManager::delete_palette(const juce::String& name)
         return false;
     }
 
-    auto folder = palette_folder(sanitized);
+    auto folder = resolve_folder(palettes_root(), name);
     if (!folder.exists())
     {
         DBG("LayerCakeLibraryManager::delete_palette missing folder=" + folder.getFullPathName());
@@ -396,7 +424,7 @@ bool LayerCakeLibraryManager::load_pattern(const juce::String& name, LayerCakePr
         return false;
     }
 
-    auto file = pattern_file(sanitized);
+    auto file = resolve_file(patterns_root(), name, kPatternExtension);
     juce::var json;
     if (!read_json_file(file, json, "LayerCakeLibraryManager::load_pattern"))
     {
@@ -422,7 +450,7 @@ bool LayerCakeLibraryManager::delete_pattern(const juce::String& name)
         return false;
     }
 
-    auto file = pattern_file(sanitized);
+    auto file = resolve_file(patterns_root(), name, kPatternExtension);
     if (!file.existsAsFile())
     {
         DBG("LayerCakeLibraryManager::delete_pattern missing file=" + file.getFullPathName());
@@ -469,7 +497,7 @@ bool LayerCakeLibraryManager::load_knobset(const juce::String& name, LayerCakePr
         return false;
     }
 
-    auto file = knobset_file(sanitized);
+    auto file = resolve_file(knobsets_root(), name, kPatternExtension);
     juce::var json;
     if (!read_json_file(file, json, "LayerCakeLibraryManager::load_knobset"))
     {
@@ -495,7 +523,7 @@ bool LayerCakeLibraryManager::delete_knobset(const juce::String& name)
         return false;
     }
 
-    auto file = knobset_file(sanitized);
+    auto file = resolve_file(knobsets_root(), name, kPatternExtension);
     if (!file.existsAsFile())
     {
         DBG("LayerCakeLibraryManager::delete_knobset missing file=" + file.getFullPathName());
@@ -554,7 +582,7 @@ bool LayerCakeLibraryManager::load_scene(const juce::String& name,
         return false;
     }
 
-    auto folder = scene_folder(sanitized);
+    auto folder = resolve_folder(scenes_root(), name);
     if (!folder.exists())
     {
         DBG("LayerCakeLibraryManager::load_scene missing folder=" + folder.getFullPathName());
@@ -593,7 +621,7 @@ bool LayerCakeLibraryManager::delete_scene(const juce::String& name)
         return false;
     }
 
-    auto folder = scene_folder(sanitized);
+    auto folder = resolve_folder(scenes_root(), name);
     if (!folder.exists())
     {
         DBG("LayerCakeLibraryManager::delete_scene missing folder=" + folder.getFullPathName());

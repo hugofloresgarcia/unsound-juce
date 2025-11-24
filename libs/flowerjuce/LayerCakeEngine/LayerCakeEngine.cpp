@@ -82,13 +82,15 @@ void LayerCakeEngine::set_record_layer(int layer_index)
         return;
     }
 
-    if (layer_index == m_record_layer_index)
+    if (layer_index == m_record_layer_index){
+        DBG("LayerCakeEngine::set_record_layer same layer=" + juce::String(layer_index));
         return;
+    }
 
     const juce::SpinLock::ScopedLockType lock(m_record_lock);
     m_record_layer_index = layer_index;
     rebuild_write_head();
-    DBG("LayerCakeEngine::set_record_layer index=" + juce::String(layer_index));
+    // DBG("LayerCakeEngine::set_record_layer index=" + juce::String(layer_index));
 }
 
 void LayerCakeEngine::set_record_enable(bool should_record)

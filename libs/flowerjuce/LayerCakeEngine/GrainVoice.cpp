@@ -116,7 +116,7 @@ bool GrainVoice::trigger(const GrainState& state, TapeLoop& loop, double sample_
     m_envelope.note_on();
     m_active.store(true);
 
-    DBG("GrainVoice::trigger success voice=" + juce::String(static_cast<int>(m_voice_index)));
+    // DBG("GrainVoice::trigger success voice=" + juce::String(static_cast<int>(m_voice_index)));
     return true;
 }
 
