@@ -9,12 +9,13 @@
 
 struct LayerCakePresetData
 {
-    static constexpr size_t kNumLfos = 4;
+    static constexpr size_t kNumLfos = 8;
     struct LfoSlotData
     {
         int mode{0};
         float rate_hz{0.5f};
         float depth{0.5f};
+        bool tempo_sync{false};
     };
 
     float master_gain_db{0.0f};

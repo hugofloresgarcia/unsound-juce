@@ -3,10 +3,16 @@
 #include <flowerjuce/LayerCakeEngine/PatternClock.h>
 #include <flowerjuce/LayerCakeEngine/Metro.h>
 #include <cmath>
-#include <algorithm>
 
 namespace LayerCakeApp
 {
+
+juce::Font SettingsButtonLookAndFeel::getTextButtonFont(juce::TextButton& button, int buttonHeight)
+{
+    auto font = LayerCakeLookAndFeel::getTextButtonFont(button, buttonHeight);
+    const float reducedHeight = juce::jmax(10.0f, font.getHeight() * 0.7f);
+    return font.withHeight(reducedHeight);
+}
 
 void MultiChannelMeter::setLevels(const std::vector<double>& levels)
 {
@@ -118,10 +124,6 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
       m_clock_button("clk"),
       m_pattern_button("pr"),
       m_pattern_status_label("patternStatus", ""),
-      m_input_section_label("inputSectionLabel", "record inputs"),
-      m_input_section_hint("inputSectionHint", "choose which inputs feed LayerCake"),
-      m_input_select_all_button("enable all"),
-      m_input_clear_button("disable all"),
       m_display(m_engine),
       m_midi_learn_overlay(m_midi_learn_manager)
 {
@@ -147,11 +149,20 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
         m_custom_look_and_feel.getLayerColour(2).brighter(0.6f),
         m_custom_look_and_feel.getLayerColour(3).brighter(0.6f)
     };
+    const std::array<juce::Colour, 4> secondaryLfoPalette = {
+        juce::Colour(0xff8ecae6),
+        juce::Colour(0xfff4a261),
+        juce::Colour(0xff9b5de5),
+        juce::Colour(0xff2ec4b6)
+    };
 
     for (size_t i = 0; i < m_lfo_slots.size(); ++i)
     {
         auto& slot = m_lfo_slots[i];
-        slot.accent = lfoPalette[i % lfoPalette.size()];
+        const bool isSecondRow = i >= lfoPalette.size();
+        slot.accent = isSecondRow
+            ? secondaryLfoPalette[i % secondaryLfoPalette.size()].withAlpha(0.9f)
+            : lfoPalette[i % lfoPalette.size()];
         slot.label = "LFO " + juce::String(static_cast<int>(i) + 1);
         slot.generator.set_mode(flower::LfoWaveform::Sine);
         slot.generator.set_rate_hz(0.35f + static_cast<float>(i) * 0.15f);
@@ -175,6 +186,19 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
         });
         if (slot.widget != nullptr)
         {
+            slot.widget->set_tempo_provider([this]() -> double
+            {
+                if (m_pattern_tempo_knob != nullptr)
+                    return juce::jmax(1.0, get_effective_knob_value(m_pattern_tempo_knob.get()));
+                return 120.0;
+            });
+            slot.widget->set_tempo_sync_callback([this, slotIndex = static_cast<int>(i)](bool enabled)
+            {
+                if (!juce::isPositiveAndBelow(slotIndex, static_cast<int>(m_lfo_slots.size())))
+                    return;
+                m_lfo_slots[static_cast<size_t>(slotIndex)].tempo_sync = enabled;
+            });
+            slot.widget->set_tempo_sync_enabled(slot.tempo_sync, true);
             slot.widget->refresh_wave_preview();
             addAndMakeVisible(slot.widget.get());
         }
@@ -201,27 +225,10 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
     m_record_status_label.setColour(juce::Label::textColourId, kSoftWhite);
     addAndMakeVisible(m_record_status_label);
 
-    m_input_section_label.setJustificationType(juce::Justification::centredLeft);
-    m_input_section_label.setColour(juce::Label::textColourId, kSoftWhite);
-    m_input_section_label.setFont(juce::Font(juce::FontOptions().withHeight(20.0f).withStyle("bold")));
-    addAndMakeVisible(m_input_section_label);
-
-    m_input_section_hint.setJustificationType(juce::Justification::centredLeft);
-    m_input_section_hint.setColour(juce::Label::textColourId, kSoftWhite.withAlpha(0.8f));
-    m_input_section_hint.setFont(juce::Font(juce::FontOptions().withHeight(14.0f)));
-    addAndMakeVisible(m_input_section_hint);
-
-    configureControlButton(m_input_select_all_button, "enable all", LayerCakeLookAndFeel::ControlButtonType::Preset, false);
-    m_input_select_all_button.onClick = [this]() { set_all_input_channels(true); };
-    addAndMakeVisible(m_input_select_all_button);
-
-    configureControlButton(m_input_clear_button, "disable all", LayerCakeLookAndFeel::ControlButtonType::Preset, false);
-    m_input_clear_button.onClick = [this]() { set_all_input_channels(false); };
-    addAndMakeVisible(m_input_clear_button);
-
-    m_input_viewport.setScrollBarsShown(true, false);
-    m_input_viewport.setViewedComponent(&m_input_toggle_container, false);
-    addAndMakeVisible(m_input_viewport);
+    m_settings_button.setButtonText("settings");
+    m_settings_button.setLookAndFeel(&m_settings_button_look_and_feel);
+    m_settings_button.onClick = [this] { open_settings_window(); };
+    addAndMakeVisible(m_settings_button);
 
     auto makeKnob = [this](LayerCakeKnob::Config config, bool enableRecorder = true) {
         config.enableSweepRecorder = enableRecorder;
@@ -348,12 +355,13 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
     m_pattern_tempo_knob = makeKnob({ "tempo", 10.0, 600.0, 90.0, 0.1, " bpm", "layercake_pattern_tempo" });
     tintKnob(m_pattern_tempo_knob.get(), kPatternGreen);
     configurePatternKnob(*m_pattern_tempo_knob, true);
+    m_last_pattern_bpm = juce::jmax(1.0, get_effective_knob_value(m_pattern_tempo_knob.get()));
 
     m_pattern_subdiv_knob = makeKnob({ "subdiv", -3.0, 3.0, 0.0, 1.0, "", "layercake_pattern_subdiv" });
     tintKnob(m_pattern_subdiv_knob.get(), kPatternGreen);
     m_pattern_subdiv_knob->slider().setDoubleClickReturnValue(true, 0.0);
     m_pattern_subdiv_knob->slider().setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    configurePatternKnob(*m_pattern_subdiv_knob, true);
+    configurePatternKnob(*m_pattern_subdiv_knob, false);
 
     auto capturePattern = [this]() { return capture_pattern_data(); };
     auto captureLayers = [this]() { return capture_layer_buffers(); };
@@ -393,7 +401,7 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
 
     setSize(1500, 900);
     configure_audio_device(std::move(initialDeviceSetup));
-    refresh_input_channel_selector();
+    // refresh_input_channel_selector(); // Moved to SettingsComponent
     startTimerHz(30);
     m_manual_state.loop_start_seconds = 0.0f;
     m_manual_state.duration_ms = 250.0f;
@@ -431,6 +439,7 @@ MainComponent::~MainComponent()
     removeKeyListener(this);
     m_device_manager.removeAudioCallback(this);
     m_device_manager.closeAudioDevice();
+    m_settings_button.setLookAndFeel(nullptr);
     setLookAndFeel(nullptr);
 }
 
@@ -472,17 +481,19 @@ void MainComponent::resized()
     const int patternTransportHeight = 36;
 
     const int displayPanelWidth = 620;
-    const int displaySize = 560;
+    const int displayWidth = 560;
+    const int displayHeight = 260;
 
     const int presetPanelSpacing = 16;
     const int presetPanelMargin = 10;
-    const int presetPanelWidthExpanded = 340;
-    const int presetPanelWidthCollapsed = 0;
+    const int presetPanelHeightVisible = 240;
     const int lfoRowHeight = 160;
     const int lfoSpacing = 14;
     const int lfoMargin = 10;
-    const int lfoSlotMinWidth = 120;
+    const int lfoSlotMinWidth = 80;
     const int lfoVerticalGap = 12;
+    const int lfoRowSpacing = 12;
+    const int lfosPerRow = 4;
     const int inputSectionLabelHeight = 26;
     const int inputSectionHintHeight = 18;
     const int inputSectionButtonHeight = 24;
@@ -490,24 +501,26 @@ void MainComponent::resized()
     const int inputSectionSpacing = 8;
 
     auto bounds = getLocalBounds().reduced(marginOuter);
+    if (m_preset_panel != nullptr)
+    {
+        if (m_preset_panel_visible)
+        {
+            const int panelHeight = juce::jmin(bounds.getHeight(), presetPanelHeightVisible);
+            auto panelArea = bounds.removeFromBottom(panelHeight);
+            bounds.removeFromBottom(presetPanelSpacing);
+            m_preset_panel->setBounds(panelArea.reduced(presetPanelMargin));
+        }
+        else
+        {
+            m_preset_panel->setBounds({});
+        }
+    }
+
     auto titleGlobalArea = juce::Rectangle<int>(bounds.getX(),
                                                 bounds.getY(),
                                                 displayPanelWidth,
                                                 titleHeight);
     m_title_label.setBounds(titleGlobalArea);
-
-    const int presetPanelWidth = m_preset_panel_visible ? presetPanelWidthExpanded : presetPanelWidthCollapsed;
-    if (presetPanelWidth > 0)
-    {
-        auto presetArea = bounds.removeFromRight(presetPanelWidth).reduced(presetPanelMargin);
-        if (m_preset_panel != nullptr)
-            m_preset_panel->setBounds(presetArea);
-        bounds.removeFromRight(presetPanelSpacing);
-    }
-    else if (m_preset_panel != nullptr)
-    {
-        m_preset_panel->setBounds({});
-    }
 
     auto meterSlice = bounds.removeFromRight(meterWidth);
     bounds.removeFromRight(meterSpacing);
@@ -516,10 +529,14 @@ void MainComponent::resized()
         meterArea = meterArea.withHeight(meterHeight).withY(meterSlice.getBottom() - meterHeight);
     m_master_meter.setBounds(meterArea);
 
+    const int lfoCount = static_cast<int>(m_lfo_slots.size());
+    const int lfoRows = lfoCount > 0 ? juce::jmax(1, (lfoCount + lfosPerRow - 1) / lfosPerRow) : 0;
+    const int lfoAreaHeight = lfoRows > 0 ? (lfoRows * lfoRowHeight + (lfoRows - 1) * lfoRowSpacing) : 0;
+
     auto displayColumn = bounds.removeFromLeft(displayPanelWidth);
-    auto lfoArea = displayColumn.removeFromBottom(lfoRowHeight);
+    auto lfoArea = displayColumn.removeFromBottom(lfoAreaHeight);
     displayColumn.removeFromBottom(lfoVerticalGap);
-    auto tvArea = displayColumn.withSizeKeepingCentre(displaySize, displaySize);
+    auto tvArea = displayColumn.withSizeKeepingCentre(displayWidth, displayHeight);
     m_display.setBounds(tvArea);
 
     bounds.removeFromLeft(sectionSpacing);
@@ -536,24 +553,19 @@ void MainComponent::resized()
 
     const int inputSelectorHeight = inputSectionLabelHeight
                                     + inputSectionHintHeight
-                                    + inputSectionButtonHeight
-                                    + inputSectionViewportHeight
+                                    + inputSectionButtonHeight * 2
                                     + inputSectionSpacing * 3;
-    auto inputSelector = panel.removeFromTop(inputSelectorHeight);
-    auto inputLabelArea = inputSelector.removeFromTop(inputSectionLabelHeight);
-    m_input_section_label.setBounds(inputLabelArea);
-    inputSelector.removeFromTop(inputSectionSpacing);
-    auto inputHintArea = inputSelector.removeFromTop(inputSectionHintHeight);
-    m_input_section_hint.setBounds(inputHintArea);
-    inputSelector.removeFromTop(inputSectionSpacing);
-    auto inputButtonRow = inputSelector.removeFromTop(inputSectionButtonHeight);
-    auto enableAllArea = inputButtonRow.removeFromLeft(inputButtonRow.getWidth() / 2);
-    m_input_select_all_button.setBounds(enableAllArea.reduced(2));
-    m_input_clear_button.setBounds(inputButtonRow.reduced(2));
-    inputSelector.removeFromTop(inputSectionSpacing);
-    auto inputViewportArea = inputSelector.removeFromTop(inputSectionViewportHeight);
-    m_input_viewport.setBounds(inputViewportArea);
-    update_input_channel_layout();
+    // auto inputSelector = panel.removeFromTop(inputSelectorHeight); // Removed
+    // auto inputLabelArea = inputSelector.removeFromTop(inputSectionLabelHeight);
+    // m_input_section_label.setBounds(inputLabelArea);
+    // inputSelector.removeFromTop(inputSectionSpacing);
+    // auto inputHintArea = inputSelector.removeFromTop(inputSectionHintHeight);
+    // m_input_section_hint.setBounds(inputHintArea);
+    // inputSelector.removeFromTop(inputSectionSpacing);
+
+    // auto selectorArea = inputSelector.removeFromTop(inputSectionButtonHeight);
+    // m_input_channel_selector.setBounds(selectorArea);
+
     panel.removeFromTop(rowSpacing);
 
     const int knobGridRows = 4;
@@ -604,27 +616,159 @@ void MainComponent::resized()
     panel.removeFromTop(rowSpacing);
     auto statusRow = panel.removeFromTop(buttonHeight);
     m_pattern_status_label.setBounds(statusRow);
-    panel.removeFromTop(sectionSpacing);
+    // panel.removeFromTop(sectionSpacing); // was after statusRow
+
+    // Adding settings button
+    auto settingsArea = titleGlobalArea.removeFromRight(100).reduced(10);
+    m_settings_button.setBounds(settingsArea);
 
     auto lfoRowBounds = lfoArea.reduced(lfoMargin);
-    const int lfoCount = static_cast<int>(m_lfo_slots.size());
-    if (lfoCount > 0)
+    if (lfoCount > 0 && !lfoRowBounds.isEmpty())
     {
-        const int totalSpacing = lfoSpacing * juce::jmax(0, lfoCount - 1);
-        const int slotWidth = juce::jmax(lfoSlotMinWidth,
-                                         (lfoRowBounds.getWidth() - totalSpacing) / juce::jmax(1, lfoCount));
+        int slotIndex = 0;
         auto rowWalker = lfoRowBounds;
-        for (int i = 0; i < lfoCount; ++i)
+        for (int row = 0; row < lfoRows; ++row)
         {
-            auto widgetBounds = rowWalker.removeFromLeft(slotWidth);
-            if (i < lfoCount - 1)
-                rowWalker.removeFromLeft(lfoSpacing);
-            if (auto* widget = m_lfo_slots[static_cast<size_t>(i)].widget.get())
-                widget->setBounds(widgetBounds);
+            auto rowArea = rowWalker.removeFromTop(lfoRowHeight);
+            if (row < lfoRows - 1)
+                rowWalker.removeFromTop(lfoRowSpacing);
+
+            const int remaining = lfoCount - row * lfosPerRow;
+            const int columnsThisRow = juce::jlimit(1, lfosPerRow, remaining);
+            const int totalSpacing = lfoSpacing * juce::jmax(0, columnsThisRow - 1);
+            const int slotWidth = juce::jmax(lfoSlotMinWidth,
+                                             (rowArea.getWidth() - totalSpacing) / juce::jmax(1, columnsThisRow));
+
+            auto rowColumns = rowArea;
+            for (int column = 0; column < columnsThisRow && slotIndex < lfoCount; ++column)
+            {
+                auto widgetBounds = rowColumns.removeFromLeft(slotWidth);
+                if (column < columnsThisRow - 1)
+                    rowColumns.removeFromLeft(lfoSpacing);
+
+                if (auto* widget = m_lfo_slots[static_cast<size_t>(slotIndex)].widget.get())
+                    widget->setBounds(widgetBounds);
+                ++slotIndex;
+            }
         }
     }
 
     m_midi_learn_overlay.setBounds(getLocalBounds());
+}
+
+void MainComponent::open_settings_window()
+{
+    if (m_settings_window == nullptr)
+    {
+        m_settings_window = std::make_unique<LayerCakeSettingsWindow>(m_device_manager);
+    }
+    m_settings_window->setVisible(true);
+    m_settings_window->toFront(true);
+}
+
+SettingsComponent::SettingsComponent(juce::AudioDeviceManager& deviceManager)
+    : m_device_manager(deviceManager)
+{
+    m_input_label.setText("Input Channel:", juce::dontSendNotification);
+    addAndMakeVisible(m_input_label);
+
+    m_input_selector.onChange = [this] { apply_selected_input_channels(); };
+    addAndMakeVisible(m_input_selector);
+    
+    refresh_input_channel_selector();
+    setSize(300, 200);
+}
+
+void SettingsComponent::paint(juce::Graphics& g)
+{
+    g.fillAll(juce::Colours::darkgrey);
+}
+
+void SettingsComponent::resized()
+{
+    auto area = getLocalBounds().reduced(20);
+    auto inputRow = area.removeFromTop(30);
+    m_input_label.setBounds(inputRow.removeFromLeft(100));
+    inputRow.removeFromLeft(10);
+    m_input_selector.setBounds(inputRow);
+}
+
+void SettingsComponent::refresh_input_channel_selector()
+{
+    m_input_selector.clear();
+    auto* device = m_device_manager.getCurrentAudioDevice();
+    if (device == nullptr)
+    {
+        m_input_channel_names.clear();
+        return;
+    }
+
+    m_input_channel_names = device->getInputChannelNames();
+    if (m_input_channel_names.isEmpty())
+    {
+        m_input_selector.addItem("No Inputs Available", 1);
+        m_input_selector.setEnabled(false);
+        return;
+    }
+    
+    m_input_selector.setEnabled(true);
+    for (int i = 0; i < m_input_channel_names.size(); ++i)
+    {
+        m_input_selector.addItem(juce::String(i + 1) + ". " + m_input_channel_names[i], i + 1);
+    }
+
+    juce::AudioDeviceManager::AudioDeviceSetup setup;
+    m_device_manager.getAudioDeviceSetup(setup);
+    
+    int activeIndex = -1;
+    // Find the first active input channel
+    if (!setup.useDefaultInputChannels && setup.inputChannels.getHighestBit() >= 0)
+    {
+        for (int i = 0; i < m_input_channel_names.size(); ++i)
+        {
+            if (setup.inputChannels[i])
+            {
+                activeIndex = i;
+                break;
+            }
+        }
+    }
+
+    if (activeIndex >= 0)
+    {
+        m_input_selector.setSelectedId(activeIndex + 1, juce::dontSendNotification);
+    }
+    else
+    {
+        // Default to first channel if none selected or using defaults
+        m_input_selector.setSelectedId(1, juce::dontSendNotification);
+    }
+}
+
+void SettingsComponent::apply_selected_input_channels()
+{
+    const int selectedId = m_input_selector.getSelectedId();
+    if (selectedId <= 0)
+        return;
+
+    const int channelIndex = selectedId - 1;
+
+    juce::AudioDeviceManager::AudioDeviceSetup setup;
+    m_device_manager.getAudioDeviceSetup(setup);
+
+    setup.inputChannels.clear();
+    setup.inputChannels.setBit(channelIndex, true);
+    setup.useDefaultInputChannels = false;
+
+    auto error = m_device_manager.setAudioDeviceSetup(setup, true);
+    if (error.isNotEmpty())
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "LayerCake",
+                                               "Unable to update input routing:\n" + error);
+        refresh_input_channel_selector();
+        return;
+    }
 }
 
 void MainComponent::configure_audio_device(std::optional<juce::AudioDeviceManager::AudioDeviceSetup> initialSetup)
@@ -881,7 +1025,7 @@ void MainComponent::update_record_labels()
     m_record_button.setToggleState(m_engine.is_record_enabled(), juce::dontSendNotification);
     m_display.set_record_layer(layer_index);
     if (m_layer_select_knob != nullptr && !m_layer_select_knob->has_lfo_assignment())
-        m_layer_select_knob->slider().setValue(static_cast<double>(layer_index + 1), juce::dontSendNotification);
+        m_layer_select_knob->slider().setValue(static_cast<double>(layer_index + 1), juce::sendNotificationSync);
     sync_manual_state_from_controls();
 }
 
@@ -920,6 +1064,11 @@ void MainComponent::apply_pattern_settings(bool request_rearm)
     double multiplier = std::pow(2.0, subdiv);
     double effective_bpm = juce::jlimit(1.0, 2000.0, base_bpm * multiplier);
     clock->set_bpm(static_cast<float>(effective_bpm));
+    if (std::abs(effective_bpm - m_last_pattern_bpm) > 0.001)
+    {
+        m_last_pattern_bpm = effective_bpm;
+        refresh_lfo_tempo_sync();
+    }
     if (request_rearm)
         request_pattern_rearm();
     update_pattern_labels();
@@ -1048,6 +1197,7 @@ void MainComponent::capture_lfo_state(LayerCakePresetData& data) const
         slotData.mode = static_cast<int>(slot.generator.get_mode());
         slotData.rate_hz = slot.generator.get_rate_hz();
         slotData.depth = slot.generator.get_depth();
+        slotData.tempo_sync = slot.widget != nullptr && slot.widget->is_tempo_sync_enabled();
     }
 
     data.lfo_assignments.clear();
@@ -1149,7 +1299,11 @@ void MainComponent::apply_lfo_state(const LayerCakePresetData& data)
         slot.generator.reset_phase();
         m_lfo_last_values[i].store(slot.generator.get_last_value(), std::memory_order_relaxed);
         if (slot.widget != nullptr)
+        {
             slot.widget->sync_controls_from_generator();
+            slot.widget->set_tempo_sync_enabled(slotData.tempo_sync, true);
+        }
+        slot.tempo_sync = slotData.tempo_sync;
     }
 
     for (auto* knob : m_lfo_enabled_knobs)
@@ -1178,6 +1332,7 @@ void MainComponent::apply_lfo_state(const LayerCakePresetData& data)
     }
 
     update_all_modulation_overlays();
+    refresh_lfo_tempo_sync();
 }
 
 void MainComponent::apply_pattern_snapshot(const LayerCakePresetData& data)
@@ -1341,174 +1496,13 @@ void MainComponent::changeListenerCallback(juce::ChangeBroadcaster* source)
         return;
     }
 
-    refresh_input_channel_selector();
-}
-
-void MainComponent::refresh_input_channel_selector()
-{
-    auto* device = m_device_manager.getCurrentAudioDevice();
-    if (device == nullptr)
+    if (m_settings_window != nullptr)
     {
-        DBG("MainComponent::refresh_input_channel_selector early return (no device)");
-        m_input_channel_names.clear();
-        m_input_channel_selection.clear();
-        rebuild_input_channel_buttons();
-        return;
-    }
-
-    m_input_channel_names = device->getInputChannelNames();
-    const int numInputs = m_input_channel_names.size();
-    m_input_channel_selection.assign(static_cast<size_t>(juce::jmax(0, numInputs)),
-                                     static_cast<char>(1));
-
-    juce::AudioDeviceManager::AudioDeviceSetup setup;
-    m_device_manager.getAudioDeviceSetup(setup);
-    if (!setup.useDefaultInputChannels && setup.inputChannels.getHighestBit() >= 0)
-    {
-        for (int i = 0; i < numInputs; ++i)
+        if (auto* settings = dynamic_cast<SettingsComponent*>(m_settings_window->getContentComponent()))
         {
-            const bool enabled = setup.inputChannels[i];
-            m_input_channel_selection[static_cast<size_t>(i)] = enabled ? static_cast<char>(1) : static_cast<char>(0);
+            settings->refresh_input_channel_selector();
         }
     }
-
-    rebuild_input_channel_buttons();
-}
-
-void MainComponent::rebuild_input_channel_buttons()
-{
-    m_input_channel_buttons.clear(true);
-
-    m_updating_input_toggles = true;
-    for (int i = 0; i < m_input_channel_names.size(); ++i)
-    {
-        auto button = std::make_unique<juce::ToggleButton>();
-        button->setButtonText(juce::String(i + 1) + ". " + m_input_channel_names[i]);
-        const bool initialState = juce::isPositiveAndBelow(i, static_cast<int>(m_input_channel_selection.size()))
-                                  ? (m_input_channel_selection[static_cast<size_t>(i)] != 0)
-                                  : true;
-        button->setToggleState(initialState, juce::dontSendNotification);
-        const int channelIndex = i;
-        button->onClick = [this, channelIndex]()
-        {
-            if (m_updating_input_toggles)
-                return;
-            if (!juce::isPositiveAndBelow(channelIndex, static_cast<int>(m_input_channel_selection.size())))
-            {
-                DBG("MainComponent::rebuild_input_channel_buttons onClick early return (index OOB)");
-                return;
-            }
-            auto* toggle = m_input_channel_buttons[channelIndex];
-            if (toggle == nullptr)
-            {
-                DBG("MainComponent::rebuild_input_channel_buttons onClick early return (missing toggle)");
-                return;
-            }
-            m_input_channel_selection[static_cast<size_t>(channelIndex)] = toggle->getToggleState() ? static_cast<char>(1) : static_cast<char>(0);
-            DBG("MainComponent::input routing update channel=" + juce::String(channelIndex)
-                + " state=" + juce::String(toggle->getToggleState() ? "on" : "off"));
-            apply_selected_input_channels();
-        };
-        auto* raw = m_input_channel_buttons.add(button.release());
-        m_input_toggle_container.addAndMakeVisible(raw);
-    }
-    m_updating_input_toggles = false;
-    update_input_channel_layout();
-    sync_input_toggle_states();
-}
-
-void MainComponent::update_input_channel_layout()
-{
-    const int buttonHeight = 24;
-    const int buttonSpacing = 6;
-    const int width = juce::jmax(0, m_input_viewport.getViewWidth() - 4);
-    int y = 0;
-
-    for (auto* button : m_input_channel_buttons)
-    {
-        if (button == nullptr)
-            continue;
-
-        button->setBounds(0, y, width, buttonHeight);
-        y += buttonHeight + buttonSpacing;
-    }
-
-    m_input_toggle_container.setSize(width, y);
-}
-
-void MainComponent::sync_input_toggle_states()
-{
-    m_updating_input_toggles = true;
-    for (int i = 0; i < m_input_channel_buttons.size(); ++i)
-    {
-        if (!juce::isPositiveAndBelow(i, static_cast<int>(m_input_channel_selection.size())))
-            continue;
-
-        if (auto* button = m_input_channel_buttons[i])
-            button->setToggleState(m_input_channel_selection[static_cast<size_t>(i)] != 0, juce::dontSendNotification);
-    }
-    m_updating_input_toggles = false;
-}
-
-void MainComponent::set_all_input_channels(bool shouldEnable)
-{
-    if (m_input_channel_selection.empty())
-    {
-        DBG("MainComponent::set_all_input_channels early return (no inputs)");
-        return;
-    }
-
-    std::fill(m_input_channel_selection.begin(),
-              m_input_channel_selection.end(),
-              shouldEnable ? static_cast<char>(1) : static_cast<char>(0));
-    DBG("MainComponent::set_all_input_channels state=" + juce::String(shouldEnable ? "all" : "none")
-        + " count=" + juce::String(count_selected_input_channels()));
-    sync_input_toggle_states();
-    apply_selected_input_channels();
-}
-
-void MainComponent::apply_selected_input_channels()
-{
-    if (m_input_channel_selection.empty())
-    {
-        DBG("MainComponent::apply_selected_input_channels early return (no selection data)");
-        return;
-    }
-
-    juce::AudioDeviceManager::AudioDeviceSetup setup;
-    m_device_manager.getAudioDeviceSetup(setup);
-
-    setup.inputChannels.clear();
-    int enabled = 0;
-    for (int i = 0; i < static_cast<int>(m_input_channel_selection.size()); ++i)
-    {
-        if (m_input_channel_selection[static_cast<size_t>(i)] != 0)
-        {
-            setup.inputChannels.setBit(i, true);
-            ++enabled;
-        }
-    }
-    setup.useDefaultInputChannels = false;
-
-    auto error = m_device_manager.setAudioDeviceSetup(setup, true);
-    if (error.isNotEmpty())
-    {
-        DBG("MainComponent::apply_selected_input_channels error: " + error);
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                               "LayerCake",
-                                               "Unable to update input routing:\n" + error);
-        refresh_input_channel_selector();
-        return;
-    }
-
-    DBG("MainComponent::apply_selected_input_channels applied channels=" + juce::String(enabled));
-}
-
-int MainComponent::count_selected_input_channels() const
-{
-    return static_cast<int>(std::count(m_input_channel_selection.begin(),
-                                       m_input_channel_selection.end(),
-                                       static_cast<char>(1)));
 }
 
 double MainComponent::get_effective_knob_value(const LayerCakeKnob* knob) const
@@ -1633,6 +1627,15 @@ double MainComponent::get_layer_recorded_seconds(int layer_index) const
     if (sample_rate <= 0.0)
         return 0.0;
     return static_cast<double>(recorded_samples) / sample_rate;
+}
+
+void MainComponent::refresh_lfo_tempo_sync()
+{
+    for (auto& slot : m_lfo_slots)
+    {
+        if (slot.widget != nullptr)
+            slot.widget->refresh_tempo_sync();
+    }
 }
 
 } // namespace LayerCakeApp

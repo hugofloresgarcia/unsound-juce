@@ -29,6 +29,7 @@ public:
         juce::String parameterId;
         bool isToggle{false};
         bool enableSweepRecorder{true};
+        bool enableLfoAssignment{true};
     };
 
     LayerCakeKnob(const Config& config, Shared::MidiLearnManager* midiManager);

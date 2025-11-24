@@ -240,7 +240,7 @@ void LibraryBrowserComponent::paint(juce::Graphics& g)
 void LibraryBrowserComponent::resized()
 {
     const int marginOuter = 16;
-    const int sectionSpacing = 14;
+    const int columnSpacing = 14;
     const int titleHeight = 26;
     const int titleVerticalPadding = 3;
     const int editorHeight = 28;
@@ -249,9 +249,13 @@ void LibraryBrowserComponent::resized()
     const int listSpacing = 10;
 
     auto bounds = getLocalBounds().reduced(marginOuter);
-    const int sectionCount = 4;
-    const int totalSpacing = sectionSpacing * (sectionCount - 1);
-    const int sectionHeight = sectionCount > 0 ? juce::jmax(0, (bounds.getHeight() - totalSpacing) / sectionCount) : 0;
+    if (bounds.isEmpty())
+        return;
+
+    const int columnCount = 4;
+    const int totalSpacing = columnSpacing * (columnCount - 1);
+    const int baseColumnWidth = columnCount > 0 ? juce::jmax(0, (bounds.getWidth() - totalSpacing) / columnCount) : 0;
+    int remainingWidth = bounds.getWidth() - (baseColumnWidth * columnCount) - totalSpacing;
 
     auto layoutColumn = [&](ColumnWidgets& widgets, juce::Rectangle<int> columnBounds)
     {
@@ -268,19 +272,20 @@ void LibraryBrowserComponent::resized()
         widgets.list_box.setBounds(column_area);
     };
 
-    auto paletteSection = bounds.removeFromTop(sectionHeight);
-    layoutColumn(m_palette_widgets, paletteSection);
-    bounds.removeFromTop(sectionSpacing);
+    auto columnArea = bounds;
+    auto layoutNext = [&](ColumnWidgets& widgets, bool isLast)
+    {
+        int extra = isLast ? remainingWidth : 0;
+        auto columnBounds = columnArea.removeFromLeft(baseColumnWidth + extra);
+        layoutColumn(widgets, columnBounds);
+        if (!isLast)
+            columnArea.removeFromLeft(columnSpacing);
+    };
 
-    auto patternSection = bounds.removeFromTop(sectionHeight);
-    layoutColumn(m_pattern_widgets, patternSection);
-    bounds.removeFromTop(sectionSpacing);
-
-    auto knobsetSection = bounds.removeFromTop(sectionHeight);
-    layoutColumn(m_knobset_widgets, knobsetSection);
-    bounds.removeFromTop(sectionSpacing);
-
-    layoutColumn(m_scene_widgets, bounds);
+    layoutNext(m_palette_widgets, false);
+    layoutNext(m_pattern_widgets, false);
+    layoutNext(m_knobset_widgets, false);
+    layoutNext(m_scene_widgets, true);
 }
 
 void LibraryBrowserComponent::buttonClicked(juce::Button* button)

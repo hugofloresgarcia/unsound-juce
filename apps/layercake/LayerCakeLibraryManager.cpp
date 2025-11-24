@@ -89,6 +89,7 @@ juce::var lfo_slots_to_var(const LfoSlotArray& slots)
         obj->setProperty("mode", slot.mode);
         obj->setProperty("rateHz", slot.rate_hz);
         obj->setProperty("depth", slot.depth);
+        obj->setProperty("tempoSync", slot.tempo_sync);
         serialized.add(obj);
     }
     return serialized;
@@ -110,6 +111,10 @@ void lfo_slots_from_var(const juce::var& value, LfoSlotArray& out_slots)
         out_slots[static_cast<size_t>(i)].mode = static_cast<int>(obj->getProperty("mode"));
         out_slots[static_cast<size_t>(i)].rate_hz = static_cast<float>(obj->getProperty("rateHz"));
         out_slots[static_cast<size_t>(i)].depth = static_cast<float>(obj->getProperty("depth"));
+        if (obj->hasProperty("tempoSync"))
+            out_slots[static_cast<size_t>(i)].tempo_sync = static_cast<bool>(obj->getProperty("tempoSync"));
+        else
+            out_slots[static_cast<size_t>(i)].tempo_sync = false;
     }
 }
 

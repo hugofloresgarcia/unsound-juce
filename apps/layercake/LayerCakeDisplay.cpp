@@ -5,11 +5,13 @@
 namespace
 {
 constexpr int kWaveformPoints = 512;
-constexpr int kDisplaySize = 500;
+constexpr float kReferenceDisplaySize = 560.0f;
 constexpr float kHighlightAlpha = 0.35f;
 constexpr float kPlayheadSway = 6.0f;
 constexpr float kBaseSquiggleCycles = 2.0f;
 constexpr float kLaneSpacing = 10.0f;
+constexpr float kDisplayMarginRatio = 0.06f;
+constexpr float kFrameMarginRatio = 0.08f;
 const juce::Colour kSoftWhite(0xfff4f4f2);
 constexpr double kNoisePhaseDelta = 0.0125;
 
@@ -54,8 +56,8 @@ LayerCakeDisplay::LayerCakeDisplay(LayerCakeEngine& engine)
     for (int i = 0; i < 6; ++i)
     {
         Invader inv;
-        inv.position = { juce::Random::getSystemRandom().nextFloat() * kDisplaySize,
-                         juce::Random::getSystemRandom().nextFloat() * kDisplaySize };
+        inv.position = { juce::Random::getSystemRandom().nextFloat() * kReferenceDisplaySize,
+                         juce::Random::getSystemRandom().nextFloat() * kReferenceDisplaySize };
         inv.velocity = { juce::Random::getSystemRandom().nextFloat() * 0.6f + 0.2f,
                          juce::Random::getSystemRandom().nextFloat() * 0.6f + 0.2f };
         if (juce::Random::getSystemRandom().nextBool())
@@ -68,33 +70,43 @@ LayerCakeDisplay::LayerCakeDisplay(LayerCakeEngine& engine)
     refresh_waveforms();
     refresh_grains();
     startTimerHz(30);
-    regenerate_funfetti_texture(kDisplaySize + 120, kDisplaySize + 120);
 }
 
 void LayerCakeDisplay::paint(juce::Graphics& g)
 {
     const int num_layers = static_cast<int>(LayerCakeEngine::kNumLayers);
-    const float frame_corner_radius = 30.0f;
-    const float screen_corner_radius = 18.0f;
-    const float lane_corner_radius = 10.0f;
-    const float lane_spacing = kLaneSpacing;
-    const float lane_inner_padding = 8.0f;
-    const float indicator_column_width = 34.0f;
-    const float indicator_corner_radius = 5.0f;
-    const float indicator_vertical_padding = 6.0f;
-    const float separator_thickness = 1.0f;
 
     auto bounds = getLocalBounds().toFloat();
+    if (bounds.isEmpty())
+        return;
+
+    const float horizontalMargin = juce::jmax(16.0f, bounds.getWidth() * kDisplayMarginRatio);
+    const float verticalMargin = juce::jmax(12.0f, bounds.getHeight() * kDisplayMarginRatio);
+    auto display = bounds.reduced(horizontalMargin, verticalMargin);
+    if (display.isEmpty())
+        return;
+
+    const float scale = display.getHeight() / kReferenceDisplaySize;
+    const float frame_corner_radius = 30.0f * scale;
+    const float screen_corner_radius = 18.0f * scale;
+    const float lane_corner_radius = 10.0f * scale;
+    const float lane_spacing = kLaneSpacing * scale;
+    const float lane_inner_padding = juce::jmax(2.0f, 4.0f * scale);
+    const float indicator_column_width = juce::jmax(24.0f, 34.0f * scale);
+    const float indicator_corner_radius = 5.0f * scale;
+    const float indicator_vertical_padding = 6.0f * scale;
+    const float separator_thickness = juce::jmax(0.6f, 1.0f * scale);
+    const float playhead_sway = kPlayheadSway * scale;
+
     g.fillAll(juce::Colour(0xffffcccc));
 
-    auto frame = bounds.withSizeKeepingCentre(static_cast<float>(kDisplaySize + 80),
-                                              static_cast<float>(kDisplaySize + 90));
+    const float frameMargin = juce::jmax(18.0f, bounds.getHeight() * kFrameMarginRatio);
+    auto frame = display.expanded(frameMargin);
     g.setColour(juce::Colour(0xff101010));
     g.fillRoundedRectangle(frame, frame_corner_radius);
     g.setColour(kSoftWhite.withAlpha(0.35f));
     g.drawRoundedRectangle(frame, frame_corner_radius, 3.0f);
 
-    auto display = get_display_area();
     const int texWidth = juce::jmax(32, static_cast<int>(std::ceil(display.getWidth())));
     const int texHeight = juce::jmax(32, static_cast<int>(std::ceil(display.getHeight())));
     if (m_funfetti_texture.isNull()
@@ -128,7 +140,7 @@ void LayerCakeDisplay::paint(juce::Graphics& g)
         const float layer_mix = num_layers > 1 ? static_cast<float>(layer) / static_cast<float>(num_layers - 1)
                                                : 0.0f;
         juce::Colour layer_colour = m_palette[static_cast<size_t>(layer) % m_palette.size()];
-        juce::Colour lane_colour = layer_colour.darker(is_record_layer ? 0.35f : 0.55f).withAlpha(0.9f);
+        juce::Colour lane_colour = layer_colour.darker(is_record_layer ? 0.35f : 0.5f).withAlpha(0.9f);
         if (is_record_layer)
             lane_colour = lane_colour.brighter(0.25f);
         g.setColour(lane_colour);
@@ -166,7 +178,7 @@ void LayerCakeDisplay::paint(juce::Graphics& g)
         if (area.isEmpty())
             continue;
 
-        juce::Colour wave_colour = m_palette[layer % m_palette.size()].withAlpha(0.4f);
+        juce::Colour wave_colour = juce::Colours::darkgrey.withAlpha(0.8f);
         g.setColour(wave_colour);
 
         juce::Path path;
@@ -221,7 +233,7 @@ void LayerCakeDisplay::paint(juce::Graphics& g)
         {
             const float t = static_cast<float>(i) / static_cast<float>(segments);
             const float y = start_y + t * squiggle_height;
-            const float sway = std::sin(juce::MathConstants<float>::twoPi * (t * cycles)) * kPlayheadSway;
+            const float sway = std::sin(juce::MathConstants<float>::twoPi * (t * cycles)) * playhead_sway;
             const float x = juce::jlimit(lane_area.getX(),
                                          lane_area.getRight(),
                                          playhead_x + sway);
@@ -337,9 +349,10 @@ void LayerCakeDisplay::set_position_indicator(float normalized_position)
 juce::Rectangle<float> LayerCakeDisplay::get_display_area() const
 {
     auto bounds = getLocalBounds().toFloat();
-    auto display = bounds.withSizeKeepingCentre(static_cast<float>(kDisplaySize),
-                                                static_cast<float>(kDisplaySize));
-    return display.reduced(20.0f);
+    const float horizontalMargin = juce::jmax(16.0f, bounds.getWidth() * kDisplayMarginRatio);
+    const float verticalMargin = juce::jmax(12.0f, bounds.getHeight() * kDisplayMarginRatio);
+    auto display = bounds.reduced(horizontalMargin, verticalMargin);
+    return display;
 }
 
 juce::Colour LayerCakeDisplay::colour_for_voice(size_t voice_index)
@@ -506,12 +519,14 @@ juce::Rectangle<float> LayerCakeDisplay::lane_bounds_for_index(int layer_index) 
         return {};
 
     auto display = get_display_area();
-    const float total_spacing = kLaneSpacing * (LayerCakeEngine::kNumLayers - 1);
+    const float scale = display.getHeight() / kReferenceDisplaySize;
+    const float lane_spacing = kLaneSpacing * scale;
+    const float total_spacing = lane_spacing * (LayerCakeEngine::kNumLayers - 1);
     const float lane_height = (display.getHeight() - total_spacing) / static_cast<float>(LayerCakeEngine::kNumLayers);
 
     return {
         display.getX(),
-        display.getY() + static_cast<float>(layer_index) * (lane_height + kLaneSpacing),
+        display.getY() + static_cast<float>(layer_index) * (lane_height + lane_spacing),
         display.getWidth(),
         lane_height
     };

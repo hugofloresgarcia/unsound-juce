@@ -1,6 +1,7 @@
 #include "LayerCakeLfoWidget.h"
 #include "LfoDragHelpers.h"
 #include <cmath>
+#include <array>
 
 namespace LayerCakeApp
 {
@@ -9,6 +10,11 @@ namespace
 {
 constexpr int kPreviewSamples = 128;
 const juce::Colour kSoftWhite(0xfff4f4f2);
+constexpr double kMinWidgetRateHz = 0.05;
+constexpr double kMaxWidgetRateHz = 12.0;
+constexpr std::array<double, 9> kTempoMultipliers{
+    0.125, 0.25, 0.333333, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0
+};
 
 flower::LfoWaveform waveform_from_index(int index)
 {
@@ -59,6 +65,17 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
     m_mode_selector.addListener(this);
     addAndMakeVisible(m_mode_selector);
 
+    m_tempo_sync_button.setButtonText("tq");
+    m_tempo_sync_button.setClickingTogglesState(true);
+    m_tempo_sync_button.setTooltip("Tempo-quantize & lock this LFO");
+    LayerCakeLookAndFeel::setControlButtonType(m_tempo_sync_button, LayerCakeLookAndFeel::ControlButtonType::Trigger);
+    m_tempo_sync_button.setLookAndFeel(&m_tempo_button_lnf);
+    m_tempo_sync_button.onClick = [this]()
+    {
+        set_tempo_sync_enabled(m_tempo_sync_button.getToggleState(), true);
+    };
+    addAndMakeVisible(m_tempo_sync_button);
+
     auto makeKnob = [this](const juce::String& label,
                            double minVal,
                            double maxVal,
@@ -73,6 +90,7 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
         config.interval = step;
         config.suffix = label == "rate" ? " Hz" : "";
         config.enableSweepRecorder = false;
+        config.enableLfoAssignment = false;
         return std::make_unique<LayerCakeKnob>(config, nullptr);
     };
 
@@ -99,7 +117,12 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
     m_last_depth = generator.get_depth();
     m_last_mode = static_cast<int>(generator.get_mode());
     refresh_wave_preview();
-    startTimerHz(20);
+    startTimerHz(10);
+}
+
+LayerCakeLfoWidget::~LayerCakeLfoWidget()
+{
+    m_tempo_sync_button.setLookAndFeel(nullptr);
 }
 
 void LayerCakeLfoWidget::paint(juce::Graphics& g)
@@ -116,7 +139,7 @@ void LayerCakeLfoWidget::resized()
 {
     const int margin = 6;
     const int headerHeight = 24;
-    const int previewHeight = juce::jmax(40, static_cast<int>(getHeight() * 0.3f));
+    const int previewHeight = juce::jmax(25, static_cast<int>(getHeight() * 0.15f));
     const int knobSize = 52;
     const int knobStackHeight = knobSize + 26;
     const int knobSpacing = 8;
@@ -124,6 +147,9 @@ void LayerCakeLfoWidget::resized()
     auto bounds = getLocalBounds().reduced(margin);
 
     auto headerArea = bounds.removeFromTop(headerHeight);
+    const int toggleWidth = 48;
+    auto toggleArea = headerArea.removeFromRight(toggleWidth);
+    m_tempo_sync_button.setBounds(toggleArea);
     const int selectorWidth = juce::jmax(70, headerArea.getWidth() / 3);
     auto selectorArea = headerArea.removeFromRight(selectorWidth);
     m_mode_selector.setBounds(selectorArea);
@@ -199,6 +225,39 @@ void LayerCakeLfoWidget::sync_controls_from_generator()
     refresh_wave_preview();
 }
 
+void LayerCakeLfoWidget::set_tempo_provider(std::function<double()> tempo_bpm_provider)
+{
+    m_tempo_bpm_provider = std::move(tempo_bpm_provider);
+    refresh_tempo_sync();
+}
+
+void LayerCakeLfoWidget::set_tempo_sync_enabled(bool enabled, bool forceUpdate)
+{
+    const bool changed = (m_tempo_sync_enabled != enabled);
+    if (!changed && !forceUpdate)
+        return;
+    m_tempo_sync_enabled = enabled;
+    m_tempo_sync_button.setToggleState(enabled, juce::dontSendNotification);
+    apply_tempo_sync_if_needed(true);
+    if (changed && m_tempo_sync_callback != nullptr)
+        m_tempo_sync_callback(enabled);
+}
+
+bool LayerCakeLfoWidget::is_tempo_sync_enabled() const noexcept
+{
+    return m_tempo_sync_enabled;
+}
+
+void LayerCakeLfoWidget::refresh_tempo_sync()
+{
+    apply_tempo_sync_if_needed(true);
+}
+
+void LayerCakeLfoWidget::set_tempo_sync_callback(std::function<void(bool)> callback)
+{
+    m_tempo_sync_callback = std::move(callback);
+}
+
 void LayerCakeLfoWidget::comboBoxChanged(juce::ComboBox* comboBoxThatHasChanged)
 {
     if (comboBoxThatHasChanged != &m_mode_selector)
@@ -215,7 +274,12 @@ void LayerCakeLfoWidget::update_generator_settings(bool from_knob_change)
     juce::ignoreUnused(from_knob_change);
     m_generator.set_mode(waveform_from_index(m_mode_selector.getSelectedItemIndex()));
     if (m_rate_knob != nullptr)
-        m_generator.set_rate_hz(static_cast<float>(m_rate_knob->slider().getValue()));
+    {
+        double desiredRate = m_rate_knob->slider().getValue();
+        if (m_tempo_sync_enabled)
+            desiredRate = quantize_rate(desiredRate, true);
+        m_generator.set_rate_hz(static_cast<float>(desiredRate));
+    }
     if (m_depth_knob != nullptr)
         m_generator.set_depth(static_cast<float>(m_depth_knob->slider().getValue()));
     notify_settings_changed();
@@ -254,6 +318,56 @@ void LayerCakeLfoWidget::timerCallback()
     m_last_depth = depth;
     m_last_mode = mode;
     refresh_wave_preview();
+}
+
+double LayerCakeLfoWidget::get_tempo_bpm() const
+{
+    if (m_tempo_bpm_provider != nullptr)
+    {
+        double bpm = m_tempo_bpm_provider();
+        if (bpm > 0.0)
+            return bpm;
+    }
+    return 120.0;
+}
+
+double LayerCakeLfoWidget::quantize_rate(double desiredRateHz, bool updateSlider)
+{
+    const double tempoHz = juce::jlimit(0.01, 100.0, get_tempo_bpm() / 60.0);
+    double best = juce::jlimit(kMinWidgetRateHz, kMaxWidgetRateHz, tempoHz);
+    double minDiff = std::abs(best - desiredRateHz);
+    for (double multiplier : kTempoMultipliers)
+    {
+        const double candidate = tempoHz * multiplier;
+        if (candidate < kMinWidgetRateHz || candidate > kMaxWidgetRateHz)
+            continue;
+        const double diff = std::abs(candidate - desiredRateHz);
+        if (diff < minDiff)
+        {
+            minDiff = diff;
+            best = candidate;
+        }
+    }
+
+    if (updateSlider && m_rate_knob != nullptr)
+        m_rate_knob->slider().setValue(best, juce::dontSendNotification);
+    return best;
+}
+
+void LayerCakeLfoWidget::sync_to_lock()
+{
+    m_generator.reset_phase(0.0);
+    m_generator.sync_time(juce::Time::getMillisecondCounterHiRes());
+}
+
+void LayerCakeLfoWidget::apply_tempo_sync_if_needed(bool resyncPhase)
+{
+    if (!m_tempo_sync_enabled || m_rate_knob == nullptr)
+        return;
+    const double snapped = quantize_rate(m_rate_knob->slider().getValue(), true);
+    m_generator.set_rate_hz(static_cast<float>(snapped));
+    if (resyncPhase)
+        sync_to_lock();
 }
 
 //==============================================================================
@@ -341,6 +455,12 @@ void LayerCakeLfoWidget::WavePreview::begin_drag(const juce::MouseEvent& event)
     container->startDragging(description, this);
     m_is_dragging = true;
     juce::ignoreUnused(event);
+}
+
+juce::Font LayerCakeLfoWidget::SmallButtonLookAndFeel::getTextButtonFont(juce::TextButton& button, int buttonHeight)
+{
+    auto base = juce::LookAndFeel_V4::getTextButtonFont(button, buttonHeight);
+    return base.withHeight(12.0f);
 }
 
 } // namespace LayerCakeApp

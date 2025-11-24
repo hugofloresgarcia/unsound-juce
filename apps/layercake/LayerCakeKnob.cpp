@@ -8,15 +8,15 @@ namespace LayerCakeApp
 
 namespace
 {
-constexpr int kLabelHeight = 18;
-constexpr int kLabelGap = 4;
+constexpr int kLabelHeight = 12;
+constexpr int kLabelGap = 0;
 constexpr int kValueAreaPadding = 6;
 constexpr int kValueLabelInset = 8;
-constexpr int kRecorderButtonSize = 22;
-constexpr int kRecorderButtonMargin = 6;
+constexpr int kRecorderButtonSize = 20;
+constexpr int kRecorderButtonMargin = 4;
 constexpr double kBlinkIntervalMs = 320.0;
-constexpr int kLfoButtonSize = 18;
-constexpr int kLfoButtonMargin = 8;
+constexpr int kLfoButtonSize = 16;
+constexpr int kLfoButtonMargin = 2;
 const juce::Colour kSoftWhite(0xfff4f4f2);
 }
 
@@ -64,28 +64,22 @@ LayerCakeKnob::LayerCakeKnob(const Config& config, Shared::MidiLearnManager* mid
         }
     }
 
-    m_lfo_button = std::make_unique<LfoAssignmentButton>();
-    if (m_lfo_button != nullptr)
+    if (m_config.enableLfoAssignment)
     {
-        m_lfo_button->onClicked = [this]()
+        m_lfo_button = std::make_unique<LfoAssignmentButton>();
+        if (m_lfo_button != nullptr)
         {
-            if (!has_lfo_assignment())
+            m_lfo_button->onClicked = [this]()
             {
-                DBG("LayerCakeKnob lfo button click early return (no assignment)");
-                return;
-            }
+                if (!has_lfo_assignment())
+                    return;
 
-            if (m_lfo_release_handler != nullptr)
-            {
-                m_lfo_release_handler();
-            }
-            else
-            {
-                DBG("LayerCakeKnob lfo button click early return (release handler missing)");
-            }
-        };
-        addAndMakeVisible(m_lfo_button.get());
-        refresh_lfo_button_state();
+                if (m_lfo_release_handler != nullptr)
+                    m_lfo_release_handler();
+            };
+            addAndMakeVisible(m_lfo_button.get());
+            refresh_lfo_button_state();
+        }
     }
 
     m_sweep_recorder.prepare(44100.0);
@@ -292,6 +286,8 @@ void LayerCakeKnob::mouseDown(const juce::MouseEvent& event)
 
 bool LayerCakeKnob::isInterestedInDragSource(const juce::DragAndDropTarget::SourceDetails& details)
 {
+    if (!m_config.enableLfoAssignment)
+        return false;
     int lfoIndex = -1;
     juce::Colour accent;
     juce::String label;
@@ -303,6 +299,8 @@ bool LayerCakeKnob::isInterestedInDragSource(const juce::DragAndDropTarget::Sour
 
 void LayerCakeKnob::itemDragEnter(const juce::DragAndDropTarget::SourceDetails& details)
 {
+    if (!m_config.enableLfoAssignment)
+        return;
     int lfoIndex = -1;
     juce::Colour accent;
     juce::String label;
@@ -322,6 +320,8 @@ void LayerCakeKnob::itemDragEnter(const juce::DragAndDropTarget::SourceDetails& 
 void LayerCakeKnob::itemDragExit(const juce::DragAndDropTarget::SourceDetails& details)
 {
     juce::ignoreUnused(details);
+    if (!m_config.enableLfoAssignment)
+        return;
     if (m_drag_highlight)
     {
         m_drag_highlight = false;
@@ -331,6 +331,8 @@ void LayerCakeKnob::itemDragExit(const juce::DragAndDropTarget::SourceDetails& d
 
 void LayerCakeKnob::itemDropped(const juce::DragAndDropTarget::SourceDetails& details)
 {
+    if (!m_config.enableLfoAssignment)
+        return;
     int lfoIndex = -1;
     juce::Colour accent;
     juce::String label;
@@ -813,22 +815,15 @@ void LayerCakeKnob::set_lfo_assignment_index(int index)
 void LayerCakeKnob::set_lfo_button_accent(std::optional<juce::Colour> accent)
 {
     m_lfo_button_accent = accent;
-    if (m_lfo_button == nullptr)
+    if (m_lfo_button != nullptr)
     {
-        DBG("LayerCakeKnob::set_lfo_button_accent early return (missing button)");
-        return;
+        m_lfo_button->setAssignmentColour(accent);
+        refresh_lfo_button_state();
     }
-    m_lfo_button->setAssignmentColour(accent);
-    refresh_lfo_button_state();
 }
 
 void LayerCakeKnob::set_lfo_release_handler(const std::function<void()>& handler)
 {
-    if (m_lfo_button == nullptr)
-    {
-        DBG("LayerCakeKnob::set_lfo_release_handler early return (missing button)");
-        return;
-    }
     m_lfo_release_handler = handler;
 }
 
@@ -851,10 +846,7 @@ void LayerCakeKnob::clear_knob_colour()
 void LayerCakeKnob::refresh_lfo_button_state()
 {
     if (m_lfo_button == nullptr)
-    {
-        DBG("LayerCakeKnob::refresh_lfo_button_state early return (missing button)");
         return;
-    }
 
     const bool assigned = has_lfo_assignment();
     m_lfo_button->setHasAssignment(assigned);

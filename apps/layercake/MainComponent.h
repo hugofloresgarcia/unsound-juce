@@ -35,6 +35,46 @@ private:
     int m_active_channels{1};
 };
 
+class SettingsComponent : public juce::Component
+{
+public:
+    SettingsComponent(juce::AudioDeviceManager& deviceManager);
+    void paint(juce::Graphics& g) override;
+    void resized() override;
+
+    void refresh_input_channel_selector();
+    void apply_selected_input_channels();
+
+private:
+    juce::AudioDeviceManager& m_device_manager;
+
+    juce::Label m_input_label;
+    juce::ComboBox m_input_selector;
+    juce::StringArray m_input_channel_names;
+};
+
+class SettingsButtonLookAndFeel : public LayerCakeLookAndFeel
+{
+public:
+    juce::Font getTextButtonFont(juce::TextButton& button, int buttonHeight) override;
+};
+
+class LayerCakeSettingsWindow : public juce::DialogWindow
+{
+public:
+    LayerCakeSettingsWindow(juce::AudioDeviceManager& deviceManager)
+        : juce::DialogWindow("settings", juce::Colours::darkgrey, true, true)
+    {
+        setUsingNativeTitleBar(true);
+        auto* content = new SettingsComponent(deviceManager);
+        setContentOwned(content, true);
+        setResizable(false, false);
+        centreWithSize(300, 200);
+    }
+
+    void closeButtonPressed() override { setVisible(false); }
+};
+
 class MainComponent : public juce::Component,
                       public juce::DragAndDropContainer,
                       public juce::AudioIODeviceCallback,
@@ -99,13 +139,8 @@ private:
     void capture_lfo_state(LayerCakePresetData& data) const;
     void apply_lfo_state(const LayerCakePresetData& data);
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
-    void refresh_input_channel_selector();
-    void rebuild_input_channel_buttons();
-    void update_input_channel_layout();
-    void sync_input_toggle_states();
-    void set_all_input_channels(bool shouldEnable);
-    void apply_selected_input_channels();
-    int count_selected_input_channels() const;
+    void open_settings_window();
+    void refresh_lfo_tempo_sync();
 
     LayerCakeEngine m_engine;
     juce::AudioDeviceManager m_device_manager;
@@ -136,6 +171,7 @@ private:
     std::unique_ptr<LayerCakeKnob> m_pattern_skip_knob;
     std::unique_ptr<LayerCakeKnob> m_pattern_tempo_knob;
     std::unique_ptr<LayerCakeKnob> m_pattern_subdiv_knob;
+    double m_last_pattern_bpm{-1.0};
 
     LayerCakeDisplay m_display;
     std::array<std::atomic<float>, MultiChannelMeter::kMaxChannels> m_meter_levels;
@@ -155,21 +191,15 @@ private:
         std::unique_ptr<LayerCakeLfoWidget> widget;
         juce::Colour accent;
         juce::String label;
+        bool tempo_sync{false};
     };
     static constexpr size_t kNumLfoSlots = LayerCakePresetData::kNumLfos;
     std::array<LfoSlot, kNumLfoSlots> m_lfo_slots;
     std::array<std::atomic<float>, kNumLfoSlots> m_lfo_last_values;
     std::vector<LayerCakeKnob*> m_lfo_enabled_knobs;
-    juce::Label m_input_section_label;
-    juce::Label m_input_section_hint;
-    juce::TextButton m_input_select_all_button;
-    juce::TextButton m_input_clear_button;
-    juce::Viewport m_input_viewport;
-    juce::Component m_input_toggle_container;
-    juce::OwnedArray<juce::ToggleButton> m_input_channel_buttons;
-    std::vector<char> m_input_channel_selection;
-    juce::StringArray m_input_channel_names;
-    bool m_updating_input_toggles{false};
+    SettingsButtonLookAndFeel m_settings_button_look_and_feel;
+    juce::TextButton m_settings_button;
+    std::unique_ptr<LayerCakeSettingsWindow> m_settings_window;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };
