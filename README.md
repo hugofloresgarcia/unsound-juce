@@ -40,9 +40,9 @@ you'll find the apps in `build/apps/text2sound4all/Release` and `build/apps/laye
 
 text2sound4all is a multitrack looper that lets you generate sounds from text prompts using stable audio open small.
 
-## the CLEAT panner
+## the CLEAT panner 
 
-the CLEAT panner is a specialized spatialization tool designed for high-density speaker arrays (specifically the 16-channel CLEAT system). it goes beyond standard panning with a suite of generative and reactive features.
+the CLEAT panner is an auto spatialization tool designed for the 16-channel CLEAT system at [elastic arts](https://cleat.info). 
 
 ![Main 2D Panner UI](assets/cleat_panner.png)
 
