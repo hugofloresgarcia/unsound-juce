@@ -70,6 +70,10 @@ public:
 
     void apply_spread_randomization(GrainState& state, float spread_amount);
     void apply_direction_randomization(GrainState& state, float reverse_prob);
+    
+    // Public random accessor for UI randomization
+    juce::Random& get_random() { return m_random; }
+
 private:
     void allocate_layers(double sample_rate);
     void rebuild_write_head();

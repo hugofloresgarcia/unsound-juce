@@ -48,16 +48,49 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
       m_record_button("rec"),
       m_clock_button("play"),
       m_display(m_engine),
-      m_midi_learn_overlay(m_midi_learn_manager)
+      m_midi_learn_overlay(m_midi_learn_manager),
+      m_command_router(m_focus_registry),
+      m_status_hud(m_focus_registry),
+      m_command_palette(m_focus_registry, [](){}),
+      m_help_overlay([](){})
 {
     DBG("LayerCakeApp::MainComponent ctor");
     setOpaque(true);
     setLookAndFeel(&m_custom_look_and_feel);
 
-    addKeyListener(this);
+    // Keyboard Router Setup
+    addKeyListener(&m_command_router);
+    // addKeyListener(this); // Removed legacy listener to avoid conflicts, moved logic to router callbacks below
+
+    m_command_router.onToggleRecord = [this]() { toggle_record_enable(); };
+    m_command_router.onRandomize = [this]() { 
+        // Randomize logic - for now just randomize grain params
+        if (m_position_knob) m_position_knob->slider().setValue(m_engine.get_random().nextFloat(), juce::sendNotificationSync);
+        if (m_duration_knob) m_duration_knob->slider().setValue(m_engine.get_random().nextFloat() * 1000.0f + 50.0f, juce::sendNotificationSync);
+        if (m_rate_knob) m_rate_knob->slider().setValue(m_engine.get_random().nextFloat() * 24.0f - 12.0f, juce::sendNotificationSync);
+        if (m_pan_knob) m_pan_knob->slider().setValue(m_engine.get_random().nextFloat(), juce::sendNotificationSync);
+    };
+    m_command_router.onShowCommandPalette = [this]() { m_command_palette.show(); };
+    m_command_router.onShowHelp = [this]() { m_help_overlay.show(); };
+    m_command_router.onCancel = [this]() {
+        m_help_overlay.hide();
+        m_command_palette.hide();
+        m_focus_registry.setFocus(nullptr);
+    };
+    m_command_router.onTempoChanged = [this](float bpm) {
+        if (m_tempo_knob) m_tempo_knob->slider().setValue(bpm, juce::sendNotificationSync);
+    };
+
     m_device_manager.addChangeListener(this);
 
     addAndMakeVisible(m_display);
+    
+    // HUD
+    addAndMakeVisible(m_status_hud);
+    addAndMakeVisible(m_command_palette);
+    m_command_palette.setVisible(false);
+    addAndMakeVisible(m_help_overlay);
+    m_help_overlay.setVisible(false);
 
     for (auto& meter_level : m_meter_levels)
         meter_level.store(0.0f, std::memory_order_relaxed);
@@ -95,6 +128,7 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
         slot.generator.set_clock_division(1.0f); // Default 1 step per beat
 
         slot.widget = std::make_unique<LayerCakeLfoWidget>(static_cast<int>(i), slot.generator, slot.accent, &m_midi_learn_manager);
+        m_focus_registry.registerTarget(slot.widget.get());
         slot.widget->set_drag_label(slot.label);
         slot.widget->set_on_settings_changed([this, index = static_cast<int>(i)]()
         {
@@ -183,6 +217,8 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
         register_knob_for_lfo(knob.get());
         knob->set_knob_colour(kKnobGray);
         addAndMakeVisible(knob.get());
+        // Register for keyboard focus
+        m_focus_registry.registerTarget(knob.get());
         return knob;
     };
 
@@ -324,7 +360,7 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
     if (m_midi_mappings_file.existsAsFile())
         m_midi_learn_manager.loadMappings(m_midi_mappings_file);
 
-    setSize(900, 760);
+    setSize(900, 880);
     configure_audio_device(std::move(initialDeviceSetup));
     startTimerHz(30);
     m_manual_state.loop_start_seconds = 0.0f;
@@ -407,7 +443,14 @@ void MainComponent::resized()
     const int paramColumnWidth = 140;
     const int paramColumnsPerRow = 3;
 
-    auto bounds = getLocalBounds().reduced(marginOuter);
+    auto bounds = getLocalBounds();
+    
+    // Place HUD at bottom with explicit margin
+    m_status_hud.setBounds(bounds.removeFromBottom(24));
+    m_status_hud.toFront(false);
+    bounds.removeFromBottom(12); // Extra margin between HUD and LFOs
+
+    bounds.reduce(marginOuter, marginOuter);
 
     // Preset panel on the far right (vertical column layout)
     if (m_preset_panel != nullptr)
@@ -580,6 +623,10 @@ void MainComponent::resized()
 
     m_midi_learn_overlay.setBounds(getLocalBounds());
     m_lfo_connection_overlay.setBounds(getLocalBounds());
+    
+    // Overlays
+    m_command_palette.setBounds(getLocalBounds().withSizeKeepingCentre(400, 300));
+    m_help_overlay.setBounds(getLocalBounds());
 }
 
 void MainComponent::open_settings_window()

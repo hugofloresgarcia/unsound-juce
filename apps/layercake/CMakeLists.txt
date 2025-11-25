@@ -34,6 +34,18 @@ target_sources(LayerCakeApp PRIVATE
     lfo/LfoTriggerButton.h
     lfo/LfoConnectionOverlay.cpp
     lfo/LfoConnectionOverlay.h
+    # Keyboard components
+    focus/FocusableTarget.h
+    focus/FocusRegistry.h
+    input/KeyboardCommandRouter.cpp
+    input/KeyboardCommandRouter.h
+    input/TapTempoController.h
+    ui/StatusHUDComponent.cpp
+    ui/StatusHUDComponent.h
+    ui/CommandPaletteOverlay.cpp
+    ui/CommandPaletteOverlay.h
+    ui/HelpOverlay.cpp
+    ui/HelpOverlay.h
 )
 
 target_link_libraries(LayerCakeApp PRIVATE
@@ -51,4 +63,3 @@ target_link_libraries(LayerCakeApp PRIVATE
     juce::juce_gui_basics
     juce::juce_gui_extra
 )
-

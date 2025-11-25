@@ -5,6 +5,7 @@
 #include <flowerjuce/Components/MidiLearnManager.h>
 #include "../LayerCakeLookAndFeel.h"
 #include "../LayerCakeLibraryManager.h"
+#include "../focus/FocusableTarget.h"
 #include <functional>
 #include <vector>
 
@@ -75,6 +76,7 @@ private:
 };
 
 class LayerCakeLfoWidget : public juce::Component,
+                           public layercake::FocusableTarget,
                            private juce::ComboBox::Listener,
                            private juce::Timer,
                            private juce::Label::Listener
@@ -115,6 +117,15 @@ public:
     void set_tempo_provider(std::function<double()> tempo_bpm_provider);
     void set_on_hover_changed(std::function<void(bool)> callback);
     void set_current_value(float value);  // 0-1 for LED display
+
+    // layercake::FocusableTarget
+    juce::String getFocusID() const override;
+    juce::String getDisplayName() const override;
+    void onFocusGain() override;
+    void onFocusLost() override;
+    bool handleKeyPressed(const juce::KeyPress& key) override;
+    juce::String getValueString() const override;
+    juce::Component* getComponent() override { return this; }
 
 private:
     class WavePreview : public juce::Component
@@ -220,6 +231,7 @@ private:
     std::function<double()> m_tempo_bpm_provider;
     std::function<void(bool)> m_hover_changed_callback;
     bool m_is_hovered{false};
+    bool m_is_keyboard_focused{false};
     float m_current_lfo_value{0.0f};  // For LED display
     juce::Rectangle<int> m_led_bounds;
     

@@ -562,6 +562,12 @@ void LayerCakeLfoWidget::paint(juce::Graphics& g)
     g.setColour(m_accent_colour.withAlpha(0.7f));
     g.drawRect(bounds.reduced(1), 1);
     
+    if (m_is_keyboard_focused)
+    {
+        g.setColour(juce::Colours::yellow.withAlpha(0.5f));
+        g.drawRect(bounds, 2);
+    }
+
     // NES-style LED indicator (square, not round)
     if (!m_led_bounds.isEmpty())
     {
@@ -1389,5 +1395,62 @@ void LayerCakeLfoWidget::SmallButtonLookAndFeel::positionComboBoxText(juce::Comb
     label.setColour(juce::Label::textColourId, juce::Colour(0xfffcfcfc));
 }
 
-} // namespace LayerCakeApp
+juce::String LayerCakeLfoWidget::getFocusID() const
+{
+    return "lfo_" + juce::String(m_lfo_index + 1);
+}
 
+juce::String LayerCakeLfoWidget::getDisplayName() const
+{
+    return m_custom_label.isNotEmpty() ? m_custom_label : "LFO " + juce::String(m_lfo_index + 1);
+}
+
+void LayerCakeLfoWidget::onFocusGain()
+{
+    m_is_keyboard_focused = true;
+    repaint();
+    DBG("LayerCakeLfoWidget::onFocusGain " + getFocusID());
+}
+
+void LayerCakeLfoWidget::onFocusLost()
+{
+    m_is_keyboard_focused = false;
+    repaint();
+}
+
+bool LayerCakeLfoWidget::handleKeyPressed(const juce::KeyPress& key)
+{
+    // Space toggle enabled?
+    if (key.getTextCharacter() == ' ')
+    {
+        set_enabled(!m_enabled);
+        return true;
+    }
+    
+    // Arrow keys to navigate pages?
+    if (key.getKeyCode() == juce::KeyPress::leftKey)
+    {
+        prev_page();
+        return true;
+    }
+    else if (key.getKeyCode() == juce::KeyPress::rightKey)
+    {
+        next_page();
+        return true;
+    }
+
+    // Up/Down to change rate/div/level of currently focused param?
+    // Currently we don't track sub-focus of params within the widget via keyboard nicely.
+    // Maybe just focus on the widget means "LFO controls".
+    // Ideally, we'd drill down. But for now, let's just allow paging.
+    
+    return false;
+}
+
+juce::String LayerCakeLfoWidget::getValueString() const
+{
+    if (!m_enabled) return "Bypassed";
+    return m_mode_selector.getText();
+}
+
+} // namespace LayerCakeApp

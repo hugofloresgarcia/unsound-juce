@@ -5,6 +5,7 @@
 #include <flowerjuce/DSP/KnobSweepRecorder.h>
 #include "KnobRecorderButton.h"
 #include "lfo/LfoAssignmentButton.h"
+#include "focus/FocusableTarget.h"
 #include <functional>
 #include <optional>
 #include <atomic>
@@ -13,6 +14,7 @@ namespace LayerCakeApp
 {
 
 class LayerCakeKnob : public juce::Component,
+                      public layercake::FocusableTarget,
                       public juce::DragAndDropTarget,
                       public juce::SettableTooltipClient,
                       private juce::Slider::Listener,
@@ -72,6 +74,15 @@ public:
     void clear_knob_colour();
     bool is_cli_mode() const { return m_config.cliMode; }
     const Config& config() const { return m_config; }
+
+    // layercake::FocusableTarget
+    juce::String getFocusID() const override { return m_config.parameterId; }
+    juce::String getDisplayName() const override { return m_config.labelText; }
+    void onFocusGain() override;
+    void onFocusLost() override;
+    bool handleKeyPressed(const juce::KeyPress& key) override;
+    juce::String getValueString() const override;
+    juce::Component* getComponent() override { return this; }
 
 private:
     enum class RecorderState
@@ -145,6 +156,7 @@ private:
     bool m_show_base_value{false};
     bool m_is_hovered{false};
     bool m_is_editing{false};
+    bool m_is_keyboard_focused{false};
     std::unique_ptr<juce::TextEditor> m_text_editor;
 };
 

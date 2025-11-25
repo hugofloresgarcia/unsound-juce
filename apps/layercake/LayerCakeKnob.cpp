@@ -147,6 +147,13 @@ void LayerCakeKnob::paint(juce::Graphics& g)
         g.setColour(m_active_drag_colour.withAlpha(0.45f));
         g.drawEllipse(highlightCircle, 2.0f);
     }
+    
+    if (m_is_keyboard_focused)
+    {
+        auto focusCircle = circle.expanded(4.0f);
+        g.setColour(juce::Colours::yellow.withAlpha(0.6f));
+        g.drawEllipse(focusCircle, 2.0f);
+    }
 
     const float startAngle = juce::MathConstants<float>::pi * 1.2f;
     const float sweepAngle = juce::MathConstants<float>::pi * 1.6f;
@@ -262,6 +269,14 @@ void LayerCakeKnob::paint_cli_mode(juce::Graphics& g)
     {
         g.setColour(m_active_drag_colour.withAlpha(0.15f));
         g.fillRoundedRectangle(bounds, 2.0f);
+    }
+    
+    if (m_is_keyboard_focused)
+    {
+        g.setColour(juce::Colours::yellow.withAlpha(0.2f));
+        g.fillRoundedRectangle(bounds, 2.0f);
+        g.setColour(juce::Colours::yellow.withAlpha(0.8f));
+        g.drawRoundedRectangle(bounds, 2.0f, 1.0f);
     }
     
     // Recorder state indicator (leftmost)
@@ -1278,6 +1293,74 @@ double LayerCakeKnob::parse_input(const juce::String& text) const
     return inputValue;
 }
 
+void LayerCakeKnob::onFocusGain()
+{
+    m_is_keyboard_focused = true;
+    repaint();
+    DBG("LayerCakeKnob::onFocusGain " + m_config.parameterId);
+}
+
+void LayerCakeKnob::onFocusLost()
+{
+    m_is_keyboard_focused = false;
+    repaint();
+    // Ensure text editor is closed if open
+    if (m_is_editing)
+        hide_text_editor(true);
+}
+
+bool LayerCakeKnob::handleKeyPressed(const juce::KeyPress& key)
+{
+    if (m_is_editing)
+    {
+        // If we're editing text, let the text editor handle it
+        return false; 
+    }
+
+    if (key.getKeyCode() == juce::KeyPress::returnKey)
+    {
+        if (m_config.cliMode)
+        {
+            show_text_editor();
+            return true;
+        }
+    }
+    
+    // Arrow keys for adjustment
+    double step = m_config.interval;
+    if (key.getModifiers().isShiftDown()) step *= 10.0;
+    if (key.getModifiers().isAltDown()) step *= 0.1;
+    
+    if (key.getKeyCode() == juce::KeyPress::upKey || key.getKeyCode() == juce::KeyPress::rightKey)
+    {
+        m_slider.setValue(m_slider.getValue() + step, juce::sendNotificationSync);
+        return true;
+    }
+    else if (key.getKeyCode() == juce::KeyPress::downKey || key.getKeyCode() == juce::KeyPress::leftKey)
+    {
+        m_slider.setValue(m_slider.getValue() - step, juce::sendNotificationSync);
+        return true;
+    }
+    
+    // Bracket keys for stepping
+    auto charCode = key.getTextCharacter();
+    if (charCode == ']' || charCode == '.')
+    {
+        m_slider.setValue(m_slider.getValue() + step, juce::sendNotificationSync);
+        return true;
+    }
+    else if (charCode == '[' || charCode == ',')
+    {
+        m_slider.setValue(m_slider.getValue() - step, juce::sendNotificationSync);
+        return true;
+    }
+
+    return false;
+}
+
+juce::String LayerCakeKnob::getValueString() const
+{
+    return format_cli_value();
+}
+
 } // namespace LayerCakeApp
-
-

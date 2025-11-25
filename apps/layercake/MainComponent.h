@@ -15,6 +15,11 @@
 #include "lfo/LayerCakeLfoWidget.h"
 #include "lfo/LfoTriggerButton.h"
 #include "lfo/LfoConnectionOverlay.h"
+#include "focus/FocusRegistry.h"
+#include "input/KeyboardCommandRouter.h"
+#include "ui/StatusHUDComponent.h"
+#include "ui/CommandPaletteOverlay.h"
+#include "ui/HelpOverlay.h"
 #include <array>
 #include <optional>
 #include <vector>
@@ -22,6 +27,8 @@
 
 namespace LayerCakeApp
 {
+
+using namespace layercake; // Import new namespace
 
 class SettingsComponent : public juce::Component
 {
@@ -179,6 +186,13 @@ private:
     std::unique_ptr<LayerCakeSettingsWindow> m_settings_window;
     LfoConnectionOverlay m_lfo_connection_overlay;
     int m_hovered_lfo_index{-1};
+
+    // Keyboard Control
+    FocusRegistry m_focus_registry;
+    KeyboardCommandRouter m_command_router;
+    StatusHUDComponent m_status_hud;
+    CommandPaletteOverlay m_command_palette;
+    HelpOverlay m_help_overlay;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };
