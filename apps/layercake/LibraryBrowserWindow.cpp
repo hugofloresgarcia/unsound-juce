@@ -6,6 +6,16 @@ namespace
 constexpr int kRowHeight = 38;
 } // namespace
 
+class LibraryRowButtonLookAndFeel : public juce::LookAndFeel_V4
+{
+public:
+    juce::Font getTextButtonFont(juce::TextButton& button, int buttonHeight) override
+    {
+        juce::ignoreUnused(button, buttonHeight);
+        return juce::Font(juce::FontOptions().withHeight(10.0f));
+    }
+};
+
 class LibraryBrowserComponent::LibraryRowComponent : public juce::Component,
                                                     private juce::Button::Listener
 {
@@ -27,8 +37,15 @@ public:
                               juce::Colours::white.withAlpha(0.8f));
             button->addListener(this);
             button->setWantsKeyboardFocus(false);
+            button->setLookAndFeel(&m_button_lnf);
             addAndMakeVisible(button);
         }
+    }
+    
+    ~LibraryRowComponent() override
+    {
+        for (auto* button : { &m_save_button, &m_load_button, &m_delete_button })
+            button->setLookAndFeel(nullptr);
     }
 
     void setRowName(const juce::String& name)
@@ -48,8 +65,8 @@ public:
     void resized() override
     {
         const int margin = 6;
-        const int buttonWidth = 42;
-        const int buttonSpacing = 6;
+        const int buttonWidth = 24;
+        const int buttonSpacing = 4;
 
         auto bounds = getLocalBounds().reduced(margin);
         auto buttonArea = bounds.removeFromRight(3 * buttonWidth + 2 * buttonSpacing);
@@ -94,6 +111,7 @@ private:
     std::function<void()> m_on_save;
     std::function<void()> m_on_load;
     std::function<void()> m_on_delete;
+    LibraryRowButtonLookAndFeel m_button_lnf;
 };
 
 LibraryBrowserComponent::ColumnModel::ColumnModel(LibraryBrowserComponent& owner, ColumnType type)
@@ -175,7 +193,6 @@ LibraryBrowserComponent::LibraryBrowserComponent(LayerCakeLibraryManager& manage
       m_apply_knobset_fn(std::move(apply_knobset_fn))
 {
     const juce::Colour paletteBorder(0xfffd5e53);
-    const juce::Colour patternBorder(0xff63ff87);
     const juce::Colour knobsetBorder(0xfff2b950);
     const juce::Colour sceneBorder(0xff35c0ff);
 
@@ -212,7 +229,7 @@ LibraryBrowserComponent::LibraryBrowserComponent(LayerCakeLibraryManager& manage
     };
 
     configureColumn(m_palette_widgets, ColumnType::Palette, "new palette name", paletteBorder);
-    configureColumn(m_pattern_widgets, ColumnType::Pattern, "new pattern name", patternBorder);
+    // Pattern column removed
     configureColumn(m_knobset_widgets, ColumnType::Knobset, "new knobset name", knobsetBorder);
     configureColumn(m_scene_widgets, ColumnType::Scene, "new scene name", sceneBorder);
 
@@ -245,14 +262,13 @@ void LibraryBrowserComponent::resized()
     const int titleVerticalPadding = 3;
     const int editorHeight = 28;
     const int editorSpacing = 6;
-    const int buttonHeight = 30;
     const int listSpacing = 10;
 
     auto bounds = getLocalBounds().reduced(marginOuter);
     if (bounds.isEmpty())
         return;
 
-    const int columnCount = 4;
+    const int columnCount = 3; // Reduced from 4 (Pattern removed)
     const int totalSpacing = columnSpacing * (columnCount - 1);
     const int baseColumnWidth = columnCount > 0 ? juce::jmax(0, (bounds.getWidth() - totalSpacing) / columnCount) : 0;
     int remainingWidth = bounds.getWidth() - (baseColumnWidth * columnCount) - totalSpacing;
@@ -283,7 +299,7 @@ void LibraryBrowserComponent::resized()
     };
 
     layoutNext(m_palette_widgets, false);
-    layoutNext(m_pattern_widgets, false);
+    // Pattern column removed
     layoutNext(m_knobset_widgets, false);
     layoutNext(m_scene_widgets, true);
 }
@@ -292,8 +308,6 @@ void LibraryBrowserComponent::buttonClicked(juce::Button* button)
 {
     if (button == &m_palette_widgets.save_button)
         handle_new_save(ColumnType::Palette);
-    else if (button == &m_pattern_widgets.save_button)
-        handle_new_save(ColumnType::Pattern);
     else if (button == &m_scene_widgets.save_button)
         handle_new_save(ColumnType::Scene);
     else if (button == &m_knobset_widgets.save_button)
@@ -304,7 +318,6 @@ void LibraryBrowserComponent::refresh_lists()
 {
     m_manager.refresh();
     m_palette_widgets.list_box.updateContent();
-    m_pattern_widgets.list_box.updateContent();
     m_knobset_widgets.list_box.updateContent();
     m_scene_widgets.list_box.updateContent();
     repaint();
@@ -393,59 +406,6 @@ void LibraryBrowserComponent::handle_row_action(ColumnType type,
                 {
                     showError("Unable to delete palette '" + name + "'.");
                     DBG("LibraryBrowserComponent failed deleting palette " + name);
-                    return;
-                }
-                refresh_lists();
-            }
-            break;
-        }
-        case ColumnType::Pattern:
-        {
-            if (action == RowAction::Save)
-            {
-                if (!m_capture_pattern_fn)
-                {
-                    DBG("LibraryBrowserComponent missing capture_pattern_fn");
-                    return;
-                }
-                const auto data = m_capture_pattern_fn();
-                if (!m_manager.save_pattern(name, data))
-                {
-                    showError("Unable to store pattern '" + name + "'.");
-                    DBG("LibraryBrowserComponent failed saving pattern " + name);
-                    return;
-                }
-                refresh_lists();
-            }
-            else if (action == RowAction::Load)
-            {
-                LayerCakePresetData data;
-                if (!m_manager.load_pattern(name, data))
-                {
-                    showError("Unable to load pattern '" + name + "'.");
-                    DBG("LibraryBrowserComponent failed loading pattern " + name);
-                    return;
-                }
-                if (m_apply_pattern_fn)
-                    m_apply_pattern_fn(data);
-                else
-                    DBG("LibraryBrowserComponent missing apply_pattern_fn");
-            }
-            else
-            {
-                if (!juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon,
-                                                        column_title(type),
-                                                        "Delete pattern '" + name + "'?",
-                                                        "Delete",
-                                                        "Cancel"))
-                {
-                    DBG("LibraryBrowserComponent pattern delete cancelled for " + name);
-                    return;
-                }
-                if (!m_manager.delete_pattern(name))
-                {
-                    showError("Unable to delete pattern '" + name + "'.");
-                    DBG("LibraryBrowserComponent failed deleting pattern " + name);
                     return;
                 }
                 refresh_lists();
@@ -564,6 +524,8 @@ void LibraryBrowserComponent::handle_row_action(ColumnType type,
             }
             break;
         }
+        default:
+            break;
     }
 }
 
@@ -572,12 +534,13 @@ const juce::StringArray& LibraryBrowserComponent::names_for(ColumnType type) con
     switch (type)
     {
         case ColumnType::Palette: return m_manager.get_palettes();
-        case ColumnType::Pattern: return m_manager.get_patterns();
         case ColumnType::Knobset: return m_manager.get_knobsets();
         case ColumnType::Scene: return m_manager.get_scenes();
+        default: break;
     }
     jassertfalse;
-    return m_manager.get_patterns();
+    static juce::StringArray empty;
+    return empty;
 }
 
 LibraryBrowserComponent::ColumnWidgets& LibraryBrowserComponent::widgets_for(ColumnType type)
@@ -585,12 +548,12 @@ LibraryBrowserComponent::ColumnWidgets& LibraryBrowserComponent::widgets_for(Col
     switch (type)
     {
         case ColumnType::Palette: return m_palette_widgets;
-        case ColumnType::Pattern: return m_pattern_widgets;
         case ColumnType::Knobset: return m_knobset_widgets;
         case ColumnType::Scene: return m_scene_widgets;
+        default: break;
     }
     jassertfalse;
-    return m_pattern_widgets;
+    return m_knobset_widgets;
 }
 
 void LibraryBrowserComponent::format_name_editor(juce::TextEditor& editor) const
@@ -608,9 +571,9 @@ juce::String LibraryBrowserComponent::column_title(ColumnType type)
     switch (type)
     {
         case ColumnType::Palette: return "Palettes";
-        case ColumnType::Pattern: return "Patterns";
         case ColumnType::Knobset: return "Knobsets";
         case ColumnType::Scene: return "Scenes";
+        default: break;
     }
     jassertfalse;
     return "Library";
@@ -638,7 +601,7 @@ LibraryBrowserWindow::LibraryBrowserWindow(LayerCakeLibraryManager& manager,
                                                 std::move(capture_knobset_fn),
                                                 std::move(apply_knobset_fn));
     setContentOwned(content, true);
-    centreWithSize(960, 420);
+    centreWithSize(720, 420); // Slightly narrower without Pattern column
     setResizable(true, true);
     setVisible(true);
 }
@@ -649,4 +612,3 @@ void LibraryBrowserWindow::closeButtonPressed()
     if (m_on_close)
         m_on_close();
 }
-

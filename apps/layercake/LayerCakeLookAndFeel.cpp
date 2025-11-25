@@ -53,9 +53,11 @@ LayerCakeLookAndFeel::LayerCakeLookAndFeel()
     setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
 
-    setColour(juce::Slider::thumbColourId, m_accentMagenta);
-    setColour(juce::Slider::trackColourId, m_accentCyan);
-    setColour(juce::Slider::rotarySliderFillColourId, m_accentMagenta);
+    // Default knob color is a muted gray - LFOs provide the color pop
+    const juce::Colour kDefaultKnobGray(0xff5a6070);
+    setColour(juce::Slider::thumbColourId, kDefaultKnobGray);
+    setColour(juce::Slider::trackColourId, kDefaultKnobGray.brighter(0.15f));
+    setColour(juce::Slider::rotarySliderFillColourId, kDefaultKnobGray.withAlpha(0.7f));
     setColour(juce::Slider::rotarySliderOutlineColourId, m_border);
     setColour(juce::Slider::backgroundColourId, m_panel.darker(0.4f));
     setColour(juce::Slider::textBoxTextColourId, m_terminal);

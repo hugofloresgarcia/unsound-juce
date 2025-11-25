@@ -11,8 +11,6 @@
 #include <vector>
 #include <juce_core/juce_core.h>
 
-class PatternClock;
-
 class LayerCakeEngine
 {
 public:
@@ -31,7 +29,7 @@ public:
                        int num_output_channels,
                        int num_samples);
 
-    void trigger_grain(const GrainState& state, bool triggered_by_pattern_clock = false);
+    void trigger_grain(const GrainState& state);
 
     void set_record_layer(int layer_index);
     int get_record_layer() const { return m_record_layer_index; }
@@ -46,9 +44,17 @@ public:
     float get_master_gain_db() const { return m_master_gain_db.load(); }
     double get_sample_rate() const { return m_sample_rate; }
 
+    // Clock / Transport
+    void set_bpm(float bpm);
+    float get_bpm() const { return static_cast<float>(m_bpm.load()); }
+    double get_master_beats() const { return m_master_beats.load(std::memory_order_relaxed); }
+    void set_transport_playing(bool playing);
+    bool is_transport_playing() const { return m_transport_playing.load(); }
+    void reset_transport();
+
     std::array<TapeLoop, kNumLayers>& get_layers() { return m_layers; }
     const std::array<TapeLoop, kNumLayers>& get_layers() const { return m_layers; }
-    PatternClock* get_pattern_clock() const { return m_pattern_clock.get(); }
+
     void get_active_grains(std::vector<GrainVisualState>& out_states) const;
     void capture_layer_snapshot(int layer_index, LayerBufferSnapshot& snapshot) const;
     void capture_all_layer_snapshots(std::array<LayerBufferSnapshot, kNumLayers>& snapshots) const;
@@ -71,7 +77,6 @@ private:
     std::array<TapeLoop, kNumLayers> m_layers;
     std::array<std::unique_ptr<GrainVoice>, kNumVoices> m_voices;
     std::unique_ptr<LooperWriteHead> m_write_head;
-    std::unique_ptr<PatternClock> m_pattern_clock;
 
     juce::SpinLock m_grain_queue_lock;
     std::deque<GrainState> m_pending_grains;
@@ -90,6 +95,9 @@ private:
     juce::SpinLock m_record_lock;
     juce::Random m_random;
     juce::AudioFormatManager m_audio_format_manager;
+    
+    // Clock
+    std::atomic<double> m_bpm{120.0};
+    std::atomic<double> m_master_beats{0.0};
+    std::atomic<bool> m_transport_playing{true};
 };
-
-

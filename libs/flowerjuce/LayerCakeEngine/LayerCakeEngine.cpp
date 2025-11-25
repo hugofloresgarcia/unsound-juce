@@ -1,5 +1,4 @@
 #include "LayerCakeEngine.h"
-#include "PatternClock.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <algorithm>
@@ -20,7 +19,6 @@ LayerCakeEngine::LayerCakeEngine()
     {
         m_voices[voice] = std::make_unique<GrainVoice>(voice);
     }
-    m_pattern_clock = std::make_unique<PatternClock>(*this);
 }
 
 LayerCakeEngine::~LayerCakeEngine() = default;
@@ -41,9 +39,6 @@ void LayerCakeEngine::prepare(double sample_rate, int block_size, int num_output
         voice->prepare(sample_rate);
 
     rebuild_write_head();
-
-    if (m_pattern_clock != nullptr)
-        m_pattern_clock->prepare(sample_rate);
 
     m_is_prepared.store(true);
 }
@@ -126,6 +121,21 @@ void LayerCakeEngine::set_record_enable(bool should_record)
     }
 }
 
+void LayerCakeEngine::set_bpm(float bpm)
+{
+    m_bpm.store(juce::jlimit(10.0f, 300.0f, bpm));
+}
+
+void LayerCakeEngine::set_transport_playing(bool playing)
+{
+    m_transport_playing.store(playing);
+}
+
+void LayerCakeEngine::reset_transport()
+{
+    m_master_beats.store(0.0);
+}
+
 void LayerCakeEngine::process_block(const float* const* input_channel_data,
                                     int num_input_channels,
                                     float* const* output_channel_data,
@@ -143,6 +153,19 @@ void LayerCakeEngine::process_block(const float* const* input_channel_data,
         DBG("LayerCakeEngine::process_block missing output buffers");
         return;
     }
+    
+    // Update Clock
+    if (m_transport_playing.load())
+    {
+        const double bpm = m_bpm.load();
+        const double beats_per_second = bpm / 60.0;
+        const double samples_per_second = m_sample_rate > 0 ? m_sample_rate : 44100.0;
+        const double beats_per_sample = beats_per_second / samples_per_second;
+        
+        double current_beats = m_master_beats.load(std::memory_order_relaxed);
+        current_beats += num_samples * beats_per_sample;
+        m_master_beats.store(current_beats, std::memory_order_relaxed);
+    }
 
     drain_pending_grains();
 
@@ -159,9 +182,6 @@ void LayerCakeEngine::process_block(const float* const* input_channel_data,
 
     for (int sample = 0; sample < num_samples; ++sample)
     {
-        if (m_pattern_clock != nullptr)
-            m_pattern_clock->process_sample();
-
         if (m_record_enabled.load())
         {
             process_recording_sample(input_channel_data,
@@ -240,7 +260,7 @@ void LayerCakeEngine::process_recording_sample(const float* const* input_channel
     m_write_head->process_sample(input_sample, record_position);
 }
 
-void LayerCakeEngine::trigger_grain(const GrainState& state, bool triggered_by_pattern_clock)
+void LayerCakeEngine::trigger_grain(const GrainState& state)
 {
     GrainState queued_state = state;
     queued_state.should_trigger = true;
@@ -507,5 +527,3 @@ bool LayerCakeEngine::load_layer_from_file(int layer_index, const juce::File& au
         + audio_file.getFileName() + " into layer=" + juce::String(layer_index));
     return true;
 }
-
-

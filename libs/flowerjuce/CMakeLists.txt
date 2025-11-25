@@ -11,7 +11,6 @@ target_sources(flowerjuce PRIVATE
     LayerCakeEngine/LayerCakeEngine.cpp
     LayerCakeEngine/GrainVoice.cpp
     LayerCakeEngine/LayerCakeEnvelope.cpp
-    LayerCakeEngine/PatternClock.cpp
     LayerCakeEngine/Metro.cpp
 )
 
@@ -27,7 +26,6 @@ target_sources(flowerjuce PRIVATE
     LayerCakeEngine/LayerCakeTypes.h
     LayerCakeEngine/GrainVoice.h
     LayerCakeEngine/LayerCakeEnvelope.h
-    LayerCakeEngine/PatternClock.h
     LayerCakeEngine/Metro.h
 )
 

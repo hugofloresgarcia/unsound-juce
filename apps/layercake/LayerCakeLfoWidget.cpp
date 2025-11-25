@@ -9,12 +9,6 @@ namespace LayerCakeApp
 namespace
 {
 constexpr int kPreviewSamples = 128;
-const juce::Colour kSoftWhite(0xfff4f4f2);
-constexpr double kMinWidgetRateHz = 0.05;
-constexpr double kMaxWidgetRateHz = 12.0;
-constexpr std::array<double, 9> kTempoMultipliers{
-    0.125, 0.25, 0.333333, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0
-};
 
 flower::LfoWaveform waveform_from_index(int index)
 {
@@ -22,8 +16,10 @@ flower::LfoWaveform waveform_from_index(int index)
     {
         case 1: return flower::LfoWaveform::Triangle;
         case 2: return flower::LfoWaveform::Square;
-        case 3: return flower::LfoWaveform::Random;
-        case 4: return flower::LfoWaveform::SmoothRandom;
+        case 3: return flower::LfoWaveform::Gate;
+        case 4: return flower::LfoWaveform::Envelope;
+        case 5: return flower::LfoWaveform::Random;
+        case 6: return flower::LfoWaveform::SmoothRandom;
         case 0:
         default: return flower::LfoWaveform::Sine;
     }
@@ -35,18 +31,373 @@ int waveform_to_index(flower::LfoWaveform waveform)
     {
         case flower::LfoWaveform::Triangle: return 1;
         case flower::LfoWaveform::Square: return 2;
-        case flower::LfoWaveform::Random: return 3;
-        case flower::LfoWaveform::SmoothRandom: return 4;
+        case flower::LfoWaveform::Gate: return 3;
+        case flower::LfoWaveform::Envelope: return 4;
+        case flower::LfoWaveform::Random: return 5;
+        case flower::LfoWaveform::SmoothRandom: return 6;
         case flower::LfoWaveform::Sine:
         default: return 0;
     }
 }
 } // namespace
 
+//==============================================================================
+// LfoParamRow implementation
+//==============================================================================
+
+LfoParamRow::LfoParamRow(const Config& config, Shared::MidiLearnManager* midiManager)
+    : m_config(config),
+      m_midi_manager(midiManager),
+      m_value(config.defaultValue)
+{
+    setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+    register_midi_parameter();
+}
+
+LfoParamRow::~LfoParamRow()
+{
+    if (m_midi_manager != nullptr && m_registered_parameter_id.isNotEmpty())
+        m_midi_manager->unregisterParameter(m_registered_parameter_id);
+}
+
+void LfoParamRow::paint(juce::Graphics& g)
+{
+    // Don't paint if text editor is visible
+    if (m_is_editing) return;
+    
+    auto bounds = getLocalBounds().toFloat();
+    
+    // Monospace font for CLI aesthetic
+    juce::FontOptions fontOpts;
+    fontOpts = fontOpts.withName(juce::Font::getDefaultMonospacedFontName())
+                       .withHeight(11.0f);
+    juce::Font monoFont(fontOpts);
+    g.setFont(monoFont);
+    
+    // Highlight if MIDI learning this parameter
+    if (m_midi_manager != nullptr && 
+        m_midi_manager->isLearning() && 
+        m_midi_manager->getLearningParameterId() == m_config.parameterId)
+    {
+        g.setColour(m_accent.withAlpha(0.3f));
+        g.fillRoundedRectangle(bounds, 2.0f);
+    }
+    
+    // Key in accent color
+    g.setColour(m_accent);
+    const juce::String keyText = m_config.key + ":";
+    const float keyWidth = 42.0f;  // Fixed width for alignment
+    g.drawText(keyText, bounds.removeFromLeft(keyWidth), juce::Justification::centredLeft, false);
+    
+    // Value in white/light gray
+    g.setColour(m_is_dragging ? m_accent.brighter(0.3f) : juce::Colours::white.withAlpha(0.9f));
+    g.drawText(format_value(), bounds, juce::Justification::centredLeft, false);
+    
+    // Show MIDI CC indicator if mapped
+    if (m_midi_manager != nullptr && m_config.parameterId.isNotEmpty())
+    {
+        const int cc = m_midi_manager->getMappingForParameter(m_config.parameterId);
+        if (cc >= 0)
+        {
+            g.setColour(m_accent.withAlpha(0.5f));
+            g.setFont(monoFont.withHeight(8.0f));
+            const juce::String ccText = "CC" + juce::String(cc);
+            g.drawText(ccText, getLocalBounds().toFloat().removeFromRight(24.0f), 
+                       juce::Justification::centredRight, false);
+        }
+    }
+}
+
+void LfoParamRow::resized()
+{
+    if (m_text_editor != nullptr)
+        m_text_editor->setBounds(getLocalBounds());
+}
+
+void LfoParamRow::mouseDown(const juce::MouseEvent& event)
+{
+    if (m_is_editing) return;
+    
+    if (event.mods.isRightButtonDown() || event.mods.isPopupMenu())
+    {
+        if (show_context_menu(event))
+            return;
+    }
+    
+    m_drag_start_value = m_value;
+    m_drag_start_y = event.y;
+    m_is_dragging = true;
+    repaint();
+}
+
+void LfoParamRow::mouseDrag(const juce::MouseEvent& event)
+{
+    if (!m_is_dragging || m_is_editing) return;
+    
+    const int deltaY = m_drag_start_y - event.y;  // Up = positive
+    const double range = m_config.maxValue - m_config.minValue;
+    
+    // Sensitivity: full range over ~200 pixels, shift for fine control
+    double sensitivity = range / 200.0;
+    if (event.mods.isShiftDown())
+        sensitivity *= 0.1;
+    
+    double newValue = m_drag_start_value + deltaY * sensitivity;
+    
+    // Snap to interval
+    if (m_config.interval > 0.0)
+        newValue = std::round(newValue / m_config.interval) * m_config.interval;
+    
+    set_value(newValue);
+}
+
+void LfoParamRow::mouseUp(const juce::MouseEvent& event)
+{
+    juce::ignoreUnused(event);
+    m_is_dragging = false;
+    repaint();
+}
+
+void LfoParamRow::mouseDoubleClick(const juce::MouseEvent& event)
+{
+    juce::ignoreUnused(event);
+    show_text_editor();
+}
+
+void LfoParamRow::set_value(double value, bool notify)
+{
+    value = juce::jlimit(m_config.minValue, m_config.maxValue, value);
+    if (std::abs(value - m_value) < 1e-9) return;
+    
+    m_value = value;
+    repaint();
+    
+    if (notify && m_on_value_changed)
+        m_on_value_changed();
+}
+
+bool LfoParamRow::is_percent_display() const
+{
+    // Display as 0-99 if range is 0-1 and displayAsPercent is true
+    return m_config.displayAsPercent && 
+           std::abs(m_config.minValue) < 0.001 && 
+           std::abs(m_config.maxValue - 1.0) < 0.001;
+}
+
+juce::String LfoParamRow::format_value() const
+{
+    juce::String result;
+    
+    if (is_percent_display())
+    {
+        // Display 0-1 as 0-99
+        const int displayValue = static_cast<int>(std::round(m_value * 99.0));
+        result = juce::String(displayValue);
+    }
+    else if (m_config.decimals == 0)
+    {
+        result = juce::String(static_cast<int>(std::round(m_value)));
+    }
+    else
+    {
+        result = juce::String(m_value, m_config.decimals);
+    }
+    
+    if (m_config.suffix.isNotEmpty())
+        result += m_config.suffix;
+    
+    return result;
+}
+
+void LfoParamRow::show_text_editor()
+{
+    if (m_is_editing) return;
+    
+    m_is_editing = true;
+    m_text_editor = std::make_unique<juce::TextEditor>();
+    m_text_editor->setMultiLine(false);
+    m_text_editor->setReturnKeyStartsNewLine(false);
+    m_text_editor->setScrollbarsShown(false);
+    m_text_editor->setCaretVisible(true);
+    m_text_editor->setPopupMenuEnabled(false);
+    
+    // Style to match CLI aesthetic
+    juce::FontOptions fontOpts;
+    fontOpts = fontOpts.withName(juce::Font::getDefaultMonospacedFontName())
+                       .withHeight(11.0f);
+    m_text_editor->setFont(juce::Font(fontOpts));
+    m_text_editor->setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff2a2a2a));
+    m_text_editor->setColour(juce::TextEditor::textColourId, juce::Colours::white);
+    m_text_editor->setColour(juce::TextEditor::highlightColourId, m_accent.withAlpha(0.4f));
+    m_text_editor->setColour(juce::TextEditor::outlineColourId, m_accent);
+    m_text_editor->setColour(juce::TextEditor::focusedOutlineColourId, m_accent);
+    
+    // Set initial text (without suffix)
+    juce::String initialText;
+    if (is_percent_display())
+        initialText = juce::String(static_cast<int>(std::round(m_value * 99.0)));
+    else if (m_config.decimals == 0)
+        initialText = juce::String(static_cast<int>(std::round(m_value)));
+    else
+        initialText = juce::String(m_value, m_config.decimals);
+    
+    m_text_editor->setText(initialText, false);
+    m_text_editor->selectAll();
+    m_text_editor->addListener(this);
+    
+    addAndMakeVisible(m_text_editor.get());
+    m_text_editor->setBounds(getLocalBounds());
+    m_text_editor->grabKeyboardFocus();
+    
+    repaint();
+}
+
+void LfoParamRow::hide_text_editor(bool apply)
+{
+    if (!m_is_editing || m_text_editor == nullptr) return;
+    
+    if (apply)
+    {
+        const double newValue = parse_input(m_text_editor->getText());
+        set_value(newValue);
+    }
+    
+    m_text_editor->removeListener(this);
+    removeChildComponent(m_text_editor.get());
+    m_text_editor.reset();
+    m_is_editing = false;
+    
+    repaint();
+}
+
+void LfoParamRow::textEditorReturnKeyPressed(juce::TextEditor& editor)
+{
+    juce::ignoreUnused(editor);
+    hide_text_editor(true);
+}
+
+void LfoParamRow::textEditorEscapeKeyPressed(juce::TextEditor& editor)
+{
+    juce::ignoreUnused(editor);
+    hide_text_editor(false);
+}
+
+void LfoParamRow::textEditorFocusLost(juce::TextEditor& editor)
+{
+    juce::ignoreUnused(editor);
+    hide_text_editor(true);
+}
+
+double LfoParamRow::parse_input(const juce::String& text) const
+{
+    const double inputValue = text.getDoubleValue();
+    
+    if (is_percent_display())
+    {
+        // Convert 0-99 input back to 0-1
+        return juce::jlimit(0.0, 1.0, inputValue / 99.0);
+    }
+    
+    return inputValue;
+}
+
+void LfoParamRow::register_midi_parameter()
+{
+    if (m_midi_manager == nullptr || m_config.parameterId.isEmpty())
+    {
+        DBG("LfoParamRow::register_midi_parameter early return (missing midi manager or parameter id)");
+        return;
+    }
+
+    m_registered_parameter_id = m_config.parameterId;
+
+    const double minValue = m_config.minValue;
+    const double maxValue = m_config.maxValue;
+
+    m_midi_manager->registerParameter({
+        m_config.parameterId,
+        [this, minValue, maxValue](float normalized) {
+            const double value = minValue + normalized * (maxValue - minValue);
+            set_value(value, true);
+        },
+        [this, minValue, maxValue]() {
+            return static_cast<float>((m_value - minValue) / (maxValue - minValue));
+        },
+        m_config.key,
+        false
+    });
+}
+
+bool LfoParamRow::show_context_menu(const juce::MouseEvent& event)
+{
+    juce::PopupMenu menu;
+    
+    if (m_midi_manager != nullptr && m_config.parameterId.isNotEmpty())
+    {
+        const int currentCc = m_midi_manager->getMappingForParameter(m_config.parameterId);
+        juce::String learnLabel = "MIDI Learn...";
+        if (currentCc >= 0)
+            learnLabel += " (Currently CC " + juce::String(currentCc) + ")";
+
+        menu.addItem(juce::PopupMenu::Item(learnLabel)
+                         .setAction([this]() {
+                             if (m_midi_manager == nullptr)
+                             {
+                                 DBG("LfoParamRow::show_context_menu midi learn action early return (no midi manager)");
+                                 return;
+                             }
+                             m_midi_manager->startLearning(m_config.parameterId);
+                             if (auto* topLevel = getTopLevelComponent())
+                                 topLevel->repaint();
+                         }));
+
+        if (currentCc >= 0)
+        {
+            menu.addItem(juce::PopupMenu::Item("Clear MIDI Mapping")
+                             .setAction([this]() {
+                                 if (m_midi_manager == nullptr)
+                                 {
+                                     DBG("LfoParamRow::show_context_menu clear midi action early return (no midi manager)");
+                                     return;
+                                 }
+                                 m_midi_manager->clearMapping(m_config.parameterId);
+                                 repaint();
+                                 if (auto* topLevel = getTopLevelComponent())
+                                     topLevel->repaint();
+                             }));
+        }
+    }
+
+    // Reset to default option
+    menu.addSeparator();
+    menu.addItem(juce::PopupMenu::Item("Reset to Default")
+                     .setAction([this]() {
+                         set_value(m_config.defaultValue);
+                     }));
+
+    if (menu.getNumItems() == 0)
+    {
+        DBG("LfoParamRow::show_context_menu early return (no items to show)");
+        return false;
+    }
+
+    juce::Rectangle<int> screenArea(event.getScreenX(), event.getScreenY(), 1, 1);
+    menu.showMenuAsync(juce::PopupMenu::Options()
+                           .withTargetScreenArea(screenArea)
+                           .withMinimumWidth(150));
+    return true;
+}
+
+//==============================================================================
+// LayerCakeLfoWidget implementation
+//==============================================================================
+
 LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
                                        flower::LayerCakeLfoUGen& generator,
-                                       juce::Colour accent)
+                                       juce::Colour accent,
+                                       Shared::MidiLearnManager* midiManager)
     : m_generator(generator),
+      m_midi_manager(midiManager),
       m_accent_colour(accent),
       m_lfo_index(lfo_index)
 {
@@ -54,151 +405,219 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
 
     m_title_label.setText(m_drag_label, juce::dontSendNotification);
     m_title_label.setJustificationType(juce::Justification::centredLeft);
+    juce::FontOptions titleOpts;
+    titleOpts = titleOpts.withName(juce::Font::getDefaultMonospacedFontName())
+                         .withHeight(12.0f);
+    juce::Font titleFont(titleOpts);
+    titleFont.setBold(true);
+    m_title_label.setFont(titleFont);
+    m_title_label.setColour(juce::Label::textColourId, accent);
     addAndMakeVisible(m_title_label);
 
-    m_mode_selector.addItem("sine", 1);
+    // Mode selector with all PNW waveforms
+    m_mode_selector.addItem("sin", 1);
     m_mode_selector.addItem("tri", 2);
-    m_mode_selector.addItem("square", 3);
-    m_mode_selector.addItem("random", 4);
-    m_mode_selector.addItem("smooth", 5);
+    m_mode_selector.addItem("sq", 3);
+    m_mode_selector.addItem("gt", 4);
+    m_mode_selector.addItem("env", 5);
+    m_mode_selector.addItem("rnd", 6);
+    m_mode_selector.addItem("smo", 7);
     m_mode_selector.setSelectedItemIndex(waveform_to_index(generator.get_mode()));
     m_mode_selector.addListener(this);
     addAndMakeVisible(m_mode_selector);
 
-    m_tempo_sync_button.setButtonText("tq");
-    m_tempo_sync_button.setClickingTogglesState(true);
-    m_tempo_sync_button.setTooltip("Tempo-quantize & lock this LFO");
-    LayerCakeLookAndFeel::setControlButtonType(m_tempo_sync_button, LayerCakeLookAndFeel::ControlButtonType::Trigger);
-    m_tempo_sync_button.setLookAndFeel(&m_tempo_button_lnf);
-    m_tempo_sync_button.onClick = [this]()
-    {
-        set_tempo_sync_enabled(m_tempo_sync_button.getToggleState(), true);
-    };
-    addAndMakeVisible(m_tempo_sync_button);
+    // Page navigation buttons
+    m_prev_page_button.setButtonText("<");
+    m_prev_page_button.setLookAndFeel(&m_button_lnf);
+    m_prev_page_button.onClick = [this]() { prev_page(); };
+    addAndMakeVisible(m_prev_page_button);
 
-    auto makeKnob = [this](const juce::String& label,
-                           double minVal,
-                           double maxVal,
-                           double defaultVal,
-                           double step) -> std::unique_ptr<LayerCakeKnob>
+    m_next_page_button.setButtonText(">");
+    m_next_page_button.setLookAndFeel(&m_button_lnf);
+    m_next_page_button.onClick = [this]() { next_page(); };
+    addAndMakeVisible(m_next_page_button);
+
+    m_page_label.setJustificationType(juce::Justification::centred);
+    m_page_label.setFont(juce::Font(juce::FontOptions().withHeight(10.0f)));
+    // Page label hidden - just use < > buttons for navigation
+
+    // Helper to create parameter rows with unique parameter IDs
+    const juce::String lfoPrefix = "lfo" + juce::String(lfo_index) + "_";
+    
+    auto makeParam = [this, &lfoPrefix](const juce::String& key,
+                                        double minVal,
+                                        double maxVal,
+                                        double defaultVal,
+                                        double step,
+                                        const juce::String& suffix = "",
+                                        int decimals = 2,
+                                        bool displayAsPercent = false) -> std::unique_ptr<LfoParamRow>
     {
-        LayerCakeKnob::Config config;
-        config.labelText = label;
+        LfoParamRow::Config config;
+        config.key = key;
+        config.parameterId = lfoPrefix + key;
         config.minValue = minVal;
         config.maxValue = maxVal;
         config.defaultValue = defaultVal;
         config.interval = step;
-        config.suffix = label == "rate" ? " Hz" : "";
-        config.enableSweepRecorder = false;
-        config.enableLfoAssignment = false;
-        return std::make_unique<LayerCakeKnob>(config, nullptr);
+        config.suffix = suffix;
+        config.decimals = decimals;
+        config.displayAsPercent = displayAsPercent;
+        auto row = std::make_unique<LfoParamRow>(config, m_midi_manager);
+        row->set_accent_colour(m_accent_colour);
+        row->set_on_value_changed([this]() { update_generator_settings(); });
+        return row;
     };
 
-    m_rate_knob = makeKnob("rate", 0.05, 12.0, generator.get_rate_hz(), 0.0001);
-    if (m_rate_knob != nullptr)
-    {
-        configure_knob(*m_rate_knob, true);
-        m_rate_knob->set_knob_colour(m_accent_colour);
-        addAndMakeVisible(m_rate_knob.get());
-    }
+    // Create all parameters in order (for paging)
+    // Page 0: div, depth, level, width, phase, delay
+    // 0-1 range params use displayAsPercent=true to show as 0-99
+    m_params.push_back(makeParam("div", 0.015625, 64.0, generator.get_clock_division(), 0.0001, "x", 3, false));
+    
+    auto depthParam = makeParam("depth", 0.0, 1.0, generator.get_depth(), 0.01, "", 2, true);
+    m_depth_param = depthParam.get();
+    m_params.push_back(std::move(depthParam));
 
-    m_depth_knob = makeKnob("depth", 0.0, 1.0, generator.get_depth(), 0.0001);
-    if (m_depth_knob != nullptr)
+    m_params.push_back(makeParam("level", 0.0, 1.0, generator.get_level(), 0.01, "", 2, true));
+    m_params.push_back(makeParam("width", 0.0, 1.0, generator.get_width(), 0.01, "", 2, true));
+    m_params.push_back(makeParam("phase", 0.0, 1.0, generator.get_phase_offset(), 0.01, "", 2, true));
+    m_params.push_back(makeParam("delay", 0.0, 1.0, generator.get_delay(), 0.01, "", 2, true));
+
+    // Page 1: dly/, slop, eStep, eTrig, eRot, rSkip
+    m_params.push_back(makeParam("dly/", 1.0, 16.0, generator.get_delay_div(), 1.0, "", 0, false));
+    m_params.push_back(makeParam("slop", 0.0, 1.0, generator.get_slop(), 0.01, "", 2, true));
+    m_params.push_back(makeParam("eStep", 0.0, 64.0, generator.get_euclidean_steps(), 1.0, "", 0, false));
+    m_params.push_back(makeParam("eTrig", 0.0, 64.0, generator.get_euclidean_triggers(), 1.0, "", 0, false));
+    m_params.push_back(makeParam("eRot", 0.0, 64.0, generator.get_euclidean_rotation(), 1.0, "", 0, false));
+    m_params.push_back(makeParam("rSkip", 0.0, 1.0, generator.get_random_skip(), 0.01, "", 2, true));
+
+    // Page 2: loop
+    m_params.push_back(makeParam("loop", 0.0, 64.0, generator.get_loop_beats(), 1.0, "", 0, false));
+
+    // Add all params as child components
+    for (auto& param : m_params)
     {
-        configure_knob(*m_depth_knob, false);
-        m_depth_knob->set_knob_colour(m_accent_colour.darker(0.2f));
-        addAndMakeVisible(m_depth_knob.get());
+        if (param != nullptr)
+            addChildComponent(param.get());
     }
 
     m_wave_preview = std::make_unique<WavePreview>(*this);
     addAndMakeVisible(m_wave_preview.get());
 
-    m_last_rate = generator.get_rate_hz();
+    // Cache initial values
     m_last_depth = generator.get_depth();
     m_last_mode = static_cast<int>(generator.get_mode());
+    m_last_clock_div = generator.get_clock_division();
+    
+    go_to_page(0);
     refresh_wave_preview();
     startTimerHz(10);
 }
 
 LayerCakeLfoWidget::~LayerCakeLfoWidget()
 {
-    m_tempo_sync_button.setLookAndFeel(nullptr);
+    m_prev_page_button.setLookAndFeel(nullptr);
+    m_next_page_button.setLookAndFeel(nullptr);
 }
 
 void LayerCakeLfoWidget::paint(juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat();
-    const float corner = juce::jmin(8.0f, bounds.getHeight() * 0.12f);
-    g.setColour(m_accent_colour.withAlpha(0.15f));
+    const float corner = juce::jmin(6.0f, bounds.getHeight() * 0.1f);
+    
+    // Dark terminal-like background
+    g.setColour(juce::Colour(0xff1a1a1a));
     g.fillRoundedRectangle(bounds, corner);
-    g.setColour(m_accent_colour.withAlpha(0.4f));
-    g.drawRoundedRectangle(bounds.reduced(0.5f), corner, 1.2f);
+    
+    // Accent border
+    g.setColour(m_accent_colour.withAlpha(0.5f));
+    g.drawRoundedRectangle(bounds.reduced(0.5f), corner, 1.0f);
 }
 
 void LayerCakeLfoWidget::resized()
 {
     const int margin = 6;
-    const int headerHeight = 24;
-    const int previewHeight = juce::jmax(25, static_cast<int>(getHeight() * 0.15f));
-    const int knobSize = 52;
-    const int knobStackHeight = knobSize + 26;
-    const int knobSpacing = 8;
+    const int headerHeight = 16;
+    const int previewHeight = juce::jmax(20, static_cast<int>(getHeight() * 0.15f));
+    const int paramRowHeight = 14;
+    const int paramSpacing = 2;
+    const int pageNavHeight = 14;
 
     auto bounds = getLocalBounds().reduced(margin);
 
+    // Header row: title, mode selector
     auto headerArea = bounds.removeFromTop(headerHeight);
-    const int toggleWidth = 48;
-    auto toggleArea = headerArea.removeFromRight(toggleWidth);
-    m_tempo_sync_button.setBounds(toggleArea);
-    const int selectorWidth = juce::jmax(70, headerArea.getWidth() / 3);
+    const int selectorWidth = juce::jmax(40, headerArea.getWidth() / 3);
     auto selectorArea = headerArea.removeFromRight(selectorWidth);
     m_mode_selector.setBounds(selectorArea);
     m_title_label.setBounds(headerArea);
-    bounds.removeFromTop(6);
+    bounds.removeFromTop(2);
 
+    // Wave preview
     auto previewArea = bounds.removeFromTop(previewHeight);
     if (m_wave_preview != nullptr)
         m_wave_preview->setBounds(previewArea);
-    bounds.removeFromTop(6);
+    bounds.removeFromTop(4);
 
-    auto knobsArea = bounds.removeFromTop(knobStackHeight);
-    auto rateArea = knobsArea.removeFromLeft(knobSize);
-    if (m_rate_knob != nullptr)
+    // Page navigation at bottom (no label, just < > buttons)
+    auto pageNavArea = bounds.removeFromBottom(pageNavHeight);
+    const int navButtonWidth = 16;
+    m_prev_page_button.setBounds(pageNavArea.removeFromLeft(navButtonWidth));
+    m_next_page_button.setBounds(pageNavArea.removeFromRight(navButtonWidth));
+    // m_page_label hidden - no "1/3" display
+
+    bounds.removeFromBottom(2);
+
+    // Parameter rows - 2 columns layout
+    const int totalParams = static_cast<int>(m_params.size());
+    const int startIdx = m_current_page * kParamsPerPage;
+    const int colWidth = bounds.getWidth() / 2;
+
+    for (int i = 0; i < kParamsPerPage; ++i)
     {
-        auto rateBounds = rateArea.withHeight(knobStackHeight);
-        m_rate_knob->setBounds(rateBounds);
+        int paramIdx = startIdx + i;
+        if (paramIdx >= totalParams) continue;
+        
+        auto* param = m_params[static_cast<size_t>(paramIdx)].get();
+        if (param == nullptr) continue;
+
+        // 2 columns: left (0,2,4) and right (1,3,5)
+        const int row = i / 2;
+        const int col = i % 2;
+        
+        const int x = bounds.getX() + col * colWidth;
+        const int y = bounds.getY() + row * (paramRowHeight + paramSpacing);
+        param->setBounds(x, y, colWidth - 2, paramRowHeight);
     }
-    knobsArea.removeFromLeft(knobSpacing);
-    if (m_depth_knob != nullptr)
-        m_depth_knob->setBounds(knobsArea.removeFromLeft(knobSize).withHeight(knobStackHeight));
+
+    update_controls_visibility();
 }
 
 float LayerCakeLfoWidget::get_depth() const noexcept
 {
-    return m_depth_knob != nullptr
-        ? static_cast<float>(m_depth_knob->slider().getValue())
+    return m_depth_param != nullptr
+        ? static_cast<float>(m_depth_param->get_value())
         : 0.0f;
 }
 
 void LayerCakeLfoWidget::refresh_wave_preview()
 {
-    if (m_wave_preview == nullptr)
-    {
-        DBG("LayerCakeLfoWidget::refresh_wave_preview early return (preview nullptr)");
-        return;
-    }
+    if (m_wave_preview == nullptr) return;
 
     std::vector<float> samples(static_cast<size_t>(kPreviewSamples), 0.0f);
     flower::LayerCakeLfoUGen preview = m_generator;
     preview.reset_phase();
     preview.sync_time(0.0);
 
-    const double window_seconds = 2.0;
-    const double step = window_seconds / static_cast<double>(samples.size());
+    const double window_beats = 4.0;
+    const double step = window_beats / static_cast<double>(samples.size());
     const float depth = juce::jlimit(0.0f, 1.0f, preview.get_depth());
 
+    // Always clocked mode
     for (size_t i = 0; i < samples.size(); ++i)
-        samples[i] = preview.process_delta(step) * depth;
+    {
+        samples[i] = preview.advance_clocked(i * step) * depth;
+    }
 
     m_wave_preview->set_points(samples);
 }
@@ -218,70 +637,81 @@ void LayerCakeLfoWidget::sync_controls_from_generator()
 {
     const int index = waveform_to_index(m_generator.get_mode());
     m_mode_selector.setSelectedItemIndex(index, juce::dontSendNotification);
-    if (m_rate_knob != nullptr)
-        m_rate_knob->slider().setValue(m_generator.get_rate_hz(), juce::dontSendNotification);
-    if (m_depth_knob != nullptr)
-        m_depth_knob->slider().setValue(m_generator.get_depth(), juce::dontSendNotification);
+    
+    // Update all param values from generator
+    // Param order: div, depth, level, width, phase, delay, dly/, slop, eStep, eTrig, eRot, rSkip, loop
+    const std::array<double, 13> values = {
+        m_generator.get_clock_division(),
+        m_generator.get_depth(),
+        m_generator.get_level(),
+        m_generator.get_width(),
+        m_generator.get_phase_offset(),
+        m_generator.get_delay(),
+        static_cast<double>(m_generator.get_delay_div()),
+        m_generator.get_slop(),
+        static_cast<double>(m_generator.get_euclidean_steps()),
+        static_cast<double>(m_generator.get_euclidean_triggers()),
+        static_cast<double>(m_generator.get_euclidean_rotation()),
+        m_generator.get_random_skip(),
+        static_cast<double>(m_generator.get_loop_beats())
+    };
+
+    for (size_t i = 0; i < m_params.size() && i < values.size(); ++i)
+    {
+        if (m_params[i] != nullptr)
+            m_params[i]->set_value(values[i], false);
+    }
+        
     refresh_wave_preview();
+    update_controls_visibility();
 }
 
 void LayerCakeLfoWidget::set_tempo_provider(std::function<double()> tempo_bpm_provider)
 {
     m_tempo_bpm_provider = std::move(tempo_bpm_provider);
-    refresh_tempo_sync();
-}
-
-void LayerCakeLfoWidget::set_tempo_sync_enabled(bool enabled, bool forceUpdate)
-{
-    const bool changed = (m_tempo_sync_enabled != enabled);
-    if (!changed && !forceUpdate)
-        return;
-    m_tempo_sync_enabled = enabled;
-    m_tempo_sync_button.setToggleState(enabled, juce::dontSendNotification);
-    apply_tempo_sync_if_needed(true);
-    if (changed && m_tempo_sync_callback != nullptr)
-        m_tempo_sync_callback(enabled);
-}
-
-bool LayerCakeLfoWidget::is_tempo_sync_enabled() const noexcept
-{
-    return m_tempo_sync_enabled;
-}
-
-void LayerCakeLfoWidget::refresh_tempo_sync()
-{
-    apply_tempo_sync_if_needed(true);
-}
-
-void LayerCakeLfoWidget::set_tempo_sync_callback(std::function<void(bool)> callback)
-{
-    m_tempo_sync_callback = std::move(callback);
 }
 
 void LayerCakeLfoWidget::comboBoxChanged(juce::ComboBox* comboBoxThatHasChanged)
 {
-    if (comboBoxThatHasChanged != &m_mode_selector)
-    {
-        DBG("LayerCakeLfoWidget::comboBoxChanged early return (unexpected combo)");
-        return;
-    }
-
-    update_generator_settings(false);
+    if (comboBoxThatHasChanged != &m_mode_selector) return;
+    update_generator_settings();
 }
 
-void LayerCakeLfoWidget::update_generator_settings(bool from_knob_change)
+void LayerCakeLfoWidget::update_generator_settings()
 {
-    juce::ignoreUnused(from_knob_change);
     m_generator.set_mode(waveform_from_index(m_mode_selector.getSelectedItemIndex()));
-    if (m_rate_knob != nullptr)
+    
+    // Param order: div, depth, level, width, phase, delay, dly/, slop, eStep, eTrig, eRot, rSkip, loop
+    if (m_params.size() >= 13)
     {
-        double desiredRate = m_rate_knob->slider().getValue();
-        if (m_tempo_sync_enabled)
-            desiredRate = quantize_rate(desiredRate, true);
-        m_generator.set_rate_hz(static_cast<float>(desiredRate));
+        if (m_params[0] != nullptr)
+            m_generator.set_clock_division(static_cast<float>(m_params[0]->get_value()));
+        if (m_params[1] != nullptr)
+            m_generator.set_depth(static_cast<float>(m_params[1]->get_value()));
+        if (m_params[2] != nullptr)
+            m_generator.set_level(static_cast<float>(m_params[2]->get_value()));
+        if (m_params[3] != nullptr)
+            m_generator.set_width(static_cast<float>(m_params[3]->get_value()));
+        if (m_params[4] != nullptr)
+            m_generator.set_phase_offset(static_cast<float>(m_params[4]->get_value()));
+        if (m_params[5] != nullptr)
+            m_generator.set_delay(static_cast<float>(m_params[5]->get_value()));
+        if (m_params[6] != nullptr)
+            m_generator.set_delay_div(static_cast<int>(m_params[6]->get_value()));
+        if (m_params[7] != nullptr)
+            m_generator.set_slop(static_cast<float>(m_params[7]->get_value()));
+        if (m_params[8] != nullptr)
+            m_generator.set_euclidean_steps(static_cast<int>(m_params[8]->get_value()));
+        if (m_params[9] != nullptr)
+            m_generator.set_euclidean_triggers(static_cast<int>(m_params[9]->get_value()));
+        if (m_params[10] != nullptr)
+            m_generator.set_euclidean_rotation(static_cast<int>(m_params[10]->get_value()));
+        if (m_params[11] != nullptr)
+            m_generator.set_random_skip(static_cast<float>(m_params[11]->get_value()));
+        if (m_params[12] != nullptr)
+            m_generator.set_loop_beats(static_cast<int>(m_params[12]->get_value()));
     }
-    if (m_depth_knob != nullptr)
-        m_generator.set_depth(static_cast<float>(m_depth_knob->slider().getValue()));
+        
     notify_settings_changed();
 }
 
@@ -292,31 +722,22 @@ void LayerCakeLfoWidget::notify_settings_changed()
         m_settings_changed_callback();
 }
 
-void LayerCakeLfoWidget::configure_knob(LayerCakeKnob& knob, bool isRateKnob)
-{
-    knob.slider().setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    knob.slider().onValueChange = [this]() {
-        update_generator_settings(true);
-    };
-    if (isRateKnob)
-        knob.set_knob_colour(m_accent_colour);
-}
-
 void LayerCakeLfoWidget::timerCallback()
 {
-    const float rate = m_generator.get_rate_hz();
     const float depth = m_generator.get_depth();
     const int mode = static_cast<int>(m_generator.get_mode());
+    const float div = m_generator.get_clock_division();
 
-    const bool changed = (std::abs(rate - m_last_rate) > 0.0005f)
-                      || (std::abs(depth - m_last_depth) > 0.0005f)
-                      || (mode != m_last_mode);
-    if (!changed)
-        return;
+    const bool changed = (std::abs(depth - m_last_depth) > 0.0005f)
+                      || (mode != m_last_mode)
+                      || (std::abs(div - m_last_clock_div) > 0.0005f);
+                      
+    if (!changed) return;
 
-    m_last_rate = rate;
     m_last_depth = depth;
     m_last_mode = mode;
+    m_last_clock_div = div;
+    
     refresh_wave_preview();
 }
 
@@ -325,49 +746,59 @@ double LayerCakeLfoWidget::get_tempo_bpm() const
     if (m_tempo_bpm_provider != nullptr)
     {
         double bpm = m_tempo_bpm_provider();
-        if (bpm > 0.0)
-            return bpm;
+        if (bpm > 0.0) return bpm;
     }
     return 120.0;
 }
 
-double LayerCakeLfoWidget::quantize_rate(double desiredRateHz, bool updateSlider)
+void LayerCakeLfoWidget::update_controls_visibility()
 {
-    const double tempoHz = juce::jlimit(0.01, 100.0, get_tempo_bpm() / 60.0);
-    double best = juce::jlimit(kMinWidgetRateHz, kMaxWidgetRateHz, tempoHz);
-    double minDiff = std::abs(best - desiredRateHz);
-    for (double multiplier : kTempoMultipliers)
+    // Hide all params first
+    for (auto& param : m_params)
     {
-        const double candidate = tempoHz * multiplier;
-        if (candidate < kMinWidgetRateHz || candidate > kMaxWidgetRateHz)
-            continue;
-        const double diff = std::abs(candidate - desiredRateHz);
-        if (diff < minDiff)
-        {
-            minDiff = diff;
-            best = candidate;
-        }
+        if (param != nullptr)
+            param->setVisible(false);
     }
 
-    if (updateSlider && m_rate_knob != nullptr)
-        m_rate_knob->slider().setValue(best, juce::dontSendNotification);
-    return best;
+    // Show params for current page
+    const int totalParams = static_cast<int>(m_params.size());
+    const int startIdx = m_current_page * kParamsPerPage;
+
+    for (int i = 0; i < kParamsPerPage; ++i)
+    {
+        int paramIdx = startIdx + i;
+        if (paramIdx >= totalParams) continue;
+        
+        auto* param = m_params[static_cast<size_t>(paramIdx)].get();
+        if (param != nullptr)
+            param->setVisible(true);
+    }
+
+    // Update page label
+    const int totalPages = (totalParams + kParamsPerPage - 1) / kParamsPerPage;
+    // Page label hidden
+    juce::ignoreUnused(totalPages);
+    m_page_label.setText("", 
+                         juce::dontSendNotification);
 }
 
-void LayerCakeLfoWidget::sync_to_lock()
+void LayerCakeLfoWidget::go_to_page(int page)
 {
-    m_generator.reset_phase(0.0);
-    m_generator.sync_time(juce::Time::getMillisecondCounterHiRes());
+    const int totalParams = static_cast<int>(m_params.size());
+    const int totalPages = (totalParams + kParamsPerPage - 1) / kParamsPerPage;
+    m_current_page = juce::jlimit(0, juce::jmax(0, totalPages - 1), page);
+    update_controls_visibility();
+    resized();
 }
 
-void LayerCakeLfoWidget::apply_tempo_sync_if_needed(bool resyncPhase)
+void LayerCakeLfoWidget::next_page()
 {
-    if (!m_tempo_sync_enabled || m_rate_knob == nullptr)
-        return;
-    const double snapped = quantize_rate(m_rate_knob->slider().getValue(), true);
-    m_generator.set_rate_hz(static_cast<float>(snapped));
-    if (resyncPhase)
-        sync_to_lock();
+    go_to_page(m_current_page + 1);
+}
+
+void LayerCakeLfoWidget::prev_page()
+{
+    go_to_page(m_current_page - 1);
 }
 
 //==============================================================================
@@ -380,15 +811,16 @@ LayerCakeLfoWidget::WavePreview::WavePreview(LayerCakeLfoWidget& owner)
 void LayerCakeLfoWidget::WavePreview::paint(juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat();
-    const float corner = juce::jmin(6.0f, bounds.getHeight() * 0.2f);
+    const float corner = juce::jmin(4.0f, bounds.getHeight() * 0.15f);
     const auto accent = m_owner.get_accent_colour();
-    g.setColour(accent.withAlpha(0.1f));
+    
+    // Darker background for wave preview
+    g.setColour(juce::Colour(0xff0d0d0d));
     g.fillRoundedRectangle(bounds, corner);
-    g.setColour(accent.withAlpha(0.35f));
-    g.drawRoundedRectangle(bounds, corner, 1.1f);
+    g.setColour(accent.withAlpha(0.3f));
+    g.drawRoundedRectangle(bounds, corner, 0.8f);
 
-    if (m_points.empty())
-        return;
+    if (m_points.empty()) return;
 
     juce::Path wave;
     const float midY = bounds.getCentreY();
@@ -407,7 +839,7 @@ void LayerCakeLfoWidget::WavePreview::paint(juce::Graphics& g)
     }
 
     g.setColour(accent);
-    g.strokePath(wave, juce::PathStrokeType(2.0f));
+    g.strokePath(wave, juce::PathStrokeType(1.5f));
 }
 
 void LayerCakeLfoWidget::WavePreview::resized()
@@ -441,11 +873,7 @@ void LayerCakeLfoWidget::WavePreview::mouseUp(const juce::MouseEvent& event)
 void LayerCakeLfoWidget::WavePreview::begin_drag(const juce::MouseEvent& event)
 {
     auto* container = juce::DragAndDropContainer::findParentDragContainerFor(this);
-    if (container == nullptr)
-    {
-        DBG("WavePreview::begin_drag early return (missing DragAndDropContainer)");
-        return;
-    }
+    if (container == nullptr) return;
 
     const auto description = LfoDragHelpers::make_description(
         m_owner.m_lfo_index,
@@ -460,10 +888,7 @@ void LayerCakeLfoWidget::WavePreview::begin_drag(const juce::MouseEvent& event)
 juce::Font LayerCakeLfoWidget::SmallButtonLookAndFeel::getTextButtonFont(juce::TextButton& button, int buttonHeight)
 {
     auto base = juce::LookAndFeel_V4::getTextButtonFont(button, buttonHeight);
-    return base.withHeight(12.0f);
+    return base.withHeight(9.0f);
 }
 
 } // namespace LayerCakeApp
-
-
-

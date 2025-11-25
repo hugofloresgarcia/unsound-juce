@@ -75,6 +75,43 @@ public:
     void closeButtonPressed() override { setVisible(false); }
 };
 
+/**
+ * A button wrapper that can accept LFO drops for triggering.
+ * When an LFO is assigned, it triggers on positive zero-crossings.
+ */
+class LfoTriggerButton : public juce::Component,
+                         public juce::DragAndDropTarget
+{
+public:
+    LfoTriggerButton();
+
+    void paint(juce::Graphics& g) override;
+    void resized() override;
+    void mouseDown(const juce::MouseEvent& event) override;
+
+    juce::TextButton& button() { return m_button; }
+
+    // DragAndDropTarget
+    bool isInterestedInDragSource(const juce::DragAndDropTarget::SourceDetails& details) override;
+    void itemDragEnter(const juce::DragAndDropTarget::SourceDetails& details) override;
+    void itemDragExit(const juce::DragAndDropTarget::SourceDetails& details) override;
+    void itemDropped(const juce::DragAndDropTarget::SourceDetails& details) override;
+
+    void set_lfo_assignment(int index, juce::Colour accent);
+    void clear_lfo_assignment();
+    int get_lfo_assignment() const { return m_lfo_index; }
+    bool has_lfo_assignment() const { return m_lfo_index >= 0; }
+
+    std::function<void(int)> on_lfo_assigned;
+    std::function<void()> on_lfo_cleared;
+
+private:
+    juce::TextButton m_button{"trg"};
+    int m_lfo_index{-1};
+    juce::Colour m_lfo_accent;
+    bool m_drag_highlight{false};
+};
+
 class MainComponent : public juce::Component,
                       public juce::DragAndDropContainer,
                       public juce::AudioIODeviceCallback,
@@ -111,23 +148,16 @@ private:
     GrainState build_manual_grain_state();
     void update_record_labels();
     void update_meter();
-    void apply_pattern_settings(bool request_rearm = false);
-    void update_pattern_labels();
     void open_library_window();
     LayerCakePresetData capture_knobset_data() const;
-    LayerCakePresetData capture_pattern_data() const;
+    // capture_pattern_data removed
     LayerBufferArray capture_layer_buffers() const;
-    void apply_knobset(const LayerCakePresetData& data, bool update_pattern_engine = true);
-    void apply_pattern_snapshot(const LayerCakePresetData& data);
+    void apply_knobset(const LayerCakePresetData& data);
+    // apply_pattern_snapshot removed
     void apply_layer_buffers(const LayerBufferArray& buffers);
     void sync_manual_state_from_controls();
-    void update_auto_grain_settings();
     double get_layer_recorded_seconds(int layer_index) const;
-    void begin_pattern_parameter_edit();
-    void end_pattern_parameter_edit();
-    void request_pattern_rearm();
-    void rearm_pattern_clock();
-    void handle_pattern_button();
+    void handle_clock_button();
     void advance_lfos(double now_ms);
     void register_knob_for_lfo(LayerCakeKnob* knob);
     void assign_lfo_to_knob(int lfo_index, LayerCakeKnob& knob);
@@ -140,7 +170,6 @@ private:
     void apply_lfo_state(const LayerCakePresetData& data);
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
     void open_settings_window();
-    void refresh_lfo_tempo_sync();
 
     LayerCakeEngine m_engine;
     juce::AudioDeviceManager m_device_manager;
@@ -161,16 +190,12 @@ private:
     std::unique_ptr<LayerCakeKnob> m_direction_knob;
     std::unique_ptr<LayerCakeKnob> m_pan_knob;
     std::unique_ptr<LayerCakeKnob> m_layer_select_knob;
-    juce::TextButton m_trigger_button;
+    LfoTriggerButton m_trigger_button;
     juce::TextButton m_record_button;
 
-    juce::TextButton m_clock_button;
-    juce::TextButton m_pattern_button;
-    juce::Label m_pattern_status_label;
-    std::unique_ptr<LayerCakeKnob> m_pattern_length_knob;
-    std::unique_ptr<LayerCakeKnob> m_pattern_skip_knob;
-    std::unique_ptr<LayerCakeKnob> m_pattern_tempo_knob;
-    std::unique_ptr<LayerCakeKnob> m_pattern_subdiv_knob;
+    juce::TextButton m_clock_button; // Transport Play/Stop
+    // Pattern UI removed
+    std::unique_ptr<LayerCakeKnob> m_tempo_knob;
     double m_last_pattern_bpm{-1.0};
 
     LayerCakeDisplay m_display;
@@ -182,8 +207,6 @@ private:
     bool m_preset_panel_visible{true};
     GrainState m_manual_state;
     juce::File m_midi_mappings_file;
-    int m_pattern_edit_depth{0};
-    bool m_pattern_rearm_requested{false};
     bool m_loading_knob_values{false};
     struct LfoSlot
     {
@@ -191,11 +214,11 @@ private:
         std::unique_ptr<LayerCakeLfoWidget> widget;
         juce::Colour accent;
         juce::String label;
-        bool tempo_sync{false};
     };
     static constexpr size_t kNumLfoSlots = LayerCakePresetData::kNumLfos;
     std::array<LfoSlot, kNumLfoSlots> m_lfo_slots;
     std::array<std::atomic<float>, kNumLfoSlots> m_lfo_last_values;
+    std::array<float, kNumLfoSlots> m_lfo_prev_values{};  // For zero-crossing detection
     std::vector<LayerCakeKnob*> m_lfo_enabled_knobs;
     SettingsButtonLookAndFeel m_settings_button_look_and_feel;
     juce::TextButton m_settings_button;
@@ -205,5 +228,3 @@ private:
 };
 
 } // namespace LayerCakeApp
-
-

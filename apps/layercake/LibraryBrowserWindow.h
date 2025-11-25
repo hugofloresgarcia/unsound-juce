@@ -23,7 +23,6 @@ private:
     enum class ColumnType
     {
         Palette,
-        Pattern,
         Knobset,
         Scene
     };
@@ -78,11 +77,9 @@ private:
     ColumnWidgets& widgets_for(ColumnType type);
     void format_name_editor(juce::TextEditor& editor) const;
     static juce::String column_title(ColumnType type);
-    juce::Colour accent_for(ColumnType type) const;
 
     LayerCakeLibraryManager& m_manager;
     ColumnWidgets m_palette_widgets;
-    ColumnWidgets m_pattern_widgets;
     ColumnWidgets m_knobset_widgets;
     ColumnWidgets m_scene_widgets;
 
@@ -111,4 +108,3 @@ public:
 private:
     std::function<void()> m_on_close;
 };
-
