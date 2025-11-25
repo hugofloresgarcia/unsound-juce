@@ -393,7 +393,7 @@ void MainComponent::resized()
     const int presetPanelSpacing = 12;
     const int presetPanelMargin = 6;
     const int presetPanelWidthVisible = 210;
-    const int lfoRowHeight = 180;
+    const int lfoRowHeight = 200;
     const int lfoSpacing = 12;
     const int lfoMargin = 10;
     const int lfoSlotMinWidth = 120;
