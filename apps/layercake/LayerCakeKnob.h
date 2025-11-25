@@ -16,7 +16,8 @@ class LayerCakeKnob : public juce::Component,
                       public juce::DragAndDropTarget,
                       public juce::SettableTooltipClient,
                       private juce::Slider::Listener,
-                      private juce::Timer
+                      private juce::Timer,
+                      private juce::TextEditor::Listener
 {
 public:
     struct Config
@@ -105,6 +106,12 @@ private:
     void sync_recorder_idle_value();
     void refresh_lfo_button_state();
     void update_lfo_tooltip();
+    void show_text_editor();
+    void hide_text_editor(bool apply);
+    void textEditorReturnKeyPressed(juce::TextEditor& editor) override;
+    void textEditorEscapeKeyPressed(juce::TextEditor& editor) override;
+    void textEditorFocusLost(juce::TextEditor& editor) override;
+    double parse_input(const juce::String& text) const;
 
     Config m_config;
     Shared::MidiLearnManager* m_midi_manager{nullptr};
@@ -137,6 +144,8 @@ private:
     juce::Rectangle<float> m_lfo_indicator_bounds;  // For option-click hit testing in CLI mode
     bool m_show_base_value{false};
     bool m_is_hovered{false};
+    bool m_is_editing{false};
+    std::unique_ptr<juce::TextEditor> m_text_editor;
 };
 
 } // namespace LayerCakeApp

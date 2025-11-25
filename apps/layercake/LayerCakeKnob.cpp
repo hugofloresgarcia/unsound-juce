@@ -92,6 +92,13 @@ LayerCakeKnob::LayerCakeKnob(const Config& config, Shared::MidiLearnManager* mid
 
 LayerCakeKnob::~LayerCakeKnob()
 {
+    if (m_text_editor != nullptr)
+    {
+        m_text_editor->removeListener(this);
+        removeChildComponent(m_text_editor.get());
+        m_text_editor.reset();
+    }
+    
     m_slider.removeListener(this);
     if (sweep_recorder_enabled())
         m_slider.removeMouseListener(this);
@@ -235,6 +242,10 @@ void LayerCakeKnob::paint(juce::Graphics& g)
 
 void LayerCakeKnob::paint_cli_mode(juce::Graphics& g)
 {
+    // Don't paint if text editor is visible
+    if (m_is_editing && m_text_editor != nullptr)
+        return;
+    
     auto bounds = getLocalBounds().toFloat();
     
     // Monospace font for CLI aesthetic
@@ -329,8 +340,13 @@ void LayerCakeKnob::paint_cli_mode(juce::Graphics& g)
     const float keyWidth = 60.0f;  // Fixed width for alignment
     g.drawText(keyText, bounds.removeFromLeft(keyWidth), juce::Justification::centredLeft, false);
     
-    // Value in white/light gray
-    g.setColour(kSoftWhite.withAlpha(0.9f));
+    // Value color: use LFO color when assigned and not editing, otherwise default
+    juce::Colour valueColour = kSoftWhite.withAlpha(0.9f);
+    if (has_lfo_assignment() && m_lfo_button_accent.has_value() && !m_show_base_value)
+    {
+        valueColour = m_lfo_button_accent.value();
+    }
+    g.setColour(valueColour);
     g.drawText(format_cli_value(), bounds, juce::Justification::centredLeft, false);
     
     // Show MIDI CC indicator if mapped (rightmost)
@@ -362,8 +378,20 @@ juce::String LayerCakeKnob::format_cli_value() const
         const double span = m_config.maxValue - m_config.minValue;
         if (span > 0.0)
         {
-            // m_modulation_indicator_value is 0-1 normalized, representing the modulated position
-            const double modNormalized = static_cast<double>(m_modulation_indicator_value.value());
+            // Calculate effective value: base slider value (center) + LFO modulation
+            // m_modulation_indicator_value is 0-1 normalized from (lfo_value + 1.0) * 0.5
+            // Convert back to LFO offset (-1 to 1 range)
+            const double lfoNormalized = static_cast<double>(m_modulation_indicator_value.value());
+            const double lfoOffset = (lfoNormalized * 2.0) - 1.0;  // Convert 0-1 back to -1 to 1
+            
+            // Normalize base slider value to 0-1
+            const double baseValue = m_slider.getValue();
+            const double baseNormalized = juce::jlimit(0.0, 1.0, (baseValue - m_config.minValue) / span);
+            
+            // Combine base (center) with LFO offset
+            const double modNormalized = juce::jlimit(0.0, 1.0, baseNormalized + lfoOffset * 0.5);
+            
+            // Convert back to parameter range
             value = m_config.minValue + modNormalized * span;
         }
     }
@@ -407,6 +435,11 @@ void LayerCakeKnob::resized()
         
         // Slider covers full area for mouse interaction
         m_slider.setBounds(getLocalBounds());
+        
+        // Update text editor bounds if editing
+        if (m_text_editor != nullptr)
+            m_text_editor->setBounds(getLocalBounds());
+        
         return;
     }
     
@@ -489,9 +522,23 @@ void LayerCakeKnob::mouseExit(const juce::MouseEvent& event)
 
 void LayerCakeKnob::mouseDown(const juce::MouseEvent& event)
 {
+    if (m_is_editing)
+    {
+        DBG("LayerCakeKnob::mouseDown early return (already editing)");
+        return;
+    }
+
     if (event.mods.isPopupMenu())
     {
         if (show_context_menu(event))
+        return;
+    }
+
+    // Command-click to show text editor (CLI mode)
+    if (m_config.cliMode && event.mods.isCommandDown())
+    {
+        show_text_editor();
+        DBG("LayerCakeKnob::mouseDown command-click text editor");
         return;
     }
 
@@ -1114,6 +1161,121 @@ void LayerCakeKnob::update_lfo_tooltip()
         setTooltip("Option-click LFO indicator to clear");
     else
         setTooltip({});
+}
+
+void LayerCakeKnob::show_text_editor()
+{
+    if (m_is_editing || !m_config.cliMode) return;
+    
+    m_is_editing = true;
+    m_text_editor = std::make_unique<juce::TextEditor>();
+    m_text_editor->setMultiLine(false);
+    m_text_editor->setReturnKeyStartsNewLine(false);
+    m_text_editor->setScrollbarsShown(false);
+    m_text_editor->setCaretVisible(true);
+    m_text_editor->setPopupMenuEnabled(false);
+    
+    // Style to match CLI aesthetic
+    juce::FontOptions fontOpts;
+    fontOpts = fontOpts.withName(juce::Font::getDefaultMonospacedFontName())
+                   .withHeight(15.0f);
+    m_text_editor->setFont(juce::Font(fontOpts));
+    
+    const auto accent = m_slider.findColour(juce::Slider::thumbColourId, true);
+    const juce::Colour editorAccent = (has_lfo_assignment() && m_lfo_button_accent.has_value()) 
+        ? m_lfo_button_accent.value() 
+        : accent;
+    
+    m_text_editor->setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff2a2a2a));
+    m_text_editor->setColour(juce::TextEditor::textColourId, juce::Colours::white);
+    m_text_editor->setColour(juce::TextEditor::highlightColourId, editorAccent.withAlpha(0.4f));
+    m_text_editor->setColour(juce::TextEditor::outlineColourId, editorAccent);
+    m_text_editor->setColour(juce::TextEditor::focusedOutlineColourId, editorAccent);
+    
+    // Set initial text (without suffix) - use the current displayed value
+    double currentValue = m_slider.getValue();
+    juce::String initialText;
+    
+    const bool isPercentDisplay = m_config.displayAsPercent && 
+                                  std::abs(m_config.minValue) < 0.001 && 
+                                  std::abs(m_config.maxValue - 1.0) < 0.001;
+    
+    if (isPercentDisplay)
+    {
+        initialText = juce::String(static_cast<int>(std::round(currentValue * 99.0)));
+    }
+    else if (m_config.decimals == 0)
+    {
+        initialText = juce::String(static_cast<int>(std::round(currentValue)));
+    }
+    else
+    {
+        initialText = juce::String(currentValue, m_config.decimals);
+    }
+    
+    m_text_editor->setText(initialText, false);
+    m_text_editor->selectAll();
+    m_text_editor->addListener(this);
+    
+    addAndMakeVisible(m_text_editor.get());
+    m_text_editor->setBounds(getLocalBounds());
+    m_text_editor->grabKeyboardFocus();
+    
+    repaint();
+}
+
+void LayerCakeKnob::hide_text_editor(bool apply)
+{
+    if (!m_is_editing || m_text_editor == nullptr) return;
+    
+    if (apply)
+    {
+        const double newValue = parse_input(m_text_editor->getText());
+        const double clampedValue = juce::jlimit(m_config.minValue, m_config.maxValue, newValue);
+        m_slider.setValue(clampedValue, juce::sendNotificationSync);
+    }
+    
+    m_text_editor->removeListener(this);
+    removeChildComponent(m_text_editor.get());
+    m_text_editor.reset();
+    m_is_editing = false;
+    
+    repaint();
+}
+
+void LayerCakeKnob::textEditorReturnKeyPressed(juce::TextEditor& editor)
+{
+    juce::ignoreUnused(editor);
+    hide_text_editor(true);
+}
+
+void LayerCakeKnob::textEditorEscapeKeyPressed(juce::TextEditor& editor)
+{
+    juce::ignoreUnused(editor);
+    hide_text_editor(false);
+}
+
+void LayerCakeKnob::textEditorFocusLost(juce::TextEditor& editor)
+{
+    juce::ignoreUnused(editor);
+    hide_text_editor(true);
+}
+
+double LayerCakeKnob::parse_input(const juce::String& text) const
+{
+    const double inputValue = text.getDoubleValue();
+    
+    const bool isPercentDisplay = m_config.displayAsPercent && 
+                                  std::abs(m_config.minValue) < 0.001 && 
+                                  std::abs(m_config.maxValue - 1.0) < 0.001;
+    
+    if (isPercentDisplay)
+    {
+        // Convert 0-99 input back to 0-1
+        return juce::jlimit(0.0, 1.0, inputValue / 99.0);
+    }
+    
+    return inputValue;
 }
 
 } // namespace LayerCakeApp

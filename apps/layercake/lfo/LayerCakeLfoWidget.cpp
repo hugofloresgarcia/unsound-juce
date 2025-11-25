@@ -509,7 +509,6 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
     assignParam(ParamSlot::Div, makeParam("div", 0.015625, 64.0, generator.get_clock_division(), 0.0001, "x", 3, false));
     assignParam(ParamSlot::Level, makeParam("level", 0.0, 1.0, generator.get_level(), 0.01, "", 2, true));
     assignParam(ParamSlot::Width, makeParam("width", 0.0, 1.0, generator.get_width(), 0.01, "", 2, true));
-    assignParam(ParamSlot::Bipolar, makeParam("bi", 0.0, 1.0, generator.get_bipolar() ? 1.0 : 0.0, 1.0, "", 0, false));
     assignParam(ParamSlot::Loop, makeParam("loop", 0.0, 64.0, generator.get_loop_beats(), 1.0, "", 0, false));
     assignParam(ParamSlot::RandomSkip, makeParam("rSkip", 0.0, 1.0, generator.get_random_skip(), 0.01, "", 2, true));
     assignParam(ParamSlot::Slop, makeParam("slop", 0.0, 1.0, generator.get_slop(), 0.01, "", 2, true));
@@ -797,8 +796,6 @@ void LayerCakeLfoWidget::sync_controls_from_generator()
         row->set_value(m_generator.get_level(), false);
     if (auto* row = paramFor(ParamSlot::Width))
         row->set_value(m_generator.get_width(), false);
-    if (auto* row = paramFor(ParamSlot::Bipolar))
-        row->set_value(m_generator.get_bipolar() ? 1.0 : 0.0, false);
     if (auto* row = paramFor(ParamSlot::Loop))
         row->set_value(m_generator.get_loop_beats(), false);
     if (auto* row = paramFor(ParamSlot::RandomSkip))
@@ -1064,8 +1061,6 @@ void LayerCakeLfoWidget::update_generator_settings()
         m_generator.set_level(static_cast<float>(row->get_value()));
     if (auto* row = paramFor(ParamSlot::Width))
         m_generator.set_width(static_cast<float>(row->get_value()));
-    if (auto* row = paramFor(ParamSlot::Bipolar))
-        m_generator.set_bipolar(row->get_value() > 0.5);
     if (auto* row = paramFor(ParamSlot::Loop))
         m_generator.set_loop_beats(static_cast<int>(row->get_value()));
     if (auto* row = paramFor(ParamSlot::RandomSkip))

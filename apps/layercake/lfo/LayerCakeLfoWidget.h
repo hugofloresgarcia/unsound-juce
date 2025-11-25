@@ -186,7 +186,6 @@ private:
         Div = 0,
         Level,
         Width,
-        Bipolar,
         Loop,
         RandomSkip,
         Slop,
