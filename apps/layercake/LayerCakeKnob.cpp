@@ -353,8 +353,11 @@ juce::String LayerCakeKnob::format_cli_value() const
     juce::String result;
     double value = m_slider.getValue();
     
-    // If LFO is assigned, show the modulated value
-    if (has_lfo_assignment() && m_modulation_indicator_value.has_value())
+    const bool showModulatedValue = has_lfo_assignment()
+        && m_modulation_indicator_value.has_value()
+        && !m_show_base_value;
+    
+    if (showModulatedValue)
     {
         const double span = m_config.maxValue - m_config.minValue;
         if (span > 0.0)
@@ -621,6 +624,8 @@ void LayerCakeKnob::sliderDragStarted(juce::Slider* slider)
 {
     if (slider == &m_slider)
     {
+        m_show_base_value = true;
+        repaint();
         handle_touch_begin(false);
     }
     else
@@ -633,6 +638,8 @@ void LayerCakeKnob::sliderDragEnded(juce::Slider* slider)
 {
     if (slider == &m_slider)
     {
+        m_show_base_value = false;
+        repaint();
         handle_touch_end();
     }
     else

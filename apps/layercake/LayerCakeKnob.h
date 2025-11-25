@@ -131,6 +131,7 @@ private:
     std::optional<juce::Colour> m_custom_knob_colour;
     std::optional<juce::Colour> m_lfo_button_accent;
     juce::Rectangle<float> m_lfo_indicator_bounds;  // For option-click hit testing in CLI mode
+    bool m_show_base_value{false};
 };
 
 } // namespace LayerCakeApp

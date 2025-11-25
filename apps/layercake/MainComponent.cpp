@@ -115,6 +115,20 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
             m_lfo_slots[static_cast<size_t>(index)].label = 
                 newLabel.isNotEmpty() ? newLabel : ("LFO " + juce::String(index + 1));
         });
+        slot.widget->set_on_enabled_changed([this, index = static_cast<int>(i)](bool enabled)
+        {
+            if (index < 0 || index >= static_cast<int>(m_lfo_slots.size()))
+                return;
+            auto& targetSlot = m_lfo_slots[static_cast<size_t>(index)];
+            targetSlot.enabled = enabled;
+            if (!enabled)
+            {
+                m_lfo_last_values[static_cast<size_t>(index)].store(0.0f, std::memory_order_relaxed);
+                m_lfo_prev_values[static_cast<size_t>(index)] = 0.0f;
+                update_all_modulation_overlays();
+            }
+        });
+        slot.widget->set_enabled(slot.enabled, false);
         slot.widget->set_preset_handlers({
             [this]() -> juce::StringArray {
                 return juce::StringArray(m_library_manager.get_lfo_presets());
@@ -365,7 +379,7 @@ void MainComponent::resized()
     const int buttonVerticalSpacing = 6;
     const int buttonStackTotal = (buttonHeight * 3) + (buttonVerticalSpacing * 2);
     const int meterWidth = 40;
-    const int meterHeight = 100;
+    const int meterHeight = 80;
     const int meterSpacing = 12;
     const int displayPanelWidth = 680;
     const int displayWidth = 600;
@@ -823,7 +837,9 @@ void MainComponent::timerCallback()
             // This makes gate/square show on/off properly
             const float rawValue = m_lfo_last_values[i].load(std::memory_order_relaxed);
             const float ledValue = (rawValue + 1.0f) * 0.5f;  // -1..1 -> 0..1
-            m_lfo_slots[i].widget->set_current_value(juce::jlimit(0.0f, 1.0f, ledValue));
+            const bool enabled = m_lfo_slots[i].enabled;
+            m_lfo_slots[i].widget->set_enabled(enabled, false);
+            m_lfo_slots[i].widget->set_current_value(enabled ? juce::jlimit(0.0f, 1.0f, ledValue) : 0.0f);
         }
     }
     
@@ -991,6 +1007,7 @@ void MainComponent::capture_lfo_state(LayerCakePresetData& data) const
         {
             slotData.label = (slot.label != defaultLabel) ? slot.label : juce::String();
         }
+        slotData.enabled = slot.enabled;
         
         // Basic parameters
         slotData.mode = static_cast<int>(slot.generator.get_mode());
@@ -1132,6 +1149,9 @@ void MainComponent::apply_lfo_state(const LayerCakePresetData& data)
         // Random seed (restore for reproducible patterns)
         if (slotData.random_seed != 0)
             slot.generator.set_random_seed(slotData.random_seed);
+        slot.enabled = slotData.enabled;
+        if (slot.widget != nullptr)
+            slot.widget->set_enabled(slot.enabled, false);
         
         slot.generator.reset_phase();
         m_lfo_last_values[i].store(slot.generator.get_last_value(), std::memory_order_relaxed);
@@ -1222,12 +1242,12 @@ void MainComponent::advance_lfos(double now_ms)
     for (size_t i = 0; i < m_lfo_slots.size(); ++i)
     {
         auto& slot = m_lfo_slots[i];
-        // LFOs are always clock-driven
+        const bool enabled = slot.enabled;
         const float rawValue = slot.generator.advance_clocked(master_beats);
-        const float scaled = rawValue * slot.generator.get_depth();
+        const float scaled = enabled ? rawValue * slot.generator.get_depth() : 0.0f;
         
         // Check for positive zero-crossing to trigger grains
-        if (static_cast<int>(i) == triggerLfoIndex)
+        if (enabled && static_cast<int>(i) == triggerLfoIndex)
         {
             const float prevValue = m_lfo_prev_values[i];
             // Trigger on rising edge crossing 0.0 (from negative/zero to positive)
@@ -1282,6 +1302,12 @@ void MainComponent::update_all_modulation_overlays()
             continue;
         }
 
+        if (!m_lfo_slots[static_cast<size_t>(assignment)].enabled)
+        {
+            knob->clear_modulation_indicator();
+            continue;
+        }
+
         const float lfo_value = m_lfo_last_values[static_cast<size_t>(assignment)].load(std::memory_order_relaxed);
         const juce::Colour lfoColour = m_lfo_slots[static_cast<size_t>(assignment)].accent;
         // Normalize to 0-1 range for modulation indicator
@@ -1308,6 +1334,8 @@ double MainComponent::get_effective_knob_value(const LayerCakeKnob* knob) const
     const double base_value = knob->slider().getValue();
     const int assignment = knob->lfo_assignment_index();
     if (assignment < 0 || assignment >= static_cast<int>(m_lfo_slots.size()))
+        return base_value;
+    if (!m_lfo_slots[static_cast<size_t>(assignment)].enabled)
         return base_value;
 
     const auto& config = knob->config();

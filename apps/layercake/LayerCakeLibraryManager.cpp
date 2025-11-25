@@ -87,6 +87,7 @@ juce::var lfo_slot_to_var(const LayerCakePresetData::LfoSlotData& slot)
     
     if (slot.label.isNotEmpty())
         obj->setProperty("label", slot.label);
+    obj->setProperty("enabled", slot.enabled);
     
     obj->setProperty("mode", slot.mode);
     obj->setProperty("rateHz", slot.rate_hz);
@@ -126,6 +127,9 @@ bool lfo_slot_from_var(const juce::var& value, LayerCakePresetData::LfoSlotData&
     
     slot.label = obj->hasProperty("label") 
         ? obj->getProperty("label").toString() : juce::String();
+    slot.enabled = obj->hasProperty("enabled")
+        ? static_cast<bool>(obj->getProperty("enabled"))
+        : true;
     slot.mode = obj->hasProperty("mode") ? static_cast<int>(obj->getProperty("mode")) : 0;
     slot.rate_hz = obj->hasProperty("rateHz") ? static_cast<float>(obj->getProperty("rateHz")) : 0.5f;
     slot.depth = obj->hasProperty("depth") ? static_cast<float>(obj->getProperty("depth")) : 0.5f;

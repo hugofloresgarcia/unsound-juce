@@ -559,20 +559,28 @@ void LayerCakeLfoWidget::paint(juce::Graphics& g)
     {
         auto ledRect = m_led_bounds;
         const float clampedValue = juce::jlimit(0.0f, 1.0f, m_current_lfo_value);
-        const float brightness = 0.2f + clampedValue * 0.8f;
+        const float brightness = 0.15f + clampedValue * 0.85f;
 
-        // LED fill scales with LFO value
-        g.setColour(m_accent_colour.withMultipliedBrightness(brightness));
+        auto ledColour = m_enabled
+            ? m_accent_colour.withMultipliedBrightness(brightness)
+            : m_accent_colour.darker(1.4f).withAlpha(0.4f);
+        g.setColour(ledColour);
         g.fillRect(ledRect);
 
-        // Simple highlight pixel for extra punch when active
-        if (clampedValue > 0.15f)
+        if (m_enabled && clampedValue > 0.15f)
         {
-            g.setColour(juce::Colour(0xfffcfcfc).withAlpha(0.4f));
+            g.setColour(juce::Colour(0xfffcfcfc).withAlpha(0.45f));
             g.fillRect(ledRect.reduced(2));
         }
-        
-        // Pixel border on LED
+        else if (!m_enabled)
+        {
+            g.setColour(juce::Colour(0x88ffffff));
+            g.drawLine(static_cast<float>(ledRect.getX()),
+                       static_cast<float>(ledRect.getY()),
+                       static_cast<float>(ledRect.getRight()),
+                       static_cast<float>(ledRect.getBottom()));
+        }
+
         g.setColour(juce::Colour(0xff000000));
         g.drawRect(ledRect, 1);
     }
@@ -715,6 +723,26 @@ void LayerCakeLfoWidget::set_preset_handlers(PresetHandlers handlers)
     update_preset_button_state();
 }
 
+void LayerCakeLfoWidget::set_on_enabled_changed(std::function<void(bool)> callback)
+{
+    m_enabled_changed_callback = std::move(callback);
+}
+
+void LayerCakeLfoWidget::set_enabled(bool enabled, bool notifyListeners)
+{
+    if (m_enabled == enabled)
+        return;
+
+    m_enabled = enabled;
+    if (!m_enabled)
+        m_current_lfo_value = 0.0f;
+
+    if (notifyListeners && m_enabled_changed_callback)
+        m_enabled_changed_callback(m_enabled);
+
+    repaint();
+}
+
 void LayerCakeLfoWidget::labelTextChanged(juce::Label* labelThatHasChanged)
 {
     if (labelThatHasChanged != &m_title_label) return;
@@ -739,7 +767,6 @@ void LayerCakeLfoWidget::labelTextChanged(juce::Label* labelThatHasChanged)
 void LayerCakeLfoWidget::editorShown(juce::Label* label, juce::TextEditor& editor)
 {
     if (label != &m_title_label) return;
-    
     // Style the editor for NES look
     juce::FontOptions opts;
     opts = opts.withName(juce::Font::getDefaultMonospacedFontName()).withHeight(12.0f);
@@ -796,11 +823,24 @@ void LayerCakeLfoWidget::set_on_hover_changed(std::function<void(bool)> callback
     m_hover_changed_callback = std::move(callback);
 }
 
+void LayerCakeLfoWidget::mouseDown(const juce::MouseEvent& event)
+{
+    if (m_led_bounds.contains(event.getPosition()))
+    {
+        set_enabled(!m_enabled);
+        return;
+    }
+
+    juce::Component::mouseDown(event);
+}
+
 void LayerCakeLfoWidget::set_current_value(float value)
 {
-    if (std::abs(value - m_current_lfo_value) > 0.01f)
+    const float clamped = juce::jlimit(0.0f, 1.0f, value);
+    const float target = m_enabled ? clamped : 0.0f;
+    if (std::abs(target - m_current_lfo_value) > 0.01f)
     {
-        m_current_lfo_value = juce::jlimit(0.0f, 1.0f, value);
+        m_current_lfo_value = target;
         repaint(m_led_bounds.expanded(2));
     }
 }
@@ -906,6 +946,7 @@ LayerCakePresetData::LfoSlotData LayerCakeLfoWidget::capture_slot_data() const
 {
     LayerCakePresetData::LfoSlotData slot;
     slot.label = m_custom_label;
+    slot.enabled = m_enabled;
     slot.mode = static_cast<int>(m_generator.get_mode());
     slot.rate_hz = m_generator.get_rate_hz();
     slot.depth = m_generator.get_depth();
@@ -931,6 +972,7 @@ LayerCakePresetData::LfoSlotData LayerCakeLfoWidget::capture_slot_data() const
 
 void LayerCakeLfoWidget::apply_slot_data(const LayerCakePresetData::LfoSlotData& data)
 {
+    set_enabled(data.enabled, false);
     const int maxMode = static_cast<int>(flower::LfoWaveform::SmoothRandom);
     const int mode = juce::jlimit(0, maxMode, data.mode);
     m_generator.set_mode(static_cast<flower::LfoWaveform>(mode));

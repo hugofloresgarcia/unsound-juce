@@ -109,6 +109,9 @@ public:
     void set_on_settings_changed(std::function<void()> callback);
     void set_on_label_changed(std::function<void(const juce::String&)> callback);
     void set_preset_handlers(PresetHandlers handlers);
+    void set_on_enabled_changed(std::function<void(bool)> callback);
+    void set_enabled(bool enabled, bool notifyListeners = true);
+    bool is_enabled() const noexcept { return m_enabled; }
     void sync_controls_from_generator();
     void set_tempo_provider(std::function<double()> tempo_bpm_provider);
     void set_on_hover_changed(std::function<void(bool)> callback);
@@ -139,6 +142,7 @@ private:
     void update_generator_settings();
     void notify_settings_changed();
     void timerCallback() override;
+    void mouseDown(const juce::MouseEvent& event) override;
     double get_tempo_bpm() const;
     void update_controls_visibility();
     void go_to_page(int page);
@@ -190,6 +194,8 @@ private:
     std::function<void(const juce::String&)> m_label_changed_callback;
     PresetHandlers m_preset_handlers;
     juce::TextButton m_preset_button;
+    std::function<void(bool)> m_enabled_changed_callback;
+    bool m_enabled{true};
     juce::TextButton m_prev_page_button;
     juce::TextButton m_next_page_button;
     juce::Label m_page_label;

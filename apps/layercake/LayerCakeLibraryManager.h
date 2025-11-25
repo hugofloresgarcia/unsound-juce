@@ -14,6 +14,7 @@ struct LayerCakePresetData
     {
         // Custom label (empty = use default "LFO N")
         juce::String label;
+        bool enabled{true};
         
         // Basic parameters
         int mode{0};

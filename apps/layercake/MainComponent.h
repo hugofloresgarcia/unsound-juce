@@ -167,6 +167,7 @@ private:
         std::unique_ptr<LayerCakeLfoWidget> widget;
         juce::Colour accent;
         juce::String label;
+        bool enabled{true};
     };
     static constexpr size_t kNumLfoSlots = LayerCakePresetData::kNumLfos;
     std::array<LfoSlot, kNumLfoSlots> m_lfo_slots;
