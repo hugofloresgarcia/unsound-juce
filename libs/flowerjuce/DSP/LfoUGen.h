@@ -1,7 +1,6 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
-#include <atomic>
 #include <vector>
 
 namespace flower
@@ -40,9 +39,6 @@ public:
 
     void set_pattern_buffer(const std::vector<float>& buffer);
     const std::vector<float>& get_pattern_buffer() const { return m_pattern_buffer; }
-
-    void set_depth(float depth);
-    float get_depth() const noexcept { return m_depth.load(std::memory_order_relaxed); }
 
     // PNW-style waveform shaping parameters
     void set_level(float level);  // 0-1 output level
@@ -126,7 +122,6 @@ private:
     std::vector<bool> m_skip_buffer;  // Cached skip decisions
     int m_last_step_index{-1};
     
-    std::atomic<float> m_depth{0.5f};
     double m_phase{0.0};
     float m_last_value{0.0f};
     bool m_has_time_reference{false};

@@ -47,6 +47,30 @@ void LfoTriggerButton::mouseDown(const juce::MouseEvent& event)
     }
 }
 
+void LfoTriggerButton::mouseEnter(const juce::MouseEvent& event)
+{
+    if (!m_is_hovered)
+    {
+        m_is_hovered = true;
+        if (m_hover_changed_handler != nullptr)
+            m_hover_changed_handler(true);
+    }
+    juce::Component::mouseEnter(event);
+}
+
+void LfoTriggerButton::mouseExit(const juce::MouseEvent& event)
+{
+    const auto localPos = event.getEventRelativeTo(this).getPosition();
+    const bool stillInside = getLocalBounds().contains(localPos);
+    if (!stillInside && m_is_hovered)
+    {
+        m_is_hovered = false;
+        if (m_hover_changed_handler != nullptr)
+            m_hover_changed_handler(false);
+    }
+    juce::Component::mouseExit(event);
+}
+
 bool LfoTriggerButton::isInterestedInDragSource(const juce::DragAndDropTarget::SourceDetails& details)
 {
     int idx; juce::Colour c; juce::String l;
@@ -96,6 +120,11 @@ void LfoTriggerButton::clear_lfo_assignment()
 {
     m_lfo_index = -1;
     repaint();
+}
+
+void LfoTriggerButton::set_hover_changed_handler(const std::function<void(bool)>& handler)
+{
+    m_hover_changed_handler = handler;
 }
 
 } // namespace LayerCakeApp

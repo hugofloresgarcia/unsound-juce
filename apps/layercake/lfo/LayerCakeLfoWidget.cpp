@@ -1,7 +1,6 @@
 #include "LayerCakeLfoWidget.h"
 #include "LfoDragHelpers.h"
 #include <cmath>
-#include <array>
 
 namespace LayerCakeApp
 {
@@ -116,7 +115,18 @@ void LfoParamRow::resized()
 
 void LfoParamRow::mouseDown(const juce::MouseEvent& event)
 {
-    if (m_is_editing) return;
+    if (m_is_editing)
+    {
+        DBG("LfoParamRow::mouseDown early return (already editing) key=" + m_config.key);
+        return;
+    }
+
+    if (event.mods.isCommandDown())
+    {
+        show_text_editor();
+        DBG("LfoParamRow::mouseDown command-click text editor key=" + m_config.key);
+        return;
+    }
     
     if (event.mods.isRightButtonDown() || event.mods.isPopupMenu())
     {
@@ -161,7 +171,7 @@ void LfoParamRow::mouseUp(const juce::MouseEvent& event)
 void LfoParamRow::mouseDoubleClick(const juce::MouseEvent& event)
 {
     juce::ignoreUnused(event);
-    show_text_editor();
+    set_value(m_config.defaultValue);
 }
 
 void LfoParamRow::set_value(double value, bool notify)
@@ -486,30 +496,29 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
     };
 
     // Create all parameters in order (for paging)
-    // Page 0: div, depth, level, width, phase, delay
-    // 0-1 range params use displayAsPercent=true to show as 0-99
-    m_params.push_back(makeParam("div", 0.015625, 64.0, generator.get_clock_division(), 0.0001, "x", 3, false));
-    
-    auto depthParam = makeParam("depth", 0.0, 1.0, generator.get_depth(), 0.01, "", 2, true);
-    m_depth_param = depthParam.get();
-    m_params.push_back(std::move(depthParam));
+    // Page 0: div/level, width/bi, loop/rSkip, slop/delay
+    // Remaining params on additional pages
+    m_params.resize(kParamCount);
 
-    m_params.push_back(makeParam("level", 0.0, 1.0, generator.get_level(), 0.01, "", 2, true));
-    m_params.push_back(makeParam("width", 0.0, 1.0, generator.get_width(), 0.01, "", 2, true));
-    m_params.push_back(makeParam("phase", 0.0, 1.0, generator.get_phase_offset(), 0.01, "", 2, true));
-    m_params.push_back(makeParam("delay", 0.0, 1.0, generator.get_delay(), 0.01, "", 2, true));
+    auto assignParam = [this](ParamSlot slot, std::unique_ptr<LfoParamRow> param) {
+        const size_t index = static_cast<size_t>(slot);
+        jassert(index < m_params.size());
+        m_params[index] = std::move(param);
+    };
 
-    // Page 1: dly/, slop, eStep, eTrig, eRot, rSkip
-    m_params.push_back(makeParam("dly/", 1.0, 16.0, generator.get_delay_div(), 1.0, "", 0, false));
-    m_params.push_back(makeParam("slop", 0.0, 1.0, generator.get_slop(), 0.01, "", 2, true));
-    m_params.push_back(makeParam("eStep", 0.0, 64.0, generator.get_euclidean_steps(), 1.0, "", 0, false));
-    m_params.push_back(makeParam("eTrig", 0.0, 64.0, generator.get_euclidean_triggers(), 1.0, "", 0, false));
-    m_params.push_back(makeParam("eRot", 0.0, 64.0, generator.get_euclidean_rotation(), 1.0, "", 0, false));
-    m_params.push_back(makeParam("rSkip", 0.0, 1.0, generator.get_random_skip(), 0.01, "", 2, true));
-
-    // Page 2: loop, bi (bipolar toggle)
-    m_params.push_back(makeParam("loop", 0.0, 64.0, generator.get_loop_beats(), 1.0, "", 0, false));
-    m_params.push_back(makeParam("bi", 0.0, 1.0, generator.get_bipolar() ? 1.0 : 0.0, 1.0, "", 0, false));
+    assignParam(ParamSlot::Div, makeParam("div", 0.015625, 64.0, generator.get_clock_division(), 0.0001, "x", 3, false));
+    assignParam(ParamSlot::Level, makeParam("level", 0.0, 1.0, generator.get_level(), 0.01, "", 2, true));
+    assignParam(ParamSlot::Width, makeParam("width", 0.0, 1.0, generator.get_width(), 0.01, "", 2, true));
+    assignParam(ParamSlot::Bipolar, makeParam("bi", 0.0, 1.0, generator.get_bipolar() ? 1.0 : 0.0, 1.0, "", 0, false));
+    assignParam(ParamSlot::Loop, makeParam("loop", 0.0, 64.0, generator.get_loop_beats(), 1.0, "", 0, false));
+    assignParam(ParamSlot::RandomSkip, makeParam("rSkip", 0.0, 1.0, generator.get_random_skip(), 0.01, "", 2, true));
+    assignParam(ParamSlot::Slop, makeParam("slop", 0.0, 1.0, generator.get_slop(), 0.01, "", 2, true));
+    assignParam(ParamSlot::Delay, makeParam("delay", 0.0, 1.0, generator.get_delay(), 0.01, "", 2, true));
+    assignParam(ParamSlot::Phase, makeParam("phase", 0.0, 1.0, generator.get_phase_offset(), 0.01, "", 2, true));
+    assignParam(ParamSlot::DelayDivision, makeParam("dly/", 1.0, 16.0, generator.get_delay_div(), 1.0, "", 0, false));
+    assignParam(ParamSlot::EuclideanSteps, makeParam("eStep", 0.0, 64.0, generator.get_euclidean_steps(), 1.0, "", 0, false));
+    assignParam(ParamSlot::EuclideanTriggers, makeParam("eTrig", 0.0, 64.0, generator.get_euclidean_triggers(), 1.0, "", 0, false));
+    assignParam(ParamSlot::EuclideanRotation, makeParam("eRot", 0.0, 64.0, generator.get_euclidean_rotation(), 1.0, "", 0, false));
 
     // Add all params as child components
     for (auto& param : m_params)
@@ -522,7 +531,7 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
     addAndMakeVisible(m_wave_preview.get());
 
     // Cache initial values
-    m_last_depth = generator.get_depth();
+    m_last_level = generator.get_level();
     m_last_mode = static_cast<int>(generator.get_mode());
     m_last_clock_div = generator.get_clock_division();
     
@@ -666,13 +675,6 @@ void LayerCakeLfoWidget::resized()
     update_controls_visibility();
 }
 
-float LayerCakeLfoWidget::get_depth() const noexcept
-{
-    return m_depth_param != nullptr
-        ? static_cast<float>(m_depth_param->get_value())
-        : 0.0f;
-}
-
 void LayerCakeLfoWidget::refresh_wave_preview()
 {
     if (m_wave_preview == nullptr) return;
@@ -684,12 +686,11 @@ void LayerCakeLfoWidget::refresh_wave_preview()
 
     const double window_beats = 4.0;
     const double step = window_beats / static_cast<double>(samples.size());
-    const float depth = juce::jlimit(0.0f, 1.0f, preview.get_depth());
-
+    
     // Always clocked mode
     for (size_t i = 0; i < samples.size(); ++i)
     {
-        samples[i] = preview.advance_clocked(i * step) * depth;
+        samples[i] = preview.advance_clocked(i * step);
     }
 
     m_wave_preview->set_points(samples);
@@ -784,30 +785,38 @@ void LayerCakeLfoWidget::sync_controls_from_generator()
     const int index = waveform_to_index(m_generator.get_mode());
     m_mode_selector.setSelectedItemIndex(index, juce::dontSendNotification);
     
-    // Update all param values from generator
-    // Param order: div, depth, level, width, phase, delay, dly/, slop, eStep, eTrig, eRot, rSkip, loop, bi
-    const std::array<double, 14> values = {
-        m_generator.get_clock_division(),
-        m_generator.get_depth(),
-        m_generator.get_level(),
-        m_generator.get_width(),
-        m_generator.get_phase_offset(),
-        m_generator.get_delay(),
-        static_cast<double>(m_generator.get_delay_div()),
-        m_generator.get_slop(),
-        static_cast<double>(m_generator.get_euclidean_steps()),
-        static_cast<double>(m_generator.get_euclidean_triggers()),
-        static_cast<double>(m_generator.get_euclidean_rotation()),
-        m_generator.get_random_skip(),
-        static_cast<double>(m_generator.get_loop_beats()),
-        m_generator.get_bipolar() ? 1.0 : 0.0
+    auto paramFor = [this](ParamSlot slot) -> LfoParamRow*
+    {
+        const size_t index = static_cast<size_t>(slot);
+        return index < m_params.size() ? m_params[index].get() : nullptr;
     };
 
-    for (size_t i = 0; i < m_params.size() && i < values.size(); ++i)
-    {
-        if (m_params[i] != nullptr)
-            m_params[i]->set_value(values[i], false);
-    }
+    if (auto* row = paramFor(ParamSlot::Div))
+        row->set_value(m_generator.get_clock_division(), false);
+    if (auto* row = paramFor(ParamSlot::Level))
+        row->set_value(m_generator.get_level(), false);
+    if (auto* row = paramFor(ParamSlot::Width))
+        row->set_value(m_generator.get_width(), false);
+    if (auto* row = paramFor(ParamSlot::Bipolar))
+        row->set_value(m_generator.get_bipolar() ? 1.0 : 0.0, false);
+    if (auto* row = paramFor(ParamSlot::Loop))
+        row->set_value(m_generator.get_loop_beats(), false);
+    if (auto* row = paramFor(ParamSlot::RandomSkip))
+        row->set_value(m_generator.get_random_skip(), false);
+    if (auto* row = paramFor(ParamSlot::Slop))
+        row->set_value(m_generator.get_slop(), false);
+    if (auto* row = paramFor(ParamSlot::Delay))
+        row->set_value(m_generator.get_delay(), false);
+    if (auto* row = paramFor(ParamSlot::Phase))
+        row->set_value(m_generator.get_phase_offset(), false);
+    if (auto* row = paramFor(ParamSlot::DelayDivision))
+        row->set_value(static_cast<double>(m_generator.get_delay_div()), false);
+    if (auto* row = paramFor(ParamSlot::EuclideanSteps))
+        row->set_value(static_cast<double>(m_generator.get_euclidean_steps()), false);
+    if (auto* row = paramFor(ParamSlot::EuclideanTriggers))
+        row->set_value(static_cast<double>(m_generator.get_euclidean_triggers()), false);
+    if (auto* row = paramFor(ParamSlot::EuclideanRotation))
+        row->set_value(static_cast<double>(m_generator.get_euclidean_rotation()), false);
         
     refresh_wave_preview();
     update_controls_visibility();
@@ -949,7 +958,6 @@ LayerCakePresetData::LfoSlotData LayerCakeLfoWidget::capture_slot_data() const
     slot.enabled = m_enabled;
     slot.mode = static_cast<int>(m_generator.get_mode());
     slot.rate_hz = m_generator.get_rate_hz();
-    slot.depth = m_generator.get_depth();
     slot.tempo_sync = true;
     slot.clock_division = m_generator.get_clock_division();
     slot.pattern_length = m_generator.get_pattern_length();
@@ -977,7 +985,6 @@ void LayerCakeLfoWidget::apply_slot_data(const LayerCakePresetData::LfoSlotData&
     const int mode = juce::jlimit(0, maxMode, data.mode);
     m_generator.set_mode(static_cast<flower::LfoWaveform>(mode));
     m_generator.set_rate_hz(juce::jlimit(0.01f, 20.0f, data.rate_hz));
-    m_generator.set_depth(juce::jlimit(0.0f, 1.0f, data.depth));
     m_generator.set_clock_division(data.clock_division);
     m_generator.set_pattern_length(data.pattern_length);
     m_generator.set_pattern_buffer(data.pattern_buffer);
@@ -1045,38 +1052,38 @@ void LayerCakeLfoWidget::update_generator_settings()
 {
     m_generator.set_mode(waveform_from_index(m_mode_selector.getSelectedItemIndex()));
     
-    // Param order: div, depth, level, width, phase, delay, dly/, slop, eStep, eTrig, eRot, rSkip, loop, bi
-    if (m_params.size() >= 14)
+    auto paramFor = [this](ParamSlot slot) -> LfoParamRow*
     {
-        if (m_params[0] != nullptr)
-            m_generator.set_clock_division(static_cast<float>(m_params[0]->get_value()));
-        if (m_params[1] != nullptr)
-            m_generator.set_depth(static_cast<float>(m_params[1]->get_value()));
-        if (m_params[2] != nullptr)
-            m_generator.set_level(static_cast<float>(m_params[2]->get_value()));
-        if (m_params[3] != nullptr)
-            m_generator.set_width(static_cast<float>(m_params[3]->get_value()));
-        if (m_params[4] != nullptr)
-            m_generator.set_phase_offset(static_cast<float>(m_params[4]->get_value()));
-        if (m_params[5] != nullptr)
-            m_generator.set_delay(static_cast<float>(m_params[5]->get_value()));
-        if (m_params[6] != nullptr)
-            m_generator.set_delay_div(static_cast<int>(m_params[6]->get_value()));
-        if (m_params[7] != nullptr)
-            m_generator.set_slop(static_cast<float>(m_params[7]->get_value()));
-        if (m_params[8] != nullptr)
-            m_generator.set_euclidean_steps(static_cast<int>(m_params[8]->get_value()));
-        if (m_params[9] != nullptr)
-            m_generator.set_euclidean_triggers(static_cast<int>(m_params[9]->get_value()));
-        if (m_params[10] != nullptr)
-            m_generator.set_euclidean_rotation(static_cast<int>(m_params[10]->get_value()));
-        if (m_params[11] != nullptr)
-            m_generator.set_random_skip(static_cast<float>(m_params[11]->get_value()));
-        if (m_params[12] != nullptr)
-            m_generator.set_loop_beats(static_cast<int>(m_params[12]->get_value()));
-        if (m_params[13] != nullptr)
-            m_generator.set_bipolar(m_params[13]->get_value() > 0.5);
-    }
+        const size_t index = static_cast<size_t>(slot);
+        return index < m_params.size() ? m_params[index].get() : nullptr;
+    };
+
+    if (auto* row = paramFor(ParamSlot::Div))
+        m_generator.set_clock_division(static_cast<float>(row->get_value()));
+    if (auto* row = paramFor(ParamSlot::Level))
+        m_generator.set_level(static_cast<float>(row->get_value()));
+    if (auto* row = paramFor(ParamSlot::Width))
+        m_generator.set_width(static_cast<float>(row->get_value()));
+    if (auto* row = paramFor(ParamSlot::Bipolar))
+        m_generator.set_bipolar(row->get_value() > 0.5);
+    if (auto* row = paramFor(ParamSlot::Loop))
+        m_generator.set_loop_beats(static_cast<int>(row->get_value()));
+    if (auto* row = paramFor(ParamSlot::RandomSkip))
+        m_generator.set_random_skip(static_cast<float>(row->get_value()));
+    if (auto* row = paramFor(ParamSlot::Slop))
+        m_generator.set_slop(static_cast<float>(row->get_value()));
+    if (auto* row = paramFor(ParamSlot::Delay))
+        m_generator.set_delay(static_cast<float>(row->get_value()));
+    if (auto* row = paramFor(ParamSlot::Phase))
+        m_generator.set_phase_offset(static_cast<float>(row->get_value()));
+    if (auto* row = paramFor(ParamSlot::DelayDivision))
+        m_generator.set_delay_div(static_cast<int>(row->get_value()));
+    if (auto* row = paramFor(ParamSlot::EuclideanSteps))
+        m_generator.set_euclidean_steps(static_cast<int>(row->get_value()));
+    if (auto* row = paramFor(ParamSlot::EuclideanTriggers))
+        m_generator.set_euclidean_triggers(static_cast<int>(row->get_value()));
+    if (auto* row = paramFor(ParamSlot::EuclideanRotation))
+        m_generator.set_euclidean_rotation(static_cast<int>(row->get_value()));
         
     notify_settings_changed();
 }
@@ -1104,17 +1111,17 @@ void LayerCakeLfoWidget::timerCallback()
         }
     }
 
-    const float depth = m_generator.get_depth();
+    const float level = m_generator.get_level();
     const int mode = static_cast<int>(m_generator.get_mode());
     const float div = m_generator.get_clock_division();
 
-    const bool changed = (std::abs(depth - m_last_depth) > 0.0005f)
+    const bool changed = (std::abs(level - m_last_level) > 0.0005f)
                       || (mode != m_last_mode)
                       || (std::abs(div - m_last_clock_div) > 0.0005f);
                       
     if (!changed) return;
 
-    m_last_depth = depth;
+    m_last_level = level;
     m_last_mode = mode;
     m_last_clock_div = div;
     

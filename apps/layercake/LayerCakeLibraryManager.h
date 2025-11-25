@@ -19,7 +19,6 @@ struct LayerCakePresetData
         // Basic parameters
         int mode{0};
         float rate_hz{0.5f};
-        float depth{0.5f};
         bool tempo_sync{false};
         float clock_division{1.0f};
         int pattern_length{0};
@@ -63,6 +62,9 @@ struct LayerCakePresetData
     std::array<LfoSlotData, kNumLfos> lfo_slots{};
     juce::NamedValueSet lfo_assignments;
 };
+
+static_assert(LayerCakePresetData::kNumLfos == LayerCakeEngine::kNumLfoSlots,
+              "LayerCake LFO slot counts must match");
 
 using LayerBufferArray = std::array<LayerBufferSnapshot, LayerCakeEngine::kNumLayers>;
 

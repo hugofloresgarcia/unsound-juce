@@ -6,8 +6,6 @@ namespace flower
 
 namespace
 {
-constexpr float kMinDepth = 0.0f;
-constexpr float kMaxDepth = 1.0f;
 constexpr float kMinRateHz = 0.01f;
 constexpr float kMaxRateHz = 20.0f;
 
@@ -102,7 +100,6 @@ LayerCakeLfoUGen& LayerCakeLfoUGen::operator=(const LayerCakeLfoUGen& other)
     {
         m_mode = other.m_mode;
         m_rate_hz = other.m_rate_hz;
-        m_depth.store(other.m_depth.load(std::memory_order_relaxed), std::memory_order_relaxed);
         m_phase = other.m_phase;
         m_last_value = other.m_last_value;
         m_has_time_reference = other.m_has_time_reference;
@@ -164,12 +161,6 @@ void LayerCakeLfoUGen::set_pattern_length(int length)
 void LayerCakeLfoUGen::set_pattern_buffer(const std::vector<float>& buffer)
 {
     m_pattern_buffer = buffer;
-}
-
-void LayerCakeLfoUGen::set_depth(float depth)
-{
-    const float clamped = juce::jlimit(kMinDepth, kMaxDepth, depth);
-    m_depth.store(clamped, std::memory_order_relaxed);
 }
 
 void LayerCakeLfoUGen::set_level(float level)

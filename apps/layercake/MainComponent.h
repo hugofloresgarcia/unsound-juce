@@ -109,8 +109,9 @@ private:
     void sync_manual_state_from_controls();
     double get_layer_recorded_seconds(int layer_index) const;
     void handle_clock_button();
-    void advance_lfos(double now_ms);
     void register_knob_for_lfo(LayerCakeKnob* knob);
+    void handle_knob_hover(LayerCakeKnob* knob, bool hovered);
+    void handle_trigger_hover(bool hovered);
     void update_lfo_connection_overlay(int lfo_index, bool hovered);
     void assign_lfo_to_knob(int lfo_index, LayerCakeKnob& knob);
     void remove_lfo_from_knob(LayerCakeKnob& knob);
@@ -118,6 +119,7 @@ private:
     double get_effective_knob_value(const LayerCakeKnob* knob) const;
     void update_record_layer_from_lfo();
     void update_master_gain_from_knob();
+    void push_lfo_to_engine(int lfo_index);
     void capture_lfo_state(LayerCakePresetData& data) const;
     void apply_lfo_state(const LayerCakePresetData& data);
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
@@ -172,7 +174,6 @@ private:
     static constexpr size_t kNumLfoSlots = LayerCakePresetData::kNumLfos;
     std::array<LfoSlot, kNumLfoSlots> m_lfo_slots;
     std::array<std::atomic<float>, kNumLfoSlots> m_lfo_last_values;
-    std::array<float, kNumLfoSlots> m_lfo_prev_values{};  // For zero-crossing detection
     SettingsButtonLookAndFeel m_settings_button_look_and_feel;
     juce::TextButton m_settings_button;
     std::unique_ptr<LayerCakeSettingsWindow> m_settings_window;

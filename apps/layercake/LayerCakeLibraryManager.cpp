@@ -91,7 +91,6 @@ juce::var lfo_slot_to_var(const LayerCakePresetData::LfoSlotData& slot)
     
     obj->setProperty("mode", slot.mode);
     obj->setProperty("rateHz", slot.rate_hz);
-    obj->setProperty("depth", slot.depth);
     obj->setProperty("tempoSync", slot.tempo_sync);
     obj->setProperty("clockDiv", slot.clock_division);
     obj->setProperty("patternLen", slot.pattern_length);
@@ -132,7 +131,6 @@ bool lfo_slot_from_var(const juce::var& value, LayerCakePresetData::LfoSlotData&
         : true;
     slot.mode = obj->hasProperty("mode") ? static_cast<int>(obj->getProperty("mode")) : 0;
     slot.rate_hz = obj->hasProperty("rateHz") ? static_cast<float>(obj->getProperty("rateHz")) : 0.5f;
-    slot.depth = obj->hasProperty("depth") ? static_cast<float>(obj->getProperty("depth")) : 0.5f;
     slot.tempo_sync = obj->hasProperty("tempoSync") 
         ? static_cast<bool>(obj->getProperty("tempoSync")) : false;
     slot.clock_division = obj->hasProperty("clockDiv") 
@@ -150,7 +148,12 @@ bool lfo_slot_from_var(const juce::var& value, LayerCakePresetData::LfoSlotData&
         }
     }
     
-    slot.level = obj->hasProperty("level") ? static_cast<float>(obj->getProperty("level")) : 1.0f;
+    const bool hasLevelProperty = obj->hasProperty("level");
+    slot.level = hasLevelProperty
+        ? static_cast<float>(obj->getProperty("level"))
+        : (obj->hasProperty("depth")
+            ? static_cast<float>(obj->getProperty("depth"))
+            : 1.0f);
     slot.width = obj->hasProperty("width") ? static_cast<float>(obj->getProperty("width")) : 0.5f;
     slot.phase_offset = obj->hasProperty("phaseOffset") 
         ? static_cast<float>(obj->getProperty("phaseOffset")) : 0.0f;

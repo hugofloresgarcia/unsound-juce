@@ -13,7 +13,7 @@ namespace LayerCakeApp
 
 /**
  * A CLI-style parameter row: "key: value" with mouse drag to adjust.
- * Supports vertical drag to change value, double-click to edit text, MIDI learn.
+ * Supports vertical drag to change value, double-click to reset, and cmd-click text edit.
  * For 0-1 ranges, displays as 0-99 integer for easier reading.
  */
 class LfoParamRow : public juce::Component,
@@ -98,7 +98,6 @@ public:
     void mouseEnter(const juce::MouseEvent& event) override;
     void mouseExit(const juce::MouseEvent& event) override;
 
-    float get_depth() const noexcept;
     juce::Colour get_accent_colour() const noexcept { return m_accent_colour; }
     int get_lfo_index() const noexcept { return m_lfo_index; }
 
@@ -182,10 +181,27 @@ private:
     juce::ComboBox m_mode_selector;
     
     // CLI-style parameter rows
+    enum class ParamSlot : size_t
+    {
+        Div = 0,
+        Level,
+        Width,
+        Bipolar,
+        Loop,
+        RandomSkip,
+        Slop,
+        Delay,
+        Phase,
+        DelayDivision,
+        EuclideanSteps,
+        EuclideanTriggers,
+        EuclideanRotation,
+        Count
+    };
+
+    static constexpr size_t kParamCount = static_cast<size_t>(ParamSlot::Count);
+
     std::vector<std::unique_ptr<LfoParamRow>> m_params;
-    
-    // Pointer to depth param for direct access
-    LfoParamRow* m_depth_param{nullptr};
     
     std::unique_ptr<WavePreview> m_wave_preview;
     juce::String m_drag_label;
@@ -201,7 +217,7 @@ private:
     juce::Label m_page_label;
     SmallButtonLookAndFeel m_button_lnf;
     int m_current_page{0};
-    static constexpr int kParamsPerPage = 6;
+    static constexpr int kParamsPerPage = 8;
     std::function<double()> m_tempo_bpm_provider;
     std::function<void(bool)> m_hover_changed_callback;
     bool m_is_hovered{false};
@@ -209,7 +225,7 @@ private:
     juce::Rectangle<int> m_led_bounds;
     
     // Cached last values for change detection
-    float m_last_depth{-1.0f};
+    float m_last_level{-1.0f};
     int m_last_mode{-1};
     float m_last_clock_div{-1.0f};
 };

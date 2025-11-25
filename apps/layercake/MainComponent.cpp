@@ -91,7 +91,6 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
         // First LFO defaults to Gate, others to Sine
         slot.generator.set_mode(i == 0 ? flower::LfoWaveform::Gate : flower::LfoWaveform::Sine);
         slot.generator.set_rate_hz(0.35f + static_cast<float>(i) * 0.15f);
-        slot.generator.set_depth(0.5f);
         slot.generator.reset_phase(static_cast<double>(i) / static_cast<double>(m_lfo_slots.size()));
         slot.generator.set_clock_division(1.0f); // Default 1 step per beat
 
@@ -106,6 +105,7 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
             if (widget != nullptr)
                 widget->refresh_wave_preview();
             update_all_modulation_overlays();
+            push_lfo_to_engine(index);
         });
         slot.widget->set_on_label_changed([this, index = static_cast<int>(i)](const juce::String& newLabel)
         {
@@ -124,9 +124,9 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
             if (!enabled)
             {
                 m_lfo_last_values[static_cast<size_t>(index)].store(0.0f, std::memory_order_relaxed);
-                m_lfo_prev_values[static_cast<size_t>(index)] = 0.0f;
-                update_all_modulation_overlays();
             }
+            push_lfo_to_engine(index);
+            update_all_modulation_overlays();
         });
         slot.widget->set_enabled(slot.enabled, false);
         slot.widget->set_preset_handlers({
@@ -154,6 +154,7 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
             });
             slot.widget->refresh_wave_preview();
             addAndMakeVisible(slot.widget.get());
+            push_lfo_to_engine(static_cast<int>(i));
         }
     }
 
@@ -260,10 +261,15 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
     m_trigger_button.button().onClick = [this]() { trigger_manual_grain(); };
     m_trigger_button.on_lfo_assigned = [this](int lfoIndex) {
         DBG("LFO " << lfoIndex << " assigned to trigger button");
+        m_engine.set_trigger_lfo_index(lfoIndex);
     };
     m_trigger_button.on_lfo_cleared = [this]() {
         DBG("LFO cleared from trigger button");
+        m_engine.set_trigger_lfo_index(-1);
     };
+    m_trigger_button.set_hover_changed_handler([this](bool hovered) {
+        handle_trigger_hover(hovered);
+    });
     addAndMakeVisible(m_trigger_button);
 
     configureControlButton(m_record_button,
@@ -819,8 +825,11 @@ bool MainComponent::keyPressed(const juce::KeyPress& key, juce::Component*)
 
 void MainComponent::timerCallback()
 {
-    const double now_ms = juce::Time::getMillisecondCounterHiRes();
-    advance_lfos(now_ms);
+    for (size_t i = 0; i < m_lfo_slots.size(); ++i)
+    {
+        const float value = m_engine.get_lfo_visual_value(static_cast<int>(i));
+        m_lfo_last_values[i].store(value, std::memory_order_relaxed);
+    }
     update_all_modulation_overlays();
     update_master_gain_from_knob();
     update_record_layer_from_lfo();
@@ -868,7 +877,8 @@ void MainComponent::trigger_manual_grain()
 {
     sync_manual_state_from_controls();
     auto state = build_manual_grain_state();
-    m_engine.trigger_grain(state);
+    m_engine.set_manual_trigger_template(state);
+    m_engine.request_manual_trigger();
 }
 
 GrainState MainComponent::build_manual_grain_state()
@@ -904,9 +914,6 @@ GrainState MainComponent::build_manual_grain_state()
     state.play_forward = true;
     state.layer = layer;
     state.pan = static_cast<float>(get_effective_knob_value(m_pan_knob.get()));
-    float reverse_probability = m_direction_knob != nullptr ? static_cast<float>(get_effective_knob_value(m_direction_knob.get())) : 0.0f;
-
-    m_engine.apply_direction_randomization(state, reverse_probability);
     state.should_trigger = true;
     return state;
 }
@@ -1012,7 +1019,6 @@ void MainComponent::capture_lfo_state(LayerCakePresetData& data) const
         // Basic parameters
         slotData.mode = static_cast<int>(slot.generator.get_mode());
         slotData.rate_hz = slot.generator.get_rate_hz();
-        slotData.depth = slot.generator.get_depth();
         slotData.tempo_sync = true; // LFOs are always clock-driven
         slotData.clock_division = slot.generator.get_clock_division();
         slotData.pattern_length = slot.generator.get_pattern_length();
@@ -1117,7 +1123,6 @@ void MainComponent::apply_lfo_state(const LayerCakePresetData& data)
         const int modeIndex = juce::jlimit(0, maxMode, slotData.mode);
         slot.generator.set_mode(static_cast<flower::LfoWaveform>(modeIndex));
         slot.generator.set_rate_hz(juce::jlimit(0.01f, 20.0f, slotData.rate_hz));
-        slot.generator.set_depth(juce::jlimit(0.0f, 1.0f, slotData.depth));
         slot.generator.set_clock_division(slotData.clock_division);
         slot.generator.set_pattern_length(slotData.pattern_length);
         slot.generator.set_pattern_buffer(slotData.pattern_buffer);
@@ -1166,6 +1171,8 @@ void MainComponent::apply_lfo_state(const LayerCakePresetData& data)
             slot.widget->sync_controls_from_generator();
         }
         // LFOs are always clock-driven
+
+        push_lfo_to_engine(static_cast<int>(i));
     }
 
     for (auto* knob : m_lfo_enabled_knobs)
@@ -1197,7 +1204,16 @@ void MainComponent::apply_lfo_state(const LayerCakePresetData& data)
         if (index >= 0 && index < static_cast<int>(m_lfo_slots.size()))
         {
             m_trigger_button.set_lfo_assignment(index, m_lfo_slots[static_cast<size_t>(index)].accent);
+            m_engine.set_trigger_lfo_index(index);
         }
+        else
+        {
+            m_engine.set_trigger_lfo_index(-1);
+        }
+    }
+    else
+    {
+        m_engine.set_trigger_lfo_index(-1);
     }
 
     update_all_modulation_overlays();
@@ -1230,41 +1246,23 @@ void MainComponent::sync_manual_state_from_controls()
     m_manual_state.layer = layer;
     m_manual_state.should_trigger = false;
     m_display.set_position_indicator(static_cast<float>(loop_start_normalized));
-}
 
-void MainComponent::advance_lfos(double now_ms)
-{
-    juce::ignoreUnused(now_ms);
-    const double master_beats = m_engine.get_master_beats();
-    
-    const int triggerLfoIndex = m_trigger_button.get_lfo_assignment();
-    
-    for (size_t i = 0; i < m_lfo_slots.size(); ++i)
-    {
-        auto& slot = m_lfo_slots[i];
-        const bool enabled = slot.enabled;
-        const float rawValue = slot.generator.advance_clocked(master_beats);
-        const float scaled = enabled ? rawValue * slot.generator.get_depth() : 0.0f;
-        
-        // Check for positive zero-crossing to trigger grains
-        if (enabled && static_cast<int>(i) == triggerLfoIndex)
-        {
-            const float prevValue = m_lfo_prev_values[i];
-            // Trigger on rising edge crossing 0.0 (from negative/zero to positive)
-            if (prevValue <= 0.0f && scaled > 0.0f)
-            {
-                trigger_manual_grain();
-            }
-        }
-        
-        m_lfo_prev_values[i] = scaled;
-        m_lfo_last_values[i].store(scaled, std::memory_order_relaxed);
-    }
+    const float reverse_probability = m_direction_knob != nullptr
+        ? static_cast<float>(juce::jlimit(0.0, 1.0, get_effective_knob_value(m_direction_knob.get())))
+        : 0.0f;
+
+    auto manual_template = build_manual_grain_state();
+    m_engine.set_manual_trigger_template(manual_template);
+    m_engine.set_manual_reverse_probability(reverse_probability);
 }
 
 void MainComponent::register_knob_for_lfo(LayerCakeKnob* knob)
 {
-    if (knob == nullptr) return;
+    if (knob == nullptr)
+    {
+        DBG("MainComponent::register_knob_for_lfo early return (null knob)");
+        return;
+    }
 
     knob->set_lfo_drop_handler([this](LayerCakeKnob& target, int lfoIndex) {
         assign_lfo_to_knob(lfoIndex, target);
@@ -1272,6 +1270,29 @@ void MainComponent::register_knob_for_lfo(LayerCakeKnob* knob)
     knob->set_lfo_release_handler([this, knob]() {
         remove_lfo_from_knob(*knob);
     });
+    knob->set_hover_changed_handler([this, knob](bool hovered) {
+        handle_knob_hover(knob, hovered);
+    });
+}
+
+void MainComponent::handle_knob_hover(LayerCakeKnob* knob, bool hovered)
+{
+    if (knob == nullptr)
+    {
+        DBG("MainComponent::handle_knob_hover early return (null knob)");
+        return;
+    }
+
+    const int assignment = knob->lfo_assignment_index();
+    if (assignment >= 0 && assignment < static_cast<int>(m_lfo_slots.size()))
+        update_lfo_connection_overlay(assignment, hovered);
+}
+
+void MainComponent::handle_trigger_hover(bool hovered)
+{
+    const int assignment = m_trigger_button.get_lfo_assignment();
+    if (assignment >= 0 && assignment < static_cast<int>(m_lfo_slots.size()))
+        update_lfo_connection_overlay(assignment, hovered);
 }
 
 void MainComponent::assign_lfo_to_knob(int lfo_index, LayerCakeKnob& knob)
@@ -1381,6 +1402,15 @@ double MainComponent::get_layer_recorded_seconds(int layer_index) const
     if (sample_rate <= 0.0)
         return 0.0;
     return static_cast<double>(recorded_samples) / sample_rate;
+}
+
+void MainComponent::push_lfo_to_engine(int lfo_index)
+{
+    if (lfo_index < 0 || lfo_index >= static_cast<int>(m_lfo_slots.size()))
+        return;
+
+    auto& slot = m_lfo_slots[static_cast<size_t>(lfo_index)];
+    m_engine.update_lfo_slot(lfo_index, slot.generator, slot.enabled);
 }
 
 void MainComponent::update_lfo_connection_overlay(int lfo_index, bool hovered)

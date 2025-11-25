@@ -458,6 +458,35 @@ void LayerCakeKnob::lookAndFeelChanged()
     apply_look_and_feel_colours();
 }
 
+void LayerCakeKnob::set_hover_changed_handler(const std::function<void(bool)>& handler)
+{
+    m_hover_changed_handler = handler;
+}
+
+void LayerCakeKnob::mouseEnter(const juce::MouseEvent& event)
+{
+    if (!m_is_hovered)
+    {
+        m_is_hovered = true;
+        if (m_hover_changed_handler != nullptr)
+            m_hover_changed_handler(true);
+    }
+    juce::Component::mouseEnter(event);
+}
+
+void LayerCakeKnob::mouseExit(const juce::MouseEvent& event)
+{
+    const auto localPos = event.getEventRelativeTo(this).getPosition();
+    const bool stillInside = getLocalBounds().contains(localPos);
+    if (!stillInside && m_is_hovered)
+    {
+        m_is_hovered = false;
+        if (m_hover_changed_handler != nullptr)
+            m_hover_changed_handler(false);
+    }
+    juce::Component::mouseExit(event);
+}
+
 void LayerCakeKnob::mouseDown(const juce::MouseEvent& event)
 {
     if (event.mods.isPopupMenu())

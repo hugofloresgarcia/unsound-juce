@@ -12,7 +12,8 @@ void LfoConnectionOverlay::paint(juce::Graphics& g)
     }
 
     // Draw dotted lines from source to each target
-    const float dashLengths[] = { 4.0f, 4.0f };
+    constexpr float lineThickness = 1.25f;
+    const float dashLengths[] = { 3.0f, 3.0f };
     g.setColour(m_colour.withAlpha(0.7f));
 
     for (const auto& target : m_targets)
@@ -21,13 +22,13 @@ void LfoConnectionOverlay::paint(juce::Graphics& g)
         path.startNewSubPath(m_source.toFloat());
         path.lineTo(target.toFloat());
 
-        juce::PathStrokeType stroke(2.0f);
+        juce::PathStrokeType stroke(lineThickness);
         stroke.createDashedStroke(path, path, dashLengths, 2);
-        g.strokePath(path, juce::PathStrokeType(2.0f));
+        g.strokePath(path, juce::PathStrokeType(lineThickness));
     }
 
     // Draw small circles at connection points
-    const float circleRadius = 4.0f;
+    constexpr float circleRadius = 3.0f;
     g.setColour(m_colour);
     g.fillEllipse(m_source.x - circleRadius, m_source.y - circleRadius,
                   circleRadius * 2, circleRadius * 2);

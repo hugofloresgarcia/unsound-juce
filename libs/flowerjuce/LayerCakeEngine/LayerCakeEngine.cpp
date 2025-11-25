@@ -9,7 +9,75 @@ float decibels_to_gain(float db)
 {
     return juce::Decibels::decibelsToGain(db);
 }
+
+void copy_lfo_settings(const flower::LayerCakeLfoUGen& source, flower::LayerCakeLfoUGen& dest)
+{
+    dest.set_mode(source.get_mode());
+    dest.set_rate_hz(source.get_rate_hz());
+    dest.set_clock_division(source.get_clock_division());
+    dest.set_pattern_length(source.get_pattern_length());
+    dest.set_pattern_buffer(source.get_pattern_buffer());
+    dest.set_level(source.get_level());
+    dest.set_width(source.get_width());
+    dest.set_phase_offset(source.get_phase_offset());
+    dest.set_delay(source.get_delay());
+    dest.set_delay_div(source.get_delay_div());
+    dest.set_slop(source.get_slop());
+    dest.set_euclidean_steps(source.get_euclidean_steps());
+    dest.set_euclidean_triggers(source.get_euclidean_triggers());
+    dest.set_euclidean_rotation(source.get_euclidean_rotation());
+    dest.set_random_skip(source.get_random_skip());
+    dest.set_loop_beats(source.get_loop_beats());
+    dest.set_bipolar(source.get_bipolar());
+    dest.set_random_seed(source.get_random_seed());
+}
 } // namespace
+
+LayerCakeEngine::GrainTriggerQueue::GrainTriggerQueue()
+    : m_fifo(kCapacity)
+{
+    for (auto& slot : m_buffer)
+        slot = GrainState{};
+}
+
+bool LayerCakeEngine::GrainTriggerQueue::push(const GrainState& state)
+{
+    int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
+    m_fifo.prepareToWrite(1, start1, size1, start2, size2);
+    const int total = size1 + size2;
+    if (total == 0)
+        return false;
+
+    if (size1 > 0)
+        m_buffer[static_cast<size_t>(start1)] = state;
+    else if (size2 > 0)
+        m_buffer[static_cast<size_t>(start2)] = state;
+
+    m_fifo.finishedWrite(total);
+    return true;
+}
+
+bool LayerCakeEngine::GrainTriggerQueue::pop(GrainState& out_state)
+{
+    int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
+    m_fifo.prepareToRead(1, start1, size1, start2, size2);
+    const int total = size1 + size2;
+    if (total == 0)
+        return false;
+
+    if (size1 > 0)
+        out_state = m_buffer[static_cast<size_t>(start1)];
+    else if (size2 > 0)
+        out_state = m_buffer[static_cast<size_t>(start2)];
+
+    m_fifo.finishedRead(total);
+    return true;
+}
+
+void LayerCakeEngine::GrainTriggerQueue::clear()
+{
+    m_fifo.reset();
+}
 
 LayerCakeEngine::LayerCakeEngine()
 {
@@ -19,6 +87,17 @@ LayerCakeEngine::LayerCakeEngine()
     {
         m_voices[voice] = std::make_unique<GrainVoice>(voice);
     }
+
+    for (auto& value : m_lfo_visuals.values)
+        value.store(0.0f, std::memory_order_relaxed);
+
+    for (auto& dirty : m_lfo_dirty_flags)
+        dirty.store(false, std::memory_order_relaxed);
+
+    for (auto& runtime : m_lfo_runtime)
+        runtime.enabled.store(false, std::memory_order_relaxed);
+
+    m_manual_trigger_template.should_trigger = false;
 }
 
 LayerCakeEngine::~LayerCakeEngine() = default;
@@ -69,6 +148,135 @@ bool LayerCakeEngine::layer_index_valid(int layer_index) const
     return layer_index >= 0 && layer_index < static_cast<int>(kNumLayers);
 }
 
+void LayerCakeEngine::update_lfo_slot(int slot_index,
+                                      const flower::LayerCakeLfoUGen& generator,
+                                      bool enabled)
+{
+    if (slot_index < 0 || slot_index >= static_cast<int>(kNumLfoSlots))
+    {
+        DBG("LayerCakeEngine::update_lfo_slot invalid index=" + juce::String(slot_index));
+        return;
+    }
+
+    m_lfo_pending_configs[static_cast<size_t>(slot_index)].generator = generator;
+    m_lfo_pending_configs[static_cast<size_t>(slot_index)].enabled = enabled;
+    m_lfo_dirty_flags[static_cast<size_t>(slot_index)].store(true, std::memory_order_release);
+}
+
+void LayerCakeEngine::set_trigger_lfo_index(int slot_index)
+{
+    if (slot_index < -1 || slot_index >= static_cast<int>(kNumLfoSlots))
+    {
+        DBG("LayerCakeEngine::set_trigger_lfo_index invalid index=" + juce::String(slot_index));
+        return;
+    }
+    m_trigger_lfo_index.store(slot_index, std::memory_order_relaxed);
+}
+
+void LayerCakeEngine::set_manual_trigger_template(const GrainState& state)
+{
+    const juce::SpinLock::ScopedLockType lock(m_manual_state_lock);
+    m_manual_trigger_template = state;
+}
+
+void LayerCakeEngine::set_manual_reverse_probability(float probability)
+{
+    m_manual_reverse_probability.store(juce::jlimit(0.0f, 1.0f, probability),
+                                       std::memory_order_relaxed);
+}
+
+void LayerCakeEngine::request_manual_trigger()
+{
+    m_manual_trigger_requests.fetch_add(1, std::memory_order_release);
+}
+
+float LayerCakeEngine::get_lfo_visual_value(int slot_index) const
+{
+    if (slot_index < 0 || slot_index >= static_cast<int>(kNumLfoSlots))
+        return 0.0f;
+    return m_lfo_visuals.values[static_cast<size_t>(slot_index)].load(std::memory_order_relaxed);
+}
+
+void LayerCakeEngine::sync_lfo_configs()
+{
+    for (size_t i = 0; i < kNumLfoSlots; ++i)
+    {
+        if (!m_lfo_dirty_flags[i].exchange(false, std::memory_order_acq_rel))
+            continue;
+
+        auto& snapshot = m_lfo_pending_configs[i];
+        auto& runtime = m_lfo_runtime[i];
+        copy_lfo_settings(snapshot.generator, runtime.generator);
+        runtime.enabled.store(snapshot.enabled, std::memory_order_relaxed);
+    }
+}
+
+void LayerCakeEngine::process_lfo_sample(double master_beats)
+{
+    const int trigger_index = m_trigger_lfo_index.load(std::memory_order_relaxed);
+    bool should_trigger_manual = false;
+
+    for (size_t i = 0; i < kNumLfoSlots; ++i)
+    {
+        auto& runtime = m_lfo_runtime[i];
+        runtime.prev_value = runtime.last_value;
+
+        if (!runtime.enabled.load(std::memory_order_relaxed))
+        {
+            runtime.last_value = 0.0f;
+            m_lfo_visuals.values[i].store(0.0f, std::memory_order_relaxed);
+            continue;
+        }
+
+        const float scaled = runtime.generator.advance_clocked(master_beats);
+        runtime.last_value = scaled;
+        m_lfo_visuals.values[i].store(scaled, std::memory_order_relaxed);
+
+        if (static_cast<int>(i) == trigger_index)
+        {
+            if (runtime.prev_value <= 0.0f && scaled > 0.0f)
+                should_trigger_manual = true;
+        }
+    }
+
+    if (should_trigger_manual)
+        fire_manual_trigger();
+}
+
+void LayerCakeEngine::fire_manual_trigger()
+{
+    GrainState manual_state;
+    {
+        const juce::SpinLock::ScopedLockType lock(m_manual_state_lock);
+        manual_state = m_manual_trigger_template;
+    }
+
+    if (!manual_state.should_trigger)
+        return;
+
+    apply_direction_randomization(manual_state,
+                                  m_manual_reverse_probability.load(std::memory_order_relaxed));
+    start_grain_immediate(manual_state);
+}
+
+void LayerCakeEngine::start_grain_immediate(const GrainState& state)
+{
+    if (!state.is_valid())
+        return;
+
+    auto* voice = find_free_voice();
+    if (voice == nullptr)
+    {
+        DBG("LayerCakeEngine::start_grain_immediate voice steal");
+        voice = m_voices.front().get();
+        voice->force_stop();
+    }
+
+    const int layer_index = juce::jlimit(0, static_cast<int>(kNumLayers) - 1, state.layer);
+    auto& loop = m_layers[static_cast<size_t>(layer_index)];
+    if (!voice->trigger(state, loop, m_sample_rate))
+        DBG("LayerCakeEngine::start_grain_immediate trigger failed");
+}
 void LayerCakeEngine::set_record_layer(int layer_index)
 {
     if (!layer_index_valid(layer_index))
@@ -137,10 +345,10 @@ void LayerCakeEngine::reset_transport()
 }
 
 void LayerCakeEngine::process_block(const float* const* input_channel_data,
-                                    int num_input_channels,
-                                    float* const* output_channel_data,
-                                    int num_output_channels,
-                                    int num_samples)
+                                   int num_input_channels,
+                                   float* const* output_channel_data,
+                                   int num_output_channels,
+                                   int num_samples)
 {
     if (!m_is_prepared.load())
     {
@@ -153,19 +361,12 @@ void LayerCakeEngine::process_block(const float* const* input_channel_data,
         DBG("LayerCakeEngine::process_block missing output buffers");
         return;
     }
-    
-    // Update Clock
-    if (m_transport_playing.load())
-    {
-        const double bpm = m_bpm.load();
-        const double beats_per_second = bpm / 60.0;
-        const double samples_per_second = m_sample_rate > 0 ? m_sample_rate : 44100.0;
-        const double beats_per_sample = beats_per_second / samples_per_second;
-        
-        double current_beats = m_master_beats.load(std::memory_order_relaxed);
-        current_beats += num_samples * beats_per_sample;
-        m_master_beats.store(current_beats, std::memory_order_relaxed);
-    }
+
+    sync_lfo_configs();
+
+    int manual_requests = m_manual_trigger_requests.exchange(0, std::memory_order_acq_rel);
+    while (manual_requests-- > 0)
+        fire_manual_trigger();
 
     drain_pending_grains();
 
@@ -175,6 +376,12 @@ void LayerCakeEngine::process_block(const float* const* input_channel_data,
             juce::FloatVectorOperations::clear(output_channel_data[channel], num_samples);
     }
 
+    const bool transport_playing = m_transport_playing.load();
+    const double bpm = m_bpm.load();
+    const double samples_per_second = m_sample_rate > 0 ? m_sample_rate : 44100.0;
+    const double beats_per_sample = transport_playing ? (bpm / 60.0) / samples_per_second : 0.0;
+    double master_beats = m_master_beats.load(std::memory_order_relaxed);
+
     const float master_gain = decibels_to_gain(m_master_gain_db.load());
 
     size_t recorded_samples = 0;
@@ -182,6 +389,11 @@ void LayerCakeEngine::process_block(const float* const* input_channel_data,
 
     for (int sample = 0; sample < num_samples; ++sample)
     {
+        if (transport_playing)
+            master_beats += beats_per_sample;
+
+        process_lfo_sample(master_beats);
+
         if (m_record_enabled.load())
         {
             process_recording_sample(input_channel_data,
@@ -219,6 +431,8 @@ void LayerCakeEngine::process_block(const float* const* input_channel_data,
 
     if (recorded_samples > 0)
         m_record_cursor.store(block_cursor + recorded_samples);
+
+    m_master_beats.store(master_beats, std::memory_order_relaxed);
 }
 
 void LayerCakeEngine::process_recording_sample(const float* const* input_channel_data,
@@ -271,8 +485,8 @@ void LayerCakeEngine::trigger_grain(const GrainState& state)
         return;
     }
 
-    const juce::SpinLock::ScopedLockType lock(m_grain_queue_lock);
-    m_pending_grains.push_back(queued_state);
+    if (!m_pending_grains.push(queued_state))
+        DBG("LayerCakeEngine::trigger_grain queue full");
 }
 
 void LayerCakeEngine::apply_spread_randomization(GrainState& state, float spread_amount) 
@@ -323,30 +537,12 @@ void LayerCakeEngine::apply_direction_randomization(GrainState& state, float rev
 
 void LayerCakeEngine::drain_pending_grains()
 {
-    std::deque<GrainState> local_queue;
-    {
-        const juce::SpinLock::ScopedLockType lock(m_grain_queue_lock);
-        local_queue.swap(m_pending_grains);
-    }
-
-    for (auto& state : local_queue)
+    GrainState state;
+    while (m_pending_grains.pop(state))
     {
         if (!state.is_valid())
             continue;
-
-        auto* voice = find_free_voice();
-        if (voice == nullptr)
-        {
-            DBG("LayerCakeEngine::drain_pending_grains - voice steal");
-            voice = m_voices.front().get();
-            voice->force_stop();
-        }
-
-        auto& loop = m_layers[juce::jlimit(0, static_cast<int>(kNumLayers - 1), state.layer)];
-        if (!voice->trigger(state, loop, m_sample_rate))
-        {
-            DBG("LayerCakeEngine::drain_pending_grains failed to trigger voice");
-        }
+        start_grain_immediate(state);
     }
 }
 

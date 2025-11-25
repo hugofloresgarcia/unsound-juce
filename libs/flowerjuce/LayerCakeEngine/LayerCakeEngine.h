@@ -2,11 +2,11 @@
 
 #include "GrainVoice.h"
 #include "LayerCakeTypes.h"
+#include <flowerjuce/DSP/LfoUGen.h>
 #include <flowerjuce/LooperEngine/LooperWriteHead.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <array>
 #include <atomic>
-#include <deque>
 #include <memory>
 #include <vector>
 #include <juce_core/juce_core.h>
@@ -16,6 +16,7 @@ class LayerCakeEngine
 public:
     static constexpr size_t kNumLayers = 6;
     static constexpr size_t kNumVoices = 16;
+    static constexpr size_t kNumLfoSlots = 8;
     static constexpr double kMaxLayerDurationSeconds = 10.0;
 
     LayerCakeEngine();
@@ -30,6 +31,12 @@ public:
                        int num_samples);
 
     void trigger_grain(const GrainState& state);
+    void update_lfo_slot(int slot_index, const flower::LayerCakeLfoUGen& generator, bool enabled);
+    void set_trigger_lfo_index(int slot_index);
+    void set_manual_trigger_template(const GrainState& state);
+    void set_manual_reverse_probability(float probability);
+    void request_manual_trigger();
+    float get_lfo_visual_value(int slot_index) const;
 
     void set_record_layer(int layer_index);
     int get_record_layer() const { return m_record_layer_index; }
@@ -73,13 +80,50 @@ private:
                                   int num_input_channels,
                                   int buffer_sample_index,
                                   size_t absolute_sample_index);
+    void sync_lfo_configs();
+    void process_lfo_sample(double master_beats);
+    void fire_manual_trigger();
+    void start_grain_immediate(const GrainState& state);
 
     std::array<TapeLoop, kNumLayers> m_layers;
     std::array<std::unique_ptr<GrainVoice>, kNumVoices> m_voices;
     std::unique_ptr<LooperWriteHead> m_write_head;
 
-    juce::SpinLock m_grain_queue_lock;
-    std::deque<GrainState> m_pending_grains;
+    class GrainTriggerQueue
+    {
+    public:
+        GrainTriggerQueue();
+
+        bool push(const GrainState& state);
+        bool pop(GrainState& out_state);
+        void clear();
+
+    private:
+        static constexpr int kCapacity = 512;
+        juce::AbstractFifo m_fifo;
+        std::array<GrainState, static_cast<size_t>(kCapacity)> m_buffer;
+    };
+
+    struct LfoSnapshot
+    {
+        flower::LayerCakeLfoUGen generator;
+        bool enabled{true};
+    };
+
+    struct LfoRuntimeState
+    {
+        flower::LayerCakeLfoUGen generator;
+        std::atomic<bool> enabled{true};
+        float prev_value{0.0f};
+        float last_value{0.0f};
+    };
+
+    struct UiLfoMirror
+    {
+        std::array<std::atomic<float>, kNumLfoSlots> values;
+    };
+
+    GrainTriggerQueue m_pending_grains;
 
     std::atomic<bool> m_is_prepared{false};
     std::atomic<bool> m_record_enabled{false};
@@ -100,4 +144,17 @@ private:
     std::atomic<double> m_bpm{120.0};
     std::atomic<double> m_master_beats{0.0};
     std::atomic<bool> m_transport_playing{true};
+
+    // LFO runtime + UI mirrors
+    std::array<LfoSnapshot, kNumLfoSlots> m_lfo_pending_configs;
+    std::array<std::atomic<bool>, kNumLfoSlots> m_lfo_dirty_flags;
+    std::array<LfoRuntimeState, kNumLfoSlots> m_lfo_runtime;
+    UiLfoMirror m_lfo_visuals;
+    std::atomic<int> m_trigger_lfo_index{-1};
+
+    // Manual trigger template + randomness
+    juce::SpinLock m_manual_state_lock;
+    GrainState m_manual_trigger_template;
+    std::atomic<float> m_manual_reverse_probability{0.0f};
+    std::atomic<int> m_manual_trigger_requests{0};
 };
