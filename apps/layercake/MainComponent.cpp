@@ -572,7 +572,7 @@ void MainComponent::resized()
     const int meterHeight = 120;
     const int meterSpacing = 12;
     const int displayPanelWidth = 680;
-    const int displayWidth = 560;
+    const int displayWidth = 600;
     const int displayHeight = 280;
     const int presetPanelSpacing = 12;
     const int presetPanelMargin = 6;

@@ -10,8 +10,8 @@ constexpr float kHighlightAlpha = 0.35f;
 constexpr float kPlayheadSway = 6.0f;
 constexpr float kBaseSquiggleCycles = 2.0f;
 constexpr float kLaneSpacing = 10.0f;
-constexpr float kDisplayMarginRatio = 0.06f;
-constexpr float kFrameMarginRatio = 0.08f;
+constexpr float kDisplayMarginRatio = 0.03f;
+constexpr float kFrameMarginRatio = 0.05f;
 const juce::Colour kSoftWhite(0xfff4f4f2);
 constexpr double kNoisePhaseDelta = 0.0125;
 
