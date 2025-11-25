@@ -98,8 +98,6 @@ void LayerCakeDisplay::paint(juce::Graphics& g)
     const float separator_thickness = juce::jmax(0.6f, 1.0f * scale);
     const float playhead_sway = kPlayheadSway * scale;
 
-    g.fillAll(juce::Colour(0xffffcccc));
-
     const float frameMargin = juce::jmax(18.0f, bounds.getHeight() * kFrameMarginRatio);
     auto frame = display.expanded(frameMargin);
     g.setColour(juce::Colour(0xff101010));

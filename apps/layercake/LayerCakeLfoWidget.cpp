@@ -70,7 +70,7 @@ void LfoParamRow::paint(juce::Graphics& g)
     // Monospace font for CLI aesthetic
     juce::FontOptions fontOpts;
     fontOpts = fontOpts.withName(juce::Font::getDefaultMonospacedFontName())
-                       .withHeight(11.0f);
+                       .withHeight(13.0f);
     juce::Font monoFont(fontOpts);
     g.setFont(monoFont);
     
@@ -86,7 +86,7 @@ void LfoParamRow::paint(juce::Graphics& g)
     // Key in accent color
     g.setColour(m_accent);
     const juce::String keyText = m_config.key + ":";
-    const float keyWidth = 42.0f;  // Fixed width for alignment
+    const float keyWidth = 48.0f;  // Fixed width for alignment
     g.drawText(keyText, bounds.removeFromLeft(keyWidth), juce::Justification::centredLeft, false);
     
     // Value in white/light gray
@@ -100,9 +100,9 @@ void LfoParamRow::paint(juce::Graphics& g)
         if (cc >= 0)
         {
             g.setColour(m_accent.withAlpha(0.5f));
-            g.setFont(monoFont.withHeight(8.0f));
+            g.setFont(monoFont.withHeight(10.0f));
             const juce::String ccText = "CC" + juce::String(cc);
-            g.drawText(ccText, getLocalBounds().toFloat().removeFromRight(24.0f), 
+            g.drawText(ccText, getLocalBounds().toFloat().removeFromRight(28.0f), 
                        juce::Justification::centredRight, false);
         }
     }
@@ -224,7 +224,7 @@ void LfoParamRow::show_text_editor()
     // Style to match CLI aesthetic
     juce::FontOptions fontOpts;
     fontOpts = fontOpts.withName(juce::Font::getDefaultMonospacedFontName())
-                       .withHeight(11.0f);
+                       .withHeight(13.0f);
     m_text_editor->setFont(juce::Font(fontOpts));
     m_text_editor->setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff2a2a2a));
     m_text_editor->setColour(juce::TextEditor::textColourId, juce::Colours::white);
@@ -407,7 +407,7 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
     m_title_label.setJustificationType(juce::Justification::centredLeft);
     juce::FontOptions titleOpts;
     titleOpts = titleOpts.withName(juce::Font::getDefaultMonospacedFontName())
-                         .withHeight(12.0f);
+                         .withHeight(14.0f);
     juce::Font titleFont(titleOpts);
     titleFont.setBold(true);
     m_title_label.setFont(titleFont);
@@ -438,7 +438,7 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
     addAndMakeVisible(m_next_page_button);
 
     m_page_label.setJustificationType(juce::Justification::centred);
-    m_page_label.setFont(juce::Font(juce::FontOptions().withHeight(10.0f)));
+    m_page_label.setFont(juce::Font(juce::FontOptions().withHeight(12.0f)));
     // Page label hidden - just use < > buttons for navigation
 
     // Helper to create parameter rows with unique parameter IDs
@@ -560,12 +560,12 @@ void LayerCakeLfoWidget::paint(juce::Graphics& g)
 
 void LayerCakeLfoWidget::resized()
 {
-    const int margin = 6;
-    const int headerHeight = 16;
-    const int previewHeight = juce::jmax(20, static_cast<int>(getHeight() * 0.15f));
-    const int paramRowHeight = 14;
-    const int paramSpacing = 2;
-    const int pageNavHeight = 14;
+    const int margin = 8;
+    const int headerHeight = 20;
+    const int previewHeight = juce::jmax(24, static_cast<int>(getHeight() * 0.15f));
+    const int paramRowHeight = 18;
+    const int paramSpacing = 4;
+    const int pageNavHeight = 16;
     const int ledSize = 8;
     const int ledMargin = 4;
 
@@ -582,13 +582,13 @@ void LayerCakeLfoWidget::resized()
     m_led_bounds = ledArea.withSizeKeepingCentre(ledSize, ledSize);
     
     m_title_label.setBounds(headerArea);
-    bounds.removeFromTop(2);
+    bounds.removeFromTop(4);
 
     // Wave preview
     auto previewArea = bounds.removeFromTop(previewHeight);
     if (m_wave_preview != nullptr)
         m_wave_preview->setBounds(previewArea);
-    bounds.removeFromTop(4);
+    bounds.removeFromTop(6);
 
     // Page navigation at bottom (no label, just < > buttons)
     auto pageNavArea = bounds.removeFromBottom(pageNavHeight);
@@ -597,7 +597,7 @@ void LayerCakeLfoWidget::resized()
     m_next_page_button.setBounds(pageNavArea.removeFromRight(navButtonWidth));
     // m_page_label hidden - no "1/3" display
 
-    bounds.removeFromBottom(2);
+    bounds.removeFromBottom(4);
 
     // Parameter rows - 2 columns layout
     const int totalParams = static_cast<int>(m_params.size());

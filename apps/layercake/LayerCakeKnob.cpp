@@ -240,7 +240,7 @@ void LayerCakeKnob::paint_cli_mode(juce::Graphics& g)
     // Monospace font for CLI aesthetic
     juce::FontOptions fontOpts;
     fontOpts = fontOpts.withName(juce::Font::getDefaultMonospacedFontName())
-                       .withHeight(11.0f);
+                       .withHeight(15.0f);
     juce::Font monoFont(fontOpts);
     g.setFont(monoFont);
     
@@ -280,8 +280,8 @@ void LayerCakeKnob::paint_cli_mode(juce::Graphics& g)
     if (recIndicator.isNotEmpty())
     {
         g.setColour(recColour);
-        g.setFont(monoFont.withHeight(9.0f));
-        g.drawText(recIndicator, bounds.removeFromLeft(14.0f), juce::Justification::centredLeft, false);
+        g.setFont(monoFont.withHeight(13.0f));
+        g.drawText(recIndicator, bounds.removeFromLeft(16.0f), juce::Justification::centredLeft, false);
         g.setFont(monoFont);
     }
     
@@ -315,7 +315,7 @@ void LayerCakeKnob::paint_cli_mode(juce::Graphics& g)
         : accent;
     g.setColour(keyColour);
     const juce::String keyText = m_config.labelText + ":";
-    const float keyWidth = 48.0f;  // Fixed width for alignment
+    const float keyWidth = 60.0f;  // Fixed width for alignment
     g.drawText(keyText, bounds.removeFromLeft(keyWidth), juce::Justification::centredLeft, false);
     
     // Value in white/light gray
@@ -329,9 +329,9 @@ void LayerCakeKnob::paint_cli_mode(juce::Graphics& g)
         if (cc >= 0)
         {
             g.setColour(accent.withAlpha(0.5f));
-            g.setFont(monoFont.withHeight(8.0f));
+            g.setFont(monoFont.withHeight(12.0f));
             const juce::String ccText = "CC" + juce::String(cc);
-            g.drawText(ccText, getLocalBounds().toFloat().removeFromRight(24.0f), 
+            g.drawText(ccText, getLocalBounds().toFloat().removeFromRight(32.0f), 
                        juce::Justification::centredRight, false);
         }
     }

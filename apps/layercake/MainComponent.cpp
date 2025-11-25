@@ -162,7 +162,7 @@ void LfoConnectionOverlay::clear()
 juce::Font SettingsButtonLookAndFeel::getTextButtonFont(juce::TextButton& button, int buttonHeight)
 {
     auto font = LayerCakeLookAndFeel::getTextButtonFont(button, buttonHeight);
-    const float reducedHeight = juce::jmax(10.0f, font.getHeight() * 0.7f);
+    const float reducedHeight = juce::jmax(8.0f, font.getHeight() * 0.55f);
     return font.withHeight(reducedHeight);
 }
 
@@ -511,7 +511,7 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
     if (m_midi_mappings_file.existsAsFile())
         m_midi_learn_manager.loadMappings(m_midi_mappings_file);
 
-    setSize(800, 720);
+    setSize(900, 760);
     configure_audio_device(std::move(initialDeviceSetup));
     startTimerHz(30);
     m_manual_state.loop_start_seconds = 0.0f;
@@ -571,24 +571,24 @@ void MainComponent::resized()
     const int meterWidth = 40;
     const int meterHeight = 120;
     const int meterSpacing = 12;
-    const int displayPanelWidth = 620;
+    const int displayPanelWidth = 680;
     const int displayWidth = 560;
     const int displayHeight = 280;
     const int presetPanelSpacing = 12;
     const int presetPanelMargin = 6;
     const int presetPanelWidthVisible = 210;
-    const int lfoRowHeight = 140;
-    const int lfoSpacing = 10;
-    const int lfoMargin = 8;
-    const int lfoSlotMinWidth = 100;
+    const int lfoRowHeight = 180;
+    const int lfoSpacing = 12;
+    const int lfoMargin = 10;
+    const int lfoSlotMinWidth = 120;
     const int lfoVerticalGap = 8;
     const int lfoRowSpacing = 8;
     const int lfosPerRow = 4;
     
     // CLI param row layout
-    const int paramRowHeight = 16;
+    const int paramRowHeight = 20;
     const int paramRowSpacing = 4;
-    const int paramColumnWidth = 120;
+    const int paramColumnWidth = 140;
     const int paramColumnsPerRow = 3;
 
     auto bounds = getLocalBounds().reduced(marginOuter);
@@ -636,8 +636,8 @@ void MainComponent::resized()
     
     // Title area
     auto titleArea = displayColumn.removeFromTop(titleHeight);
-    m_title_label.setBounds(titleArea.removeFromLeft(displayPanelWidth - 100));
-    m_settings_button.setBounds(titleArea.reduced(4));
+    m_title_label.setBounds(titleArea.removeFromLeft(displayPanelWidth - 120));
+    m_settings_button.setBounds(titleArea.reduced(2));
     displayColumn.removeFromTop(rowSpacing);
     
     // Display
