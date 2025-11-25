@@ -86,15 +86,20 @@ public:
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseEnter(const juce::MouseEvent& event) override;
+    void mouseExit(const juce::MouseEvent& event) override;
 
     float get_depth() const noexcept;
     juce::Colour get_accent_colour() const noexcept { return m_accent_colour; }
+    int get_lfo_index() const noexcept { return m_lfo_index; }
 
     void refresh_wave_preview();
     void set_drag_label(const juce::String& label);
     void set_on_settings_changed(std::function<void()> callback);
     void sync_controls_from_generator();
     void set_tempo_provider(std::function<double()> tempo_bpm_provider);
+    void set_on_hover_changed(std::function<void(bool)> callback);
+    void set_current_value(float value);  // 0-1 for LED display
 
 private:
     class WavePreview : public juce::Component
@@ -154,6 +159,10 @@ private:
     int m_current_page{0};
     static constexpr int kParamsPerPage = 6;
     std::function<double()> m_tempo_bpm_provider;
+    std::function<void(bool)> m_hover_changed_callback;
+    bool m_is_hovered{false};
+    float m_current_lfo_value{0.0f};  // For LED display
+    juce::Rectangle<int> m_led_bounds;
     
     // Cached last values for change detection
     float m_last_depth{-1.0f};

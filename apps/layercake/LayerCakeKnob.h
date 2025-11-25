@@ -30,6 +30,9 @@ public:
         bool isToggle{false};
         bool enableSweepRecorder{true};
         bool enableLfoAssignment{true};
+        bool cliMode{false};  // CLI-style "key: value" display instead of rotary knob
+        bool displayAsPercent{false};  // For 0-1 ranges, display as 0-99
+        int decimals{2};  // Decimal places for CLI mode
     };
 
     LayerCakeKnob(const Config& config, Shared::MidiLearnManager* midiManager);
@@ -62,6 +65,8 @@ public:
     bool has_lfo_assignment() const { return lfo_assignment_index() >= 0; }
     void set_knob_colour(juce::Colour colour);
     void clear_knob_colour();
+    bool is_cli_mode() const { return m_config.cliMode; }
+    const Config& config() const { return m_config; }
 
 private:
     enum class RecorderState
@@ -79,6 +84,8 @@ private:
     void apply_look_and_feel_colours();
     void timerCallback() override;
     bool show_context_menu(const juce::MouseEvent& event);
+    void paint_cli_mode(juce::Graphics& g);
+    juce::String format_cli_value() const;
 
     bool sweep_recorder_enabled() const noexcept { return m_config.enableSweepRecorder; }
     void arm_sweep_recorder();

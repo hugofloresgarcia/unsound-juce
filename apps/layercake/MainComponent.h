@@ -112,6 +112,28 @@ private:
     bool m_drag_highlight{false};
 };
 
+/**
+ * Overlay component that draws dotted lines from an LFO to its connected knobs.
+ * This sits on top of all other components and is mouse-transparent.
+ */
+class LfoConnectionOverlay : public juce::Component
+{
+public:
+    LfoConnectionOverlay() { setInterceptsMouseClicks(false, false); }
+
+    void paint(juce::Graphics& g) override;
+
+    void set_source(juce::Point<int> source_center, juce::Colour colour);
+    void add_target(juce::Point<int> target_center);
+    void clear();
+    bool has_connections() const { return !m_targets.empty(); }
+
+private:
+    juce::Point<int> m_source;
+    juce::Colour m_colour{juce::Colours::white};
+    std::vector<juce::Point<int>> m_targets;
+};
+
 class MainComponent : public juce::Component,
                       public juce::DragAndDropContainer,
                       public juce::AudioIODeviceCallback,
@@ -160,6 +182,7 @@ private:
     void handle_clock_button();
     void advance_lfos(double now_ms);
     void register_knob_for_lfo(LayerCakeKnob* knob);
+    void update_lfo_connection_overlay(int lfo_index, bool hovered);
     void assign_lfo_to_knob(int lfo_index, LayerCakeKnob& knob);
     void remove_lfo_from_knob(LayerCakeKnob& knob);
     void update_all_modulation_overlays();
@@ -183,19 +206,20 @@ private:
     std::unique_ptr<LayerCakeKnob> m_master_gain_knob;
     MultiChannelMeter m_master_meter;
 
-    std::unique_ptr<LayerCakeKnob> m_loop_start_knob;
+    // CLI-style knobs for grain controls
+    std::unique_ptr<LayerCakeKnob> m_position_knob;
     std::unique_ptr<LayerCakeKnob> m_duration_knob;
     std::unique_ptr<LayerCakeKnob> m_rate_knob;
     std::unique_ptr<LayerCakeKnob> m_env_knob;
     std::unique_ptr<LayerCakeKnob> m_direction_knob;
     std::unique_ptr<LayerCakeKnob> m_pan_knob;
-    std::unique_ptr<LayerCakeKnob> m_layer_select_knob;
+    std::unique_ptr<LayerCakeKnob> m_layer_knob;
+    std::unique_ptr<LayerCakeKnob> m_tempo_knob;
+    std::vector<LayerCakeKnob*> m_lfo_enabled_knobs;  // For LFO assignment iteration
+    
     LfoTriggerButton m_trigger_button;
     juce::TextButton m_record_button;
-
     juce::TextButton m_clock_button; // Transport Play/Stop
-    // Pattern UI removed
-    std::unique_ptr<LayerCakeKnob> m_tempo_knob;
     double m_last_pattern_bpm{-1.0};
 
     LayerCakeDisplay m_display;
@@ -219,10 +243,11 @@ private:
     std::array<LfoSlot, kNumLfoSlots> m_lfo_slots;
     std::array<std::atomic<float>, kNumLfoSlots> m_lfo_last_values;
     std::array<float, kNumLfoSlots> m_lfo_prev_values{};  // For zero-crossing detection
-    std::vector<LayerCakeKnob*> m_lfo_enabled_knobs;
     SettingsButtonLookAndFeel m_settings_button_look_and_feel;
     juce::TextButton m_settings_button;
     std::unique_ptr<LayerCakeSettingsWindow> m_settings_window;
+    LfoConnectionOverlay m_lfo_connection_overlay;
+    int m_hovered_lfo_index{-1};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

@@ -532,6 +532,30 @@ void LayerCakeLfoWidget::paint(juce::Graphics& g)
     // Accent border
     g.setColour(m_accent_colour.withAlpha(0.5f));
     g.drawRoundedRectangle(bounds.reduced(0.5f), corner, 1.0f);
+    
+    // LED indicator showing current LFO value
+    if (!m_led_bounds.isEmpty())
+    {
+        auto ledRect = m_led_bounds.toFloat();
+        
+        // Outer glow when value is high
+        if (m_current_lfo_value > 0.1f)
+        {
+            const float glowAlpha = m_current_lfo_value * 0.4f;
+            g.setColour(m_accent_colour.withAlpha(glowAlpha));
+            g.fillEllipse(ledRect.expanded(2.0f));
+        }
+        
+        // LED background (dark when off)
+        const float brightness = 0.15f + m_current_lfo_value * 0.85f;
+        g.setColour(m_accent_colour.withMultipliedBrightness(brightness));
+        g.fillEllipse(ledRect);
+        
+        // Highlight for 3D effect
+        g.setColour(juce::Colours::white.withAlpha(0.3f * m_current_lfo_value));
+        g.fillEllipse(ledRect.reduced(ledRect.getWidth() * 0.3f)
+                            .translated(-ledRect.getWidth() * 0.1f, -ledRect.getHeight() * 0.1f));
+    }
 }
 
 void LayerCakeLfoWidget::resized()
@@ -542,14 +566,21 @@ void LayerCakeLfoWidget::resized()
     const int paramRowHeight = 14;
     const int paramSpacing = 2;
     const int pageNavHeight = 14;
+    const int ledSize = 8;
+    const int ledMargin = 4;
 
     auto bounds = getLocalBounds().reduced(margin);
 
-    // Header row: title, mode selector
+    // Header row: LED, title, mode selector
     auto headerArea = bounds.removeFromTop(headerHeight);
     const int selectorWidth = juce::jmax(40, headerArea.getWidth() / 3);
     auto selectorArea = headerArea.removeFromRight(selectorWidth);
     m_mode_selector.setBounds(selectorArea);
+    
+    // LED next to title
+    auto ledArea = headerArea.removeFromLeft(ledSize + ledMargin);
+    m_led_bounds = ledArea.withSizeKeepingCentre(ledSize, ledSize);
+    
     m_title_label.setBounds(headerArea);
     bounds.removeFromTop(2);
 
@@ -671,6 +702,46 @@ void LayerCakeLfoWidget::set_tempo_provider(std::function<double()> tempo_bpm_pr
     m_tempo_bpm_provider = std::move(tempo_bpm_provider);
 }
 
+void LayerCakeLfoWidget::set_on_hover_changed(std::function<void(bool)> callback)
+{
+    m_hover_changed_callback = std::move(callback);
+}
+
+void LayerCakeLfoWidget::set_current_value(float value)
+{
+    if (std::abs(value - m_current_lfo_value) > 0.01f)
+    {
+        m_current_lfo_value = juce::jlimit(0.0f, 1.0f, value);
+        repaint(m_led_bounds.expanded(2));
+    }
+}
+
+void LayerCakeLfoWidget::mouseEnter(const juce::MouseEvent& /*event*/)
+{
+    if (!m_is_hovered)
+    {
+        m_is_hovered = true;
+        if (m_hover_changed_callback)
+            m_hover_changed_callback(true);
+    }
+}
+
+void LayerCakeLfoWidget::mouseExit(const juce::MouseEvent& event)
+{
+    // Only trigger exit if mouse is actually leaving the widget bounds
+    // (not just moving to a child component)
+    auto localPos = event.getEventRelativeTo(this).getPosition();
+    if (!getLocalBounds().contains(localPos))
+    {
+        if (m_is_hovered)
+        {
+            m_is_hovered = false;
+            if (m_hover_changed_callback)
+                m_hover_changed_callback(false);
+        }
+    }
+}
+
 void LayerCakeLfoWidget::comboBoxChanged(juce::ComboBox* comboBoxThatHasChanged)
 {
     if (comboBoxThatHasChanged != &m_mode_selector) return;
@@ -724,6 +795,20 @@ void LayerCakeLfoWidget::notify_settings_changed()
 
 void LayerCakeLfoWidget::timerCallback()
 {
+    // Check hover state - mouse may have moved to a child component
+    // and we need to track when it truly leaves the widget
+    if (m_is_hovered)
+    {
+        auto mousePos = juce::Desktop::getInstance().getMousePosition();
+        auto localPos = getLocalPoint(nullptr, mousePos);
+        if (!getLocalBounds().contains(localPos))
+        {
+            m_is_hovered = false;
+            if (m_hover_changed_callback)
+                m_hover_changed_callback(false);
+        }
+    }
+
     const float depth = m_generator.get_depth();
     const int mode = static_cast<int>(m_generator.get_mode());
     const float div = m_generator.get_clock_division();

@@ -256,50 +256,54 @@ void LibraryBrowserComponent::paint(juce::Graphics& g)
 
 void LibraryBrowserComponent::resized()
 {
-    const int marginOuter = 16;
-    const int columnSpacing = 14;
-    const int titleHeight = 26;
-    const int titleVerticalPadding = 3;
-    const int editorHeight = 28;
-    const int editorSpacing = 6;
-    const int listSpacing = 10;
+    const int marginOuter = 8;
+    const int rowSpacing = 8;
+    const int titleHeight = 18;
+    const int titleVerticalPadding = 2;
+    const int editorHeight = 22;
+    const int editorSpacing = 4;
+    const int listSpacing = 4;
+    const int minListHeight = 60;
 
     auto bounds = getLocalBounds().reduced(marginOuter);
     if (bounds.isEmpty())
         return;
 
-    const int columnCount = 3; // Reduced from 4 (Pattern removed)
-    const int totalSpacing = columnSpacing * (columnCount - 1);
-    const int baseColumnWidth = columnCount > 0 ? juce::jmax(0, (bounds.getWidth() - totalSpacing) / columnCount) : 0;
-    int remainingWidth = bounds.getWidth() - (baseColumnWidth * columnCount) - totalSpacing;
+    // Vertical layout - stack columns on top of each other
+    const int rowCount = 3;
+    const int totalSpacing = rowSpacing * (rowCount - 1);
+    const int availableHeight = bounds.getHeight() - totalSpacing;
+    const int baseRowHeight = availableHeight / rowCount;
 
-    auto layoutColumn = [&](ColumnWidgets& widgets, juce::Rectangle<int> columnBounds)
+    auto layoutRow = [&](ColumnWidgets& widgets, juce::Rectangle<int> rowBounds)
     {
-        auto column_area = columnBounds;
-        auto title_area = column_area.removeFromTop(titleHeight);
+        auto row_area = rowBounds;
+        auto title_area = row_area.removeFromTop(titleHeight);
         widgets.title.setBounds(title_area.reduced(0, titleVerticalPadding));
-        column_area.removeFromTop(editorSpacing);
-        auto editorRow = column_area.removeFromTop(editorHeight);
-        const int buttonWidth = 80;
+        row_area.removeFromTop(editorSpacing);
+        auto editorRow = row_area.removeFromTop(editorHeight);
+        const int buttonWidth = 36;
         auto buttonArea = editorRow.removeFromRight(buttonWidth);
         widgets.save_button.setBounds(buttonArea);
         widgets.name_editor.setBounds(editorRow.reduced(0, 1));
-        column_area.removeFromTop(listSpacing);
-        widgets.list_box.setBounds(column_area);
+        row_area.removeFromTop(listSpacing);
+        // Ensure minimum list height
+        if (row_area.getHeight() >= minListHeight)
+            widgets.list_box.setBounds(row_area);
+        else
+            widgets.list_box.setBounds(row_area.withHeight(minListHeight));
     };
 
-    auto columnArea = bounds;
+    auto rowArea = bounds;
     auto layoutNext = [&](ColumnWidgets& widgets, bool isLast)
     {
-        int extra = isLast ? remainingWidth : 0;
-        auto columnBounds = columnArea.removeFromLeft(baseColumnWidth + extra);
-        layoutColumn(widgets, columnBounds);
+        auto rowBounds = rowArea.removeFromTop(baseRowHeight);
+        layoutRow(widgets, rowBounds);
         if (!isLast)
-            columnArea.removeFromLeft(columnSpacing);
+            rowArea.removeFromTop(rowSpacing);
     };
 
     layoutNext(m_palette_widgets, false);
-    // Pattern column removed
     layoutNext(m_knobset_widgets, false);
     layoutNext(m_scene_widgets, true);
 }

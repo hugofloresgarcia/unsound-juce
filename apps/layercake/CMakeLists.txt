@@ -14,8 +14,8 @@ target_sources(LayerCakeApp PRIVATE
     LayerCakeDisplay.h
     LayerCakeLookAndFeel.cpp
     LayerCakeLookAndFeel.h
-        LayerCakeLibraryManager.cpp
-        LayerCakeLibraryManager.h
+    LayerCakeLibraryManager.cpp
+    LayerCakeLibraryManager.h
     LibraryBrowserWindow.cpp
     LibraryBrowserWindow.h
     LayerCakeKnob.cpp

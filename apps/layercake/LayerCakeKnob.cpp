@@ -104,6 +104,12 @@ LayerCakeKnob::~LayerCakeKnob()
 
 void LayerCakeKnob::paint(juce::Graphics& g)
 {
+    if (m_config.cliMode)
+    {
+        paint_cli_mode(g);
+        return;
+    }
+    
     auto bounds = getLocalBounds();
     auto& laf = getLookAndFeel();
 
@@ -227,8 +233,169 @@ void LayerCakeKnob::paint(juce::Graphics& g)
     }
 }
 
+void LayerCakeKnob::paint_cli_mode(juce::Graphics& g)
+{
+    auto bounds = getLocalBounds().toFloat();
+    
+    // Monospace font for CLI aesthetic
+    juce::FontOptions fontOpts;
+    fontOpts = fontOpts.withName(juce::Font::getDefaultMonospacedFontName())
+                       .withHeight(11.0f);
+    juce::Font monoFont(fontOpts);
+    g.setFont(monoFont);
+    
+    const auto accent = m_slider.findColour(juce::Slider::thumbColourId, true);
+    
+    // Highlight if drag target
+    if (m_drag_highlight)
+    {
+        g.setColour(m_active_drag_colour.withAlpha(0.15f));
+        g.fillRoundedRectangle(bounds, 2.0f);
+    }
+    
+    // Recorder state indicator (leftmost)
+    juce::String recIndicator;
+    juce::Colour recColour;
+    if (sweep_recorder_enabled())
+    {
+        switch (m_recorder_state)
+        {
+            case RecorderState::Armed:
+                recIndicator = m_blink_visible ? "O" : " ";
+                recColour = m_blink_visible ? juce::Colours::orange : juce::Colours::orange.darker(0.5f);
+                break;
+            case RecorderState::Recording:
+                recIndicator = m_blink_visible ? "*" : " ";
+                recColour = m_blink_visible ? juce::Colours::red : juce::Colours::red.darker(0.5f);
+                break;
+            case RecorderState::Looping:
+                recIndicator = ">";
+                recColour = juce::Colours::limegreen;
+                break;
+            default:
+                break;
+        }
+    }
+    
+    if (recIndicator.isNotEmpty())
+    {
+        g.setColour(recColour);
+        g.setFont(monoFont.withHeight(9.0f));
+        g.drawText(recIndicator, bounds.removeFromLeft(14.0f), juce::Justification::centredLeft, false);
+        g.setFont(monoFont);
+    }
+    
+    // LFO assignment indicator (small colored dot)
+    if (has_lfo_assignment() && m_lfo_button_accent.has_value())
+    {
+        const float dotSize = 6.0f;
+        const float dotX = bounds.getX() + 2.0f;
+        const float dotY = bounds.getCentreY() - dotSize * 0.5f;
+        
+        // Glow based on modulation value
+        if (m_modulation_indicator_value.has_value())
+        {
+            const float modVal = std::abs(m_modulation_indicator_value.value());
+            if (modVal > 0.01f)
+            {
+                g.setColour(m_lfo_button_accent.value().withAlpha(modVal * 0.4f));
+                g.fillEllipse(dotX - 2.0f, dotY - 2.0f, dotSize + 4.0f, dotSize + 4.0f);
+            }
+        }
+        
+        g.setColour(m_lfo_button_accent.value());
+        g.fillEllipse(dotX, dotY, dotSize, dotSize);
+        
+        bounds.removeFromLeft(dotSize + 4.0f);
+    }
+    
+    // Key in accent color (or LFO color if assigned)
+    const juce::Colour keyColour = (has_lfo_assignment() && m_lfo_button_accent.has_value()) 
+        ? m_lfo_button_accent.value() 
+        : accent;
+    g.setColour(keyColour);
+    const juce::String keyText = m_config.labelText + ":";
+    const float keyWidth = 48.0f;  // Fixed width for alignment
+    g.drawText(keyText, bounds.removeFromLeft(keyWidth), juce::Justification::centredLeft, false);
+    
+    // Value in white/light gray
+    g.setColour(kSoftWhite.withAlpha(0.9f));
+    g.drawText(format_cli_value(), bounds, juce::Justification::centredLeft, false);
+    
+    // Show MIDI CC indicator if mapped (rightmost)
+    if (m_midi_manager != nullptr && m_config.parameterId.isNotEmpty())
+    {
+        const int cc = m_midi_manager->getMappingForParameter(m_config.parameterId);
+        if (cc >= 0)
+        {
+            g.setColour(accent.withAlpha(0.5f));
+            g.setFont(monoFont.withHeight(8.0f));
+            const juce::String ccText = "CC" + juce::String(cc);
+            g.drawText(ccText, getLocalBounds().toFloat().removeFromRight(24.0f), 
+                       juce::Justification::centredRight, false);
+        }
+    }
+}
+
+juce::String LayerCakeKnob::format_cli_value() const
+{
+    juce::String result;
+    double value = m_slider.getValue();
+    
+    // If LFO is assigned, show the modulated value
+    if (has_lfo_assignment() && m_modulation_indicator_value.has_value())
+    {
+        const double span = m_config.maxValue - m_config.minValue;
+        if (span > 0.0)
+        {
+            // m_modulation_indicator_value is 0-1 normalized, representing the modulated position
+            const double modNormalized = static_cast<double>(m_modulation_indicator_value.value());
+            value = m_config.minValue + modNormalized * span;
+        }
+    }
+    
+    // Check if should display as percent (0-99 for 0-1 range)
+    const bool isPercentDisplay = m_config.displayAsPercent && 
+                                  std::abs(m_config.minValue) < 0.001 && 
+                                  std::abs(m_config.maxValue - 1.0) < 0.001;
+    
+    if (isPercentDisplay)
+    {
+        const int displayValue = static_cast<int>(std::round(value * 99.0));
+        result = juce::String(displayValue);
+    }
+    else if (m_config.decimals == 0)
+    {
+        result = juce::String(static_cast<int>(std::round(value)));
+    }
+    else
+    {
+        result = juce::String(value, m_config.decimals);
+    }
+    
+    if (m_config.suffix.isNotEmpty())
+        result += m_config.suffix;
+    
+    return result;
+}
+
 void LayerCakeKnob::resized()
 {
+    // In CLI mode, hide child components and use the full bounds for the slider interaction
+    if (m_config.cliMode)
+    {
+        m_label.setVisible(false);
+        m_value_label.setVisible(false);
+        if (m_recorder_button != nullptr)
+            m_recorder_button->setVisible(false);
+        if (m_lfo_button != nullptr)
+            m_lfo_button->setVisible(false);
+        
+        // Slider covers full area for mouse interaction
+        m_slider.setBounds(getLocalBounds());
+        return;
+    }
+    
     const int labelHeight = kLabelHeight;
     const int labelGap = kLabelGap;
     const int valuePadding = kValueAreaPadding;
@@ -242,13 +409,16 @@ void LayerCakeKnob::resized()
     auto labelBounds = bounds.removeFromBottom(labelHeight);
     labelBounds.removeFromTop(labelGap);
     m_label.setBounds(labelBounds);
+    m_label.setVisible(true);
 
     auto valueBounds = bounds.reduced(valuePadding);
     m_slider.setBounds(valueBounds);
     m_value_label.setBounds(valueBounds.reduced(valueInset));
+    m_value_label.setVisible(true);
 
     if (m_recorder_button != nullptr)
     {
+        m_recorder_button->setVisible(true);
         juce::Rectangle<int> buttonBounds(recorderButtonSize, recorderButtonSize);
         const int targetX = valueBounds.getRight() - recorderButtonMargin - recorderButtonSize;
         const int targetY = valueBounds.getY() + recorderButtonMargin;
@@ -259,6 +429,7 @@ void LayerCakeKnob::resized()
 
     if (m_lfo_button != nullptr)
     {
+        m_lfo_button->setVisible(true);
         juce::Rectangle<int> lfoBounds(lfoButtonSize, lfoButtonSize);
         const int targetX = valueBounds.getRight() - lfoButtonMargin - lfoButtonSize;
         const int targetY = valueBounds.getBottom() - lfoButtonMargin - lfoButtonSize;

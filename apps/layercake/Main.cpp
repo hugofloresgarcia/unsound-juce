@@ -103,7 +103,7 @@ public:
             setContentOwned(component, true);
             centreWithSize(component->getWidth(), component->getHeight());
             setResizable(true, true);
-            setResizeLimits(1000, 720, 3200, 2000);
+            setResizeLimits(720, 600, 3200, 2000);
             setVisible(true);
         }
 
