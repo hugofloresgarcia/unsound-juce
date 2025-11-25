@@ -149,7 +149,7 @@ void LayerCakeLookAndFeel::drawButtonBackground(juce::Graphics& g,
                                               isActive,
                                               shouldDrawButtonAsHighlighted,
                                               shouldDrawButtonAsDown);
-        auto borderColour = control_border_colour(controlType, isEnabled);
+        auto borderColour = control_border_colour(controlType, isEnabled, isActive);
 
         g.setColour(fillColour);
         g.fillRoundedRectangle(bounds, radius);
@@ -230,18 +230,31 @@ juce::Colour LayerCakeLookAndFeel::control_fill_colour(ControlButtonType type,
     if (!isEnabled)
         return m_disabled_button_fill;
 
+    // Gray when inactive, colored when active
+    const juce::Colour inactiveGray(0xff3a3a3a);
     auto accent = getControlAccentColour(type);
+    
     if (isActive || isDown)
-        return accent.withAlpha(0.35f);
+        return accent.withAlpha(0.45f);
     if (isHighlighted)
-        return accent.withAlpha(0.22f);
-    return accent.withAlpha(0.14f);
+        return inactiveGray.brighter(0.15f);
+    return inactiveGray;
 }
 
-juce::Colour LayerCakeLookAndFeel::control_border_colour(ControlButtonType type, bool isEnabled) const noexcept
+juce::Colour LayerCakeLookAndFeel::control_border_colour(ControlButtonType type, bool isEnabled, bool isActive) const noexcept
 {
-    auto accent = getControlAccentColour(type);
-    const float alpha = isEnabled ? 0.95f : 0.4f;
-    return accent.withAlpha(alpha);
+    // Gray border when inactive, colored when active
+    const juce::Colour inactiveGray(0xff5a5a5a);
+    
+    if (!isEnabled)
+        return inactiveGray.withAlpha(0.4f);
+    
+    if (isActive)
+    {
+        auto accent = getControlAccentColour(type);
+        return accent.withAlpha(0.95f);
+    }
+    
+    return inactiveGray;
 }
 

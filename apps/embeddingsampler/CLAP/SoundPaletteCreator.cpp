@@ -102,12 +102,11 @@ namespace Unsound4All
         
         // Create features (CLAP embeddings or STFT features)
         std::vector<std::vector<float>> embeddings;
+        FeatureType effectiveFeatureType = featureType;
+        bool useStftFallback = false;
         
         if (featureType == FeatureType::CLAP)
         {
-            if (progressCallback)
-                progressCallback("Creating CLAP embeddings for " + juce::String(allChunks.size()) + " chunks...");
-            
             // Initialize ONNX models
             ONNXModelManager modelManager;
             
@@ -134,27 +133,53 @@ namespace Unsound4All
                 textModelPath = executableFile.getParentDirectory().getChildFile("clap_text_encoder.onnx");
             #endif
             
-            if (!modelManager.initialize(audioModelPath, textModelPath))
-            {
-                m_isCreating = false;
-                return juce::File();
-            }
+            const bool audioModelMissing = !audioModelPath.existsAsFile();
+            const bool textModelMissing = !textModelPath.existsAsFile();
             
-            // Create CLAP embeddings
-            if (!createEmbeddings(allChunks, paletteDir, modelManager, embeddings, progressCallback))
+            if (audioModelMissing || textModelMissing)
             {
-                m_isCreating = false;
-                return juce::File();
+                useStftFallback = true;
+                DBG("SoundPaletteCreator: CLAP models unavailable. audioModelMissing="
+                    + juce::String(audioModelMissing ? "true" : "false")
+                    + ", textModelMissing="
+                    + juce::String(textModelMissing ? "true" : "false")
+                    + ". Falling back to STFT features.");
+            }
+            else
+            {
+                if (progressCallback)
+                    progressCallback("Creating CLAP embeddings for " + juce::String(allChunks.size()) + " chunks...");
+                
+                if (!modelManager.initialize(audioModelPath, textModelPath))
+                {
+                    useStftFallback = true;
+                    DBG("SoundPaletteCreator: Failed to initialize CLAP models. Falling back to STFT features.");
+                }
+                else if (!createEmbeddings(allChunks, paletteDir, modelManager, embeddings, progressCallback))
+                {
+                    DBG("SoundPaletteCreator: Failed to create CLAP embeddings");
+                    m_isCreating = false;
+                    return juce::File();
+                }
             }
         }
-        else // FeatureType::STFT
+        
+        if (featureType == FeatureType::STFT || useStftFallback)
         {
+            effectiveFeatureType = FeatureType::STFT;
+            
             if (progressCallback)
-                progressCallback("Creating STFT features for " + juce::String(allChunks.size()) + " chunks...");
+            {
+                auto message = useStftFallback
+                    ? "CLAP models unavailable. Using 1.5s STFT features for " + juce::String(allChunks.size()) + " chunks..."
+                    : "Creating STFT features for " + juce::String(allChunks.size()) + " chunks...";
+                progressCallback(message);
+            }
             
             // Create STFT features
             if (!createSTFTFeatures(allChunks, paletteDir, embeddings, progressCallback))
             {
+                DBG("SoundPaletteCreator: Failed to create STFT features");
                 m_isCreating = false;
                 return juce::File();
             }
@@ -167,7 +192,7 @@ namespace Unsound4All
             progressCallback("Saving palette data...");
         DBG("SoundPaletteCreator: Saving palette data...");
         
-        if (!savePaletteData(paletteDir, allChunks, sourceFiles, embeddings, featureType))
+        if (!savePaletteData(paletteDir, allChunks, sourceFiles, embeddings, effectiveFeatureType))
         {
             DBG("SoundPaletteCreator: Failed to save palette data");
             m_isCreating = false;

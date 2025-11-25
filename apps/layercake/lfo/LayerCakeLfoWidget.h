@@ -3,7 +3,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <flowerjuce/DSP/LfoUGen.h>
 #include <flowerjuce/Components/MidiLearnManager.h>
-#include "LayerCakeLookAndFeel.h"
+#include "../LayerCakeLookAndFeel.h"
+#include "../LayerCakeLibraryManager.h"
 #include <functional>
 #include <vector>
 
@@ -75,9 +76,17 @@ private:
 
 class LayerCakeLfoWidget : public juce::Component,
                            private juce::ComboBox::Listener,
-                           private juce::Timer
+                           private juce::Timer,
+                           private juce::Label::Listener
 {
 public:
+    struct PresetHandlers
+    {
+        std::function<juce::StringArray()> getPresetNames;
+        std::function<bool(const juce::String&, LayerCakePresetData::LfoSlotData&)> loadPreset;
+        std::function<bool(const juce::String&, const LayerCakePresetData::LfoSlotData&)> savePreset;
+    };
+
     LayerCakeLfoWidget(int lfo_index, 
                        flower::LayerCakeLfoUGen& generator, 
                        juce::Colour accent,
@@ -95,7 +104,11 @@ public:
 
     void refresh_wave_preview();
     void set_drag_label(const juce::String& label);
+    juce::String get_custom_label() const { return m_custom_label; }
+    void set_custom_label(const juce::String& label);
     void set_on_settings_changed(std::function<void()> callback);
+    void set_on_label_changed(std::function<void(const juce::String&)> callback);
+    void set_preset_handlers(PresetHandlers handlers);
     void sync_controls_from_generator();
     void set_tempo_provider(std::function<double()> tempo_bpm_provider);
     void set_on_hover_changed(std::function<void(bool)> callback);
@@ -121,6 +134,8 @@ private:
     };
 
     void comboBoxChanged(juce::ComboBox* comboBoxThatHasChanged) override;
+    void labelTextChanged(juce::Label* labelThatHasChanged) override;
+    void editorShown(juce::Label* label, juce::TextEditor& editor) override;
     void update_generator_settings();
     void notify_settings_changed();
     void timerCallback() override;
@@ -129,11 +144,30 @@ private:
     void go_to_page(int page);
     void next_page();
     void prev_page();
+    juce::String get_display_label() const;
+    void show_preset_menu();
+    void prompt_save_preset();
+    void attempt_load_preset(const juce::String& presetName);
+    LayerCakePresetData::LfoSlotData capture_slot_data() const;
+    void apply_slot_data(const LayerCakePresetData::LfoSlotData& data);
+    void update_preset_button_state();
 
     class SmallButtonLookAndFeel : public juce::LookAndFeel_V4
     {
     public:
         juce::Font getTextButtonFont(juce::TextButton& button, int buttonHeight) override;
+        void drawButtonBackground(juce::Graphics& g, juce::Button& button,
+                                  const juce::Colour& backgroundColour,
+                                  bool shouldDrawButtonAsHighlighted,
+                                  bool shouldDrawButtonAsDown) override;
+        void drawButtonText(juce::Graphics& g, juce::TextButton& button,
+                            bool shouldDrawButtonAsHighlighted,
+                            bool shouldDrawButtonAsDown) override;
+        void drawComboBox(juce::Graphics& g, int width, int height, bool isButtonDown,
+                          int buttonX, int buttonY, int buttonW, int buttonH,
+                          juce::ComboBox& box) override;
+        juce::Font getComboBoxFont(juce::ComboBox& box) override;
+        void positionComboBoxText(juce::ComboBox& box, juce::Label& label) override;
     };
 
     flower::LayerCakeLfoUGen& m_generator;
@@ -151,7 +185,11 @@ private:
     
     std::unique_ptr<WavePreview> m_wave_preview;
     juce::String m_drag_label;
+    juce::String m_custom_label;  // User-editable label (empty = use default)
     std::function<void()> m_settings_changed_callback;
+    std::function<void(const juce::String&)> m_label_changed_callback;
+    PresetHandlers m_preset_handlers;
+    juce::TextButton m_preset_button;
     juce::TextButton m_prev_page_button;
     juce::TextButton m_next_page_button;
     juce::Label m_page_label;
@@ -171,3 +209,4 @@ private:
 };
 
 } // namespace LayerCakeApp
+

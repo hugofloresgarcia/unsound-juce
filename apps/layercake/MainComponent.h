@@ -6,12 +6,15 @@
 #include <flowerjuce/LayerCakeEngine/LayerCakeEngine.h>
 #include <flowerjuce/Components/MidiLearnManager.h>
 #include <flowerjuce/Components/MidiLearnComponent.h>
+#include <flowerjuce/Components/MultiChannelMeter.h>
 #include "LayerCakeLookAndFeel.h"
 #include "LayerCakeDisplay.h"
 #include "LayerCakeLibraryManager.h"
 #include "LibraryBrowserWindow.h"
 #include "LayerCakeKnob.h"
-#include "LayerCakeLfoWidget.h"
+#include "lfo/LayerCakeLfoWidget.h"
+#include "lfo/LfoTriggerButton.h"
+#include "lfo/LfoConnectionOverlay.h"
 #include <array>
 #include <optional>
 #include <vector>
@@ -19,21 +22,6 @@
 
 namespace LayerCakeApp
 {
-
-class MultiChannelMeter : public juce::Component
-{
-public:
-    static constexpr int kMaxChannels = 8;
-
-    void setLevels(const std::vector<double>& levels);
-    void paint(juce::Graphics& g) override;
-
-private:
-    juce::Colour colour_for_db(double db) const;
-
-    std::array<double, kMaxChannels> m_levels{};
-    int m_active_channels{1};
-};
 
 class SettingsComponent : public juce::Component
 {
@@ -73,65 +61,6 @@ public:
     }
 
     void closeButtonPressed() override { setVisible(false); }
-};
-
-/**
- * A button wrapper that can accept LFO drops for triggering.
- * When an LFO is assigned, it triggers on positive zero-crossings.
- */
-class LfoTriggerButton : public juce::Component,
-                         public juce::DragAndDropTarget
-{
-public:
-    LfoTriggerButton();
-
-    void paint(juce::Graphics& g) override;
-    void resized() override;
-    void mouseDown(const juce::MouseEvent& event) override;
-
-    juce::TextButton& button() { return m_button; }
-
-    // DragAndDropTarget
-    bool isInterestedInDragSource(const juce::DragAndDropTarget::SourceDetails& details) override;
-    void itemDragEnter(const juce::DragAndDropTarget::SourceDetails& details) override;
-    void itemDragExit(const juce::DragAndDropTarget::SourceDetails& details) override;
-    void itemDropped(const juce::DragAndDropTarget::SourceDetails& details) override;
-
-    void set_lfo_assignment(int index, juce::Colour accent);
-    void clear_lfo_assignment();
-    int get_lfo_assignment() const { return m_lfo_index; }
-    bool has_lfo_assignment() const { return m_lfo_index >= 0; }
-
-    std::function<void(int)> on_lfo_assigned;
-    std::function<void()> on_lfo_cleared;
-
-private:
-    juce::TextButton m_button{"trg"};
-    int m_lfo_index{-1};
-    juce::Colour m_lfo_accent;
-    bool m_drag_highlight{false};
-};
-
-/**
- * Overlay component that draws dotted lines from an LFO to its connected knobs.
- * This sits on top of all other components and is mouse-transparent.
- */
-class LfoConnectionOverlay : public juce::Component
-{
-public:
-    LfoConnectionOverlay() { setInterceptsMouseClicks(false, false); }
-
-    void paint(juce::Graphics& g) override;
-
-    void set_source(juce::Point<int> source_center, juce::Colour colour);
-    void add_target(juce::Point<int> target_center);
-    void clear();
-    bool has_connections() const { return !m_targets.empty(); }
-
-private:
-    juce::Point<int> m_source;
-    juce::Colour m_colour{juce::Colours::white};
-    std::vector<juce::Point<int>> m_targets;
 };
 
 class MainComponent : public juce::Component,
@@ -204,7 +133,7 @@ private:
     juce::Label m_record_layer_label;
     juce::Label m_record_status_label;
     std::unique_ptr<LayerCakeKnob> m_master_gain_knob;
-    MultiChannelMeter m_master_meter;
+    Shared::MultiChannelMeter m_master_meter;
 
     // CLI-style knobs for grain controls
     std::unique_ptr<LayerCakeKnob> m_position_knob;
@@ -223,7 +152,7 @@ private:
     double m_last_pattern_bpm{-1.0};
 
     LayerCakeDisplay m_display;
-    std::array<std::atomic<float>, MultiChannelMeter::kMaxChannels> m_meter_levels;
+    std::array<std::atomic<float>, Shared::MultiChannelMeter::kMaxChannels> m_meter_levels;
     std::atomic<int> m_meter_channel_count{1};
     bool m_device_ready{false};
     LayerCakeLibraryManager m_library_manager;

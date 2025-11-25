@@ -4,6 +4,9 @@
 #include <functional>
 #include <optional>
 
+namespace LayerCakeApp
+{
+
 class LfoAssignmentButton : public juce::Component
 {
 public:
@@ -34,7 +37,5 @@ private:
     bool m_is_pressed{false};
 };
 
-
-
-
+} // namespace LayerCakeApp
 

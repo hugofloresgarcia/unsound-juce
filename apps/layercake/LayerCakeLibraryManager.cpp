@@ -8,6 +8,7 @@ constexpr const char* kPalettesFolderName = "palettes";
 // Patterns folder removed
 constexpr const char* kScenesFolderName = "scenes";
 constexpr const char* kKnobsetsFolderName = "knobsets";
+constexpr const char* kLfoPresetsFolderName = "lfo-presets";
 constexpr const char* kSceneJsonName = "scene.json";
 constexpr const char* kPatternExtension = ".json";
 
@@ -80,51 +81,101 @@ void knob_values_from_var(const juce::var& value, juce::NamedValueSet& out_knobs
 
 using LfoSlotArray = std::array<LayerCakePresetData::LfoSlotData, LayerCakePresetData::kNumLfos>;
 
+juce::var lfo_slot_to_var(const LayerCakePresetData::LfoSlotData& slot)
+{
+    auto* obj = new juce::DynamicObject();
+    
+    if (slot.label.isNotEmpty())
+        obj->setProperty("label", slot.label);
+    
+    obj->setProperty("mode", slot.mode);
+    obj->setProperty("rateHz", slot.rate_hz);
+    obj->setProperty("depth", slot.depth);
+    obj->setProperty("tempoSync", slot.tempo_sync);
+    obj->setProperty("clockDiv", slot.clock_division);
+    obj->setProperty("patternLen", slot.pattern_length);
+    
+    juce::Array<juce::var> buffer;
+    for (float v : slot.pattern_buffer)
+        buffer.add(v);
+    obj->setProperty("buffer", buffer);
+    
+    obj->setProperty("level", slot.level);
+    obj->setProperty("width", slot.width);
+    obj->setProperty("phaseOffset", slot.phase_offset);
+    obj->setProperty("delay", slot.delay);
+    obj->setProperty("delayDiv", slot.delay_div);
+    obj->setProperty("slop", slot.slop);
+    obj->setProperty("euclideanSteps", slot.euclidean_steps);
+    obj->setProperty("euclideanTriggers", slot.euclidean_triggers);
+    obj->setProperty("euclideanRotation", slot.euclidean_rotation);
+    obj->setProperty("randomSkip", slot.random_skip);
+    obj->setProperty("loopBeats", slot.loop_beats);
+    obj->setProperty("bipolar", slot.bipolar);
+    obj->setProperty("randomSeed", static_cast<juce::int64>(slot.random_seed));
+    
+    return obj;
+}
+
+bool lfo_slot_from_var(const juce::var& value, LayerCakePresetData::LfoSlotData& slot)
+{
+    if (!value.isObject())
+        return false;
+    
+    auto* obj = value.getDynamicObject();
+    
+    slot.label = obj->hasProperty("label") 
+        ? obj->getProperty("label").toString() : juce::String();
+    slot.mode = obj->hasProperty("mode") ? static_cast<int>(obj->getProperty("mode")) : 0;
+    slot.rate_hz = obj->hasProperty("rateHz") ? static_cast<float>(obj->getProperty("rateHz")) : 0.5f;
+    slot.depth = obj->hasProperty("depth") ? static_cast<float>(obj->getProperty("depth")) : 0.5f;
+    slot.tempo_sync = obj->hasProperty("tempoSync") 
+        ? static_cast<bool>(obj->getProperty("tempoSync")) : false;
+    slot.clock_division = obj->hasProperty("clockDiv") 
+        ? static_cast<float>(obj->getProperty("clockDiv")) : 1.0f;
+    slot.pattern_length = obj->hasProperty("patternLen") 
+        ? static_cast<int>(obj->getProperty("patternLen")) : 0;
+    
+    slot.pattern_buffer.clear();
+    if (obj->hasProperty("buffer") && obj->getProperty("buffer").isArray())
+    {
+        if (auto* bufArr = obj->getProperty("buffer").getArray())
+        {
+            for (auto& v : *bufArr)
+                slot.pattern_buffer.push_back(static_cast<float>(v));
+        }
+    }
+    
+    slot.level = obj->hasProperty("level") ? static_cast<float>(obj->getProperty("level")) : 1.0f;
+    slot.width = obj->hasProperty("width") ? static_cast<float>(obj->getProperty("width")) : 0.5f;
+    slot.phase_offset = obj->hasProperty("phaseOffset") 
+        ? static_cast<float>(obj->getProperty("phaseOffset")) : 0.0f;
+    slot.delay = obj->hasProperty("delay") ? static_cast<float>(obj->getProperty("delay")) : 0.0f;
+    slot.delay_div = obj->hasProperty("delayDiv") ? static_cast<int>(obj->getProperty("delayDiv")) : 1;
+    slot.slop = obj->hasProperty("slop") ? static_cast<float>(obj->getProperty("slop")) : 0.0f;
+    slot.euclidean_steps = obj->hasProperty("euclideanSteps") 
+        ? static_cast<int>(obj->getProperty("euclideanSteps")) : 0;
+    slot.euclidean_triggers = obj->hasProperty("euclideanTriggers") 
+        ? static_cast<int>(obj->getProperty("euclideanTriggers")) : 0;
+    slot.euclidean_rotation = obj->hasProperty("euclideanRotation") 
+        ? static_cast<int>(obj->getProperty("euclideanRotation")) : 0;
+    slot.random_skip = obj->hasProperty("randomSkip") 
+        ? static_cast<float>(obj->getProperty("randomSkip")) : 0.0f;
+    slot.loop_beats = obj->hasProperty("loopBeats") 
+        ? static_cast<int>(obj->getProperty("loopBeats")) : 0;
+    slot.bipolar = obj->hasProperty("bipolar") 
+        ? static_cast<bool>(obj->getProperty("bipolar")) : true;
+    slot.random_seed = obj->hasProperty("randomSeed") 
+        ? static_cast<uint64_t>(static_cast<juce::int64>(obj->getProperty("randomSeed"))) : 0;
+    
+    return true;
+}
+
 juce::var lfo_slots_to_var(const LfoSlotArray& slots)
 {
     juce::Array<juce::var> serialized;
     for (const auto& slot : slots)
-    {
-        auto* obj = new juce::DynamicObject();
-        // Basic parameters
-        obj->setProperty("mode", slot.mode);
-        obj->setProperty("rateHz", slot.rate_hz);
-        obj->setProperty("depth", slot.depth);
-        obj->setProperty("tempoSync", slot.tempo_sync);
-        obj->setProperty("clockDiv", slot.clock_division);
-        obj->setProperty("patternLen", slot.pattern_length);
-        
-        juce::Array<juce::var> buffer;
-        for (float v : slot.pattern_buffer)
-            buffer.add(v);
-        obj->setProperty("buffer", buffer);
-        
-        // PNW-style waveform shaping
-        obj->setProperty("level", slot.level);
-        obj->setProperty("width", slot.width);
-        obj->setProperty("phaseOffset", slot.phase_offset);
-        obj->setProperty("delay", slot.delay);
-        obj->setProperty("delayDiv", slot.delay_div);
-        
-        // Humanization
-        obj->setProperty("slop", slot.slop);
-        
-        // Euclidean rhythm
-        obj->setProperty("euclideanSteps", slot.euclidean_steps);
-        obj->setProperty("euclideanTriggers", slot.euclidean_triggers);
-        obj->setProperty("euclideanRotation", slot.euclidean_rotation);
-        
-        // Random skip
-        obj->setProperty("randomSkip", slot.random_skip);
-        
-        // Loop
-        obj->setProperty("loopBeats", slot.loop_beats);
-        
-        // Random seed
-        obj->setProperty("randomSeed", static_cast<juce::int64>(slot.random_seed));
-        
-        serialized.add(obj);
-    }
+        serialized.add(lfo_slot_to_var(slot));
     return serialized;
 }
 
@@ -138,66 +189,9 @@ void lfo_slots_from_var(const juce::var& value, LfoSlotArray& out_slots)
     for (int i = 0; i < count; ++i)
     {
         auto slotVar = array->getReference(i);
-        if (!slotVar.isObject())
-            continue;
-        auto* obj = slotVar.getDynamicObject();
         auto& slot = out_slots[static_cast<size_t>(i)];
-        
-        // Basic parameters
-        slot.mode = static_cast<int>(obj->getProperty("mode"));
-        slot.rate_hz = static_cast<float>(obj->getProperty("rateHz"));
-        slot.depth = static_cast<float>(obj->getProperty("depth"));
-        
-        slot.tempo_sync = obj->hasProperty("tempoSync") 
-            ? static_cast<bool>(obj->getProperty("tempoSync")) : false;
-        slot.clock_division = obj->hasProperty("clockDiv") 
-            ? static_cast<float>(obj->getProperty("clockDiv")) : 1.0f;
-        slot.pattern_length = obj->hasProperty("patternLen") 
-            ? static_cast<int>(obj->getProperty("patternLen")) : 0;
-            
-        if (obj->hasProperty("buffer") && obj->getProperty("buffer").isArray())
-        {
-            auto* bufArr = obj->getProperty("buffer").getArray();
-            slot.pattern_buffer.clear();
-            for (auto& v : *bufArr)
-                slot.pattern_buffer.push_back(static_cast<float>(v));
-        }
-        
-        // PNW-style waveform shaping
-        slot.level = obj->hasProperty("level") 
-            ? static_cast<float>(obj->getProperty("level")) : 1.0f;
-        slot.width = obj->hasProperty("width") 
-            ? static_cast<float>(obj->getProperty("width")) : 0.5f;
-        slot.phase_offset = obj->hasProperty("phaseOffset") 
-            ? static_cast<float>(obj->getProperty("phaseOffset")) : 0.0f;
-        slot.delay = obj->hasProperty("delay") 
-            ? static_cast<float>(obj->getProperty("delay")) : 0.0f;
-        slot.delay_div = obj->hasProperty("delayDiv") 
-            ? static_cast<int>(obj->getProperty("delayDiv")) : 1;
-        
-        // Humanization
-        slot.slop = obj->hasProperty("slop") 
-            ? static_cast<float>(obj->getProperty("slop")) : 0.0f;
-        
-        // Euclidean rhythm
-        slot.euclidean_steps = obj->hasProperty("euclideanSteps") 
-            ? static_cast<int>(obj->getProperty("euclideanSteps")) : 0;
-        slot.euclidean_triggers = obj->hasProperty("euclideanTriggers") 
-            ? static_cast<int>(obj->getProperty("euclideanTriggers")) : 0;
-        slot.euclidean_rotation = obj->hasProperty("euclideanRotation") 
-            ? static_cast<int>(obj->getProperty("euclideanRotation")) : 0;
-        
-        // Random skip
-        slot.random_skip = obj->hasProperty("randomSkip") 
-            ? static_cast<float>(obj->getProperty("randomSkip")) : 0.0f;
-        
-        // Loop
-        slot.loop_beats = obj->hasProperty("loopBeats") 
-            ? static_cast<int>(obj->getProperty("loopBeats")) : 0;
-        
-        // Random seed
-        slot.random_seed = obj->hasProperty("randomSeed") 
-            ? static_cast<uint64_t>(static_cast<juce::int64>(obj->getProperty("randomSeed"))) : 0;
+        if (!lfo_slot_from_var(slotVar, slot))
+            slot = LayerCakePresetData::LfoSlotData{};
     }
 }
 
@@ -377,6 +371,7 @@ void LayerCakeLibraryManager::refresh()
     refresh_palettes();
     refresh_scenes();
     refresh_knobsets();
+    refresh_lfo_presets();
 }
 
 bool LayerCakeLibraryManager::save_palette(const juce::String& name, const LayerBufferArray& layers)
@@ -614,6 +609,97 @@ bool LayerCakeLibraryManager::delete_scene(const juce::String& name)
     return result;
 }
 
+bool LayerCakeLibraryManager::save_lfo_preset(const juce::String& name,
+                                              const LayerCakePresetData::LfoSlotData& slot)
+{
+    const auto sanitized = sanitize_name(name);
+    if (sanitized.isEmpty())
+    {
+        DBG("LayerCakeLibraryManager::save_lfo_preset invalid name");
+        return false;
+    }
+
+    auto root = ensure_directory(lfo_presets_root());
+    auto file = root.getChildFile(sanitized + kPatternExtension);
+
+    auto* obj = new juce::DynamicObject();
+    obj->setProperty("slot", lfo_slot_to_var(slot));
+    juce::var json(obj);
+
+    if (!write_json_file(file, json, "LayerCakeLibraryManager::save_lfo_preset"))
+    {
+        DBG("LayerCakeLibraryManager::save_lfo_preset failed to write json");
+        return false;
+    }
+
+    refresh_lfo_presets();
+    return true;
+}
+
+bool LayerCakeLibraryManager::load_lfo_preset(const juce::String& name,
+                                              LayerCakePresetData::LfoSlotData& out_slot) const
+{
+    const auto sanitized = sanitize_name(name);
+    if (sanitized.isEmpty())
+    {
+        DBG("LayerCakeLibraryManager::load_lfo_preset invalid name");
+        return false;
+    }
+
+    auto file = resolve_file(lfo_presets_root(), name, kPatternExtension);
+    juce::var json;
+    if (!read_json_file(file, json, "LayerCakeLibraryManager::load_lfo_preset"))
+    {
+        DBG("LayerCakeLibraryManager::load_lfo_preset failed to read json");
+        return false;
+    }
+
+    if (!json.isObject())
+    {
+        DBG("LayerCakeLibraryManager::load_lfo_preset malformed json");
+        return false;
+    }
+
+    auto* obj = json.getDynamicObject();
+    if (obj == nullptr || !obj->hasProperty("slot"))
+    {
+        DBG("LayerCakeLibraryManager::load_lfo_preset missing slot property");
+        return false;
+    }
+
+    if (!lfo_slot_from_var(obj->getProperty("slot"), out_slot))
+    {
+        DBG("LayerCakeLibraryManager::load_lfo_preset failed to parse slot");
+        return false;
+    }
+
+    return true;
+}
+
+bool LayerCakeLibraryManager::delete_lfo_preset(const juce::String& name)
+{
+    const auto sanitized = sanitize_name(name);
+    if (sanitized.isEmpty())
+    {
+        DBG("LayerCakeLibraryManager::delete_lfo_preset invalid name");
+        return false;
+    }
+
+    auto file = resolve_file(lfo_presets_root(), name, kPatternExtension);
+    if (!file.existsAsFile())
+    {
+        DBG("LayerCakeLibraryManager::delete_lfo_preset missing file=" + file.getFullPathName());
+        return false;
+    }
+
+    const bool result = file.deleteFile();
+    if (!result)
+        DBG("LayerCakeLibraryManager::delete_lfo_preset failed to delete file=" + file.getFullPathName());
+
+    refresh_lfo_presets();
+    return result;
+}
+
 juce::File LayerCakeLibraryManager::palettes_root() const
 {
     return m_root.getChildFile(kPalettesFolderName);
@@ -629,6 +715,11 @@ juce::File LayerCakeLibraryManager::knobsets_root() const
     return m_root.getChildFile(kKnobsetsFolderName);
 }
 
+juce::File LayerCakeLibraryManager::lfo_presets_root() const
+{
+    return m_root.getChildFile(kLfoPresetsFolderName);
+}
+
 juce::File LayerCakeLibraryManager::palette_folder(const juce::String& name) const
 {
     return palettes_root().getChildFile(name);
@@ -642,6 +733,11 @@ juce::File LayerCakeLibraryManager::scene_folder(const juce::String& name) const
 juce::File LayerCakeLibraryManager::knobset_file(const juce::String& name) const
 {
     return knobsets_root().getChildFile(name + kPatternExtension);
+}
+
+juce::File LayerCakeLibraryManager::lfo_preset_file(const juce::String& name) const
+{
+    return lfo_presets_root().getChildFile(name + kPatternExtension);
 }
 
 juce::String LayerCakeLibraryManager::sanitize_name(const juce::String& name)
@@ -750,4 +846,15 @@ void LayerCakeLibraryManager::refresh_knobsets()
     for (const auto& file : files)
         m_knobset_names.add(file.getFileNameWithoutExtension());
     m_knobset_names.sort(true);
+}
+
+void LayerCakeLibraryManager::refresh_lfo_presets()
+{
+    auto root = ensure_directory(lfo_presets_root());
+    m_lfo_preset_names.clear();
+    juce::Array<juce::File> files;
+    root.findChildFiles(files, juce::File::findFiles, false, juce::String("*") + kPatternExtension);
+    for (const auto& file : files)
+        m_lfo_preset_names.add(file.getFileNameWithoutExtension());
+    m_lfo_preset_names.sort(true);
 }

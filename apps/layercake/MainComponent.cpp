@@ -1,5 +1,4 @@
 #include "MainComponent.h"
-#include "LfoDragHelpers.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <flowerjuce/LayerCakeEngine/Metro.h>
 #include <cmath>
@@ -7,236 +6,11 @@
 namespace LayerCakeApp
 {
 
-//==============================================================================
-// LfoTriggerButton implementation
-//==============================================================================
-
-LfoTriggerButton::LfoTriggerButton()
-{
-    addAndMakeVisible(m_button);
-}
-
-void LfoTriggerButton::paint(juce::Graphics& g)
-{
-    if (m_drag_highlight)
-    {
-        g.setColour(juce::Colours::white.withAlpha(0.3f));
-        g.fillRoundedRectangle(getLocalBounds().toFloat(), 4.0f);
-    }
-    
-    // Draw LFO indicator if assigned
-    if (m_lfo_index >= 0)
-    {
-        const int indicatorSize = 6;
-        auto indicatorBounds = getLocalBounds().removeFromTop(indicatorSize + 2).removeFromRight(indicatorSize + 2);
-        g.setColour(m_lfo_accent);
-        g.fillEllipse(indicatorBounds.toFloat().reduced(1.0f));
-    }
-}
-
-void LfoTriggerButton::resized()
-{
-    m_button.setBounds(getLocalBounds());
-}
-
-void LfoTriggerButton::mouseDown(const juce::MouseEvent& event)
-{
-    if (event.mods.isRightButtonDown() && m_lfo_index >= 0)
-    {
-        juce::PopupMenu menu;
-        menu.addItem("Remove LFO Trigger", [this]() {
-            clear_lfo_assignment();
-            if (on_lfo_cleared)
-                on_lfo_cleared();
-        });
-        menu.showMenuAsync(juce::PopupMenu::Options()
-            .withTargetScreenArea({event.getScreenX(), event.getScreenY(), 1, 1}));
-    }
-}
-
-bool LfoTriggerButton::isInterestedInDragSource(const juce::DragAndDropTarget::SourceDetails& details)
-{
-    int idx; juce::Colour c; juce::String l;
-    return LfoDragHelpers::parse_description(details.description, idx, c, l);
-}
-
-void LfoTriggerButton::itemDragEnter(const juce::DragAndDropTarget::SourceDetails& details)
-{
-    juce::ignoreUnused(details);
-    m_drag_highlight = true;
-    repaint();
-}
-
-void LfoTriggerButton::itemDragExit(const juce::DragAndDropTarget::SourceDetails& details)
-{
-    juce::ignoreUnused(details);
-    m_drag_highlight = false;
-    repaint();
-}
-
-void LfoTriggerButton::itemDropped(const juce::DragAndDropTarget::SourceDetails& details)
-{
-    m_drag_highlight = false;
-    
-    int lfoIndex = -1;
-    juce::Colour accent;
-    juce::String label;
-    
-    if (LfoDragHelpers::parse_description(details.description, lfoIndex, accent, label))
-    {
-        set_lfo_assignment(lfoIndex, accent);
-        if (on_lfo_assigned)
-            on_lfo_assigned(lfoIndex);
-    }
-    
-    repaint();
-}
-
-void LfoTriggerButton::set_lfo_assignment(int index, juce::Colour accent)
-{
-    m_lfo_index = index;
-    m_lfo_accent = accent;
-    repaint();
-}
-
-void LfoTriggerButton::clear_lfo_assignment()
-{
-    m_lfo_index = -1;
-    repaint();
-}
-
-//==============================================================================
-// LfoConnectionOverlay implementation
-//==============================================================================
-
-void LfoConnectionOverlay::paint(juce::Graphics& g)
-{
-    if (m_targets.empty())
-        return;
-
-    // Draw dotted lines from source to each target
-    const float dashLengths[] = { 4.0f, 4.0f };
-    g.setColour(m_colour.withAlpha(0.7f));
-
-    for (const auto& target : m_targets)
-    {
-        juce::Path path;
-        path.startNewSubPath(m_source.toFloat());
-        path.lineTo(target.toFloat());
-
-        juce::PathStrokeType stroke(2.0f);
-        stroke.createDashedStroke(path, path, dashLengths, 2);
-        g.strokePath(path, juce::PathStrokeType(2.0f));
-    }
-
-    // Draw small circles at connection points
-    const float circleRadius = 4.0f;
-    g.setColour(m_colour);
-    g.fillEllipse(m_source.x - circleRadius, m_source.y - circleRadius,
-                  circleRadius * 2, circleRadius * 2);
-
-    for (const auto& target : m_targets)
-    {
-        g.fillEllipse(target.x - circleRadius, target.y - circleRadius,
-                      circleRadius * 2, circleRadius * 2);
-    }
-}
-
-void LfoConnectionOverlay::set_source(juce::Point<int> source_center, juce::Colour colour)
-{
-    m_source = source_center;
-    m_colour = colour;
-}
-
-void LfoConnectionOverlay::add_target(juce::Point<int> target_center)
-{
-    m_targets.push_back(target_center);
-}
-
-void LfoConnectionOverlay::clear()
-{
-    m_targets.clear();
-    repaint();
-}
-
 juce::Font SettingsButtonLookAndFeel::getTextButtonFont(juce::TextButton& button, int buttonHeight)
 {
     auto font = LayerCakeLookAndFeel::getTextButtonFont(button, buttonHeight);
     const float reducedHeight = juce::jmax(8.0f, font.getHeight() * 0.55f);
     return font.withHeight(reducedHeight);
-}
-
-void MultiChannelMeter::setLevels(const std::vector<double>& levels)
-{
-    const int desired_channels = juce::jlimit(1,
-                                              kMaxChannels,
-                                              static_cast<int>(levels.empty() ? 1 : levels.size()));
-    bool changed = desired_channels != m_active_channels;
-
-    for (int i = 0; i < desired_channels; ++i)
-    {
-        const double clamped = juce::jlimit(0.0, 1.0, levels.empty() ? 0.0 : levels[static_cast<size_t>(i)]);
-        changed = changed || std::abs(clamped - m_levels[static_cast<size_t>(i)]) > 0.0005;
-        m_levels[static_cast<size_t>(i)] = clamped;
-    }
-
-    for (int i = desired_channels; i < kMaxChannels; ++i)
-        m_levels[static_cast<size_t>(i)] = 0.0;
-
-    if (desired_channels != m_active_channels)
-        m_active_channels = desired_channels;
-
-    if (changed)
-        repaint();
-}
-
-void MultiChannelMeter::paint(juce::Graphics& g)
-{
-    auto area = getLocalBounds().toFloat().reduced(2.0f);
-    if (area.isEmpty())
-        return;
-
-    const int channels = juce::jmax(1, m_active_channels);
-    const float spacing = channels > 1 ? 4.0f : 0.0f;
-    const float total_spacing = spacing * static_cast<float>(channels - 1);
-    const float slot_width = juce::jmax(6.0f, (area.getWidth() - total_spacing) / static_cast<float>(channels));
-    const float corner = juce::jmin(6.0f, slot_width * 0.4f);
-
-    auto slotArea = area;
-    for (int channel = 0; channel < channels; ++channel)
-    {
-        juce::Rectangle<float> slot(slotArea.removeFromLeft(slot_width));
-        slotArea.removeFromLeft(spacing);
-
-        const auto background = findColour(juce::ProgressBar::backgroundColourId).withAlpha(0.85f);
-        const auto outline = findColour(juce::Slider::trackColourId).withAlpha(0.45f);
-
-        g.setColour(background);
-        g.fillRoundedRectangle(slot, corner);
-
-        auto fill_bounds = slot.reduced(2.0f);
-        const float level = static_cast<float>(juce::jlimit(0.0, 1.0, m_levels[static_cast<size_t>(channel)]));
-        const float fill_height = fill_bounds.getHeight() * level;
-        if (fill_height > 0.0f)
-        {
-            auto filled = fill_bounds.removeFromBottom(fill_height);
-            const double db = static_cast<double>(juce::Decibels::gainToDecibels(level, -60.0f));
-            g.setColour(colour_for_db(db));
-            g.fillRoundedRectangle(filled, corner * 0.5f);
-        }
-
-        g.setColour(outline);
-        g.drawRoundedRectangle(slot, corner, 1.0f);
-    }
-}
-
-juce::Colour MultiChannelMeter::colour_for_db(double db) const
-{
-    if (db < -18.0)
-        return juce::Colour(0xff4caf50); // green
-    if (db < -6.0)
-        return juce::Colour(0xfffbc02d); // yellow
-    return juce::Colour(0xfff44336);     // red
 }
 
 namespace
@@ -292,18 +66,18 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
     for (auto& value : m_lfo_last_values)
         value.store(0.0f, std::memory_order_relaxed);
 
-    // Vibrant, cheerful LFO color palette
+    // NES-style saturated color palette for LFOs
     const std::array<juce::Colour, 4> lfoPalette = {
-        juce::Colour(0xffff6b6b),  // Coral red
-        juce::Colour(0xff4ecdc4),  // Turquoise
-        juce::Colour(0xffffe66d),  // Sunny yellow
-        juce::Colour(0xffff9ff3)   // Bubblegum pink
+        juce::Colour(0xfffc4040),  // NES red
+        juce::Colour(0xff00b8f8),  // NES cyan
+        juce::Colour(0xfff8b800),  // NES gold/yellow
+        juce::Colour(0xff58f858)   // NES green
     };
     const std::array<juce::Colour, 4> secondaryLfoPalette = {
-        juce::Colour(0xff54a0ff),  // Bright blue
-        juce::Colour(0xff5f27cd),  // Purple
-        juce::Colour(0xff00d2d3),  // Cyan
-        juce::Colour(0xfff368e0)   // Magenta
+        juce::Colour(0xff6888fc),  // NES blue
+        juce::Colour(0xfff878f8),  // NES magenta/pink
+        juce::Colour(0xfff87858),  // NES orange
+        juce::Colour(0xff00e8d8)   // NES teal
     };
 
     for (size_t i = 0; i < m_lfo_slots.size(); ++i)
@@ -332,6 +106,25 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
             if (widget != nullptr)
                 widget->refresh_wave_preview();
             update_all_modulation_overlays();
+        });
+        slot.widget->set_on_label_changed([this, index = static_cast<int>(i)](const juce::String& newLabel)
+        {
+            if (index < 0 || index >= static_cast<int>(m_lfo_slots.size()))
+                return;
+            // Store the custom label in the slot for preset saving
+            m_lfo_slots[static_cast<size_t>(index)].label = 
+                newLabel.isNotEmpty() ? newLabel : ("LFO " + juce::String(index + 1));
+        });
+        slot.widget->set_preset_handlers({
+            [this]() -> juce::StringArray {
+                return juce::StringArray(m_library_manager.get_lfo_presets());
+            },
+            [this](const juce::String& presetName, LayerCakePresetData::LfoSlotData& outSlot) {
+                return m_library_manager.load_lfo_preset(presetName, outSlot);
+            },
+            [this](const juce::String& presetName, const LayerCakePresetData::LfoSlotData& slotData) {
+                return m_library_manager.save_lfo_preset(presetName, slotData);
+            }
         });
         if (slot.widget != nullptr)
         {
@@ -443,7 +236,7 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
                              m_custom_look_and_feel.findColour(juce::ProgressBar::foregroundColourId));
     m_master_meter.setColour(juce::ProgressBar::backgroundColourId,
                              m_custom_look_and_feel.findColour(juce::ProgressBar::backgroundColourId));
-    m_master_meter.setLevels({ 0.0 });
+    m_master_meter.set_levels({ 0.0 });
     addAndMakeVisible(m_master_meter);
 
     configureControlButton(m_trigger_button.button(),
@@ -527,7 +320,7 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
     
     // Init transport
     m_engine.set_transport_playing(true);
-    m_engine.set_bpm(90.0f);
+    m_engine.set_bpm(static_cast<float>(get_effective_knob_value(m_tempo_knob.get())));
 }
 
 MainComponent::~MainComponent()
@@ -568,8 +361,11 @@ void MainComponent::resized()
     const int titleHeight = 24;
     const int labelHeight = 12;
     const int buttonHeight = 22;
+    const int buttonColumnWidth = 60;
+    const int buttonVerticalSpacing = 6;
+    const int buttonStackTotal = (buttonHeight * 3) + (buttonVerticalSpacing * 2);
     const int meterWidth = 40;
-    const int meterHeight = 120;
+    const int meterHeight = 100;
     const int meterSpacing = 12;
     const int displayPanelWidth = 680;
     const int displayWidth = 600;
@@ -608,14 +404,6 @@ void MainComponent::resized()
         }
     }
 
-    // Meter on the right
-    auto meterSlice = bounds.removeFromRight(meterWidth);
-    bounds.removeFromRight(meterSpacing);
-    auto meterArea = meterSlice;
-    if (meterArea.getHeight() > meterHeight)
-        meterArea = meterArea.withHeight(meterHeight).withY(meterSlice.getBottom() - meterHeight);
-    m_master_meter.setBounds(meterArea);
-
     // Calculate LFO area height
     const int lfoCount = static_cast<int>(m_lfo_slots.size());
     const int lfoRows = lfoCount > 0 ? juce::jmax(1, (lfoCount + lfosPerRow - 1) / lfosPerRow) : 0;
@@ -630,8 +418,9 @@ void MainComponent::resized()
     
     // CLI param rows between display and LFOs
     const int numParamRows = 3;  // 3 rows of params
-    const int paramAreaHeight = numParamRows * paramRowHeight + (numParamRows - 1) * paramRowSpacing + rowSpacing;
-    auto paramArea = displayColumn.removeFromBottom(paramAreaHeight);
+    const int knobAreaHeight = numParamRows * paramRowHeight + (numParamRows - 1) * paramRowSpacing;
+    const int paramAreaHeight = juce::jmax(knobAreaHeight, buttonStackTotal);
+    auto paramAreaFull = displayColumn.removeFromBottom(paramAreaHeight);
     displayColumn.removeFromBottom(rowSpacing);
     
     // Title area
@@ -648,7 +437,7 @@ void MainComponent::resized()
     // Row 1: bpm, gain, layer
     // Row 2: pos, dur, rate
     // Row 3: env, dir, pan + buttons
-    auto paramWalker = paramArea;
+    auto paramWalker = paramAreaFull;
     
     auto layoutParamRow = [&](std::initializer_list<LayerCakeKnob*> knobs) {
         auto rowArea = paramWalker.removeFromTop(paramRowHeight);
@@ -663,20 +452,79 @@ void MainComponent::resized()
     layoutParamRow({ m_tempo_knob.get(), m_master_gain_knob.get(), m_layer_knob.get() });
     layoutParamRow({ m_position_knob.get(), m_duration_knob.get(), m_rate_knob.get() });
     
-    // Third row: env, dir, pan + buttons
+    // Third row: env, dir, pan
     auto row3Area = paramWalker.removeFromTop(paramRowHeight);
     m_env_knob->setBounds(row3Area.removeFromLeft(paramColumnWidth));
     m_direction_knob->setBounds(row3Area.removeFromLeft(paramColumnWidth));
     m_pan_knob->setBounds(row3Area.removeFromLeft(paramColumnWidth));
-    
-    // Buttons after the params
-    row3Area.removeFromLeft(sectionSpacing);
-    const int buttonWidth = 50;
-    m_clock_button.setBounds(row3Area.removeFromLeft(buttonWidth));
-    row3Area.removeFromLeft(4);
-    m_record_button.setBounds(row3Area.removeFromLeft(buttonWidth));
-    row3Area.removeFromLeft(4);
-    m_trigger_button.setBounds(row3Area.removeFromLeft(buttonWidth));
+
+    // Stack transport buttons and meter to the right of the control section
+    {
+        auto controlStrip = paramAreaFull;
+        const int knobsWidth = paramColumnWidth * paramColumnsPerRow + sectionSpacing;
+        controlStrip.removeFromLeft(knobsWidth);
+        const int controlsRequiredWidth = meterWidth + meterSpacing + buttonColumnWidth;
+
+        if (!controlStrip.isEmpty() && controlStrip.getWidth() >= controlsRequiredWidth)
+        {
+            auto meterBounds = controlStrip.removeFromRight(meterWidth);
+            controlStrip.removeFromRight(meterSpacing);
+            auto buttonColumn = controlStrip.removeFromRight(buttonColumnWidth);
+
+            const int availableHeight = buttonColumn.getHeight();
+            const int buttonStartY = buttonColumn.getY()
+                + juce::jmax(0, (availableHeight - buttonStackTotal) / 2);
+
+            auto buttonPlacement = juce::Rectangle<int>(buttonColumn.getX(),
+                                                        buttonStartY,
+                                                        buttonColumnWidth,
+                                                        buttonHeight);
+            m_clock_button.setBounds(buttonPlacement);
+            buttonPlacement.setY(buttonPlacement.getBottom() + buttonVerticalSpacing);
+            m_trigger_button.setBounds(buttonPlacement);
+            buttonPlacement.setY(buttonPlacement.getBottom() + buttonVerticalSpacing);
+            m_record_button.setBounds(buttonPlacement);
+
+            auto meterArea = juce::Rectangle<int>(meterBounds.getX(),
+                                                  buttonStartY,
+                                                  meterWidth,
+                                                  meterHeight);
+            if (meterArea.getBottom() > meterBounds.getBottom())
+                meterArea.setY(meterBounds.getBottom() - meterArea.getHeight());
+            if (meterArea.getY() < meterBounds.getY())
+                meterArea.setY(meterBounds.getY());
+            m_master_meter.setBounds(meterArea);
+        }
+        else
+        {
+            // Fallback: center buttons above LFOs if not enough room
+            auto fallbackArea = paramAreaFull.removeFromRight(controlsRequiredWidth);
+            auto buttonColumn = fallbackArea.removeFromLeft(buttonColumnWidth);
+            const int availableHeight = buttonColumn.getHeight();
+            const int buttonStartY = buttonColumn.getY()
+                + juce::jmax(0, (availableHeight - buttonStackTotal) / 2);
+
+            auto buttonPlacement = juce::Rectangle<int>(buttonColumn.getX(),
+                                                        buttonStartY,
+                                                        buttonColumnWidth,
+                                                        buttonHeight);
+            m_clock_button.setBounds(buttonPlacement);
+            buttonPlacement.setY(buttonPlacement.getBottom() + buttonVerticalSpacing);
+            m_trigger_button.setBounds(buttonPlacement);
+            buttonPlacement.setY(buttonPlacement.getBottom() + buttonVerticalSpacing);
+            m_record_button.setBounds(buttonPlacement);
+
+            auto meterArea = juce::Rectangle<int>(fallbackArea.getRight() - meterWidth,
+                                                  buttonStartY,
+                                                  meterWidth,
+                                                  meterHeight);
+            if (meterArea.getBottom() > fallbackArea.getBottom())
+                meterArea.setY(fallbackArea.getBottom() - meterArea.getHeight());
+            if (meterArea.getY() < fallbackArea.getY())
+                meterArea.setY(fallbackArea.getY());
+            m_master_meter.setBounds(meterArea);
+        }
+    }
 
     // LFO Layout
     auto lfoRowBounds = lfoArea.reduced(lfoMargin);
@@ -884,7 +732,7 @@ void MainComponent::audioDeviceAboutToStart(juce::AudioIODevice* device)
 
     m_engine.prepare(sample_rate, block_size, juce::jmax(1, outputs));
     m_device_ready = true;
-    const int meter_channels = juce::jmax(1, juce::jmin(MultiChannelMeter::kMaxChannels, outputs));
+    const int meter_channels = juce::jmax(1, juce::jmin(Shared::MultiChannelMeter::kMaxChannels, outputs));
     m_meter_channel_count.store(meter_channels, std::memory_order_relaxed);
     for (auto& meter_level : m_meter_levels)
         meter_level.store(0.0f, std::memory_order_relaxed);
@@ -916,7 +764,7 @@ void MainComponent::audioDeviceIOCallbackWithContext(const float* const* inputCh
 
     m_engine.process_block(inputChannelData, numInputChannels, outputChannelData, numOutputChannels, numSamples);
 
-    const int meter_channels = juce::jmax(1, juce::jmin(MultiChannelMeter::kMaxChannels, numOutputChannels));
+    const int meter_channels = juce::jmax(1, juce::jmin(Shared::MultiChannelMeter::kMaxChannels, numOutputChannels));
     for (int channel = 0; channel < meter_channels; ++channel)
     {
         float peak = 0.0f;
@@ -1063,12 +911,12 @@ void MainComponent::update_record_labels()
 
 void MainComponent::update_meter()
 {
-    const int channel_count = juce::jlimit(1, MultiChannelMeter::kMaxChannels, m_meter_channel_count.load(std::memory_order_relaxed));
+    const int channel_count = juce::jlimit(1, Shared::MultiChannelMeter::kMaxChannels, m_meter_channel_count.load(std::memory_order_relaxed));
     std::vector<double> levels;
     levels.reserve(channel_count);
     for (int i = 0; i < channel_count; ++i)
         levels.push_back(juce::jlimit(0.0, 1.0, static_cast<double>(m_meter_levels[static_cast<size_t>(i)].load(std::memory_order_relaxed))));
-    m_master_meter.setLevels(levels);
+    m_master_meter.set_levels(levels);
 }
 
 void MainComponent::handle_clock_button()
@@ -1132,6 +980,18 @@ void MainComponent::capture_lfo_state(LayerCakePresetData& data) const
         const auto& slot = m_lfo_slots[i];
         auto& slotData = data.lfo_slots[i];
         
+        // Custom label (store empty if using default)
+        const juce::String defaultLabel = "LFO " + juce::String(static_cast<int>(i) + 1);
+        if (slot.widget != nullptr)
+        {
+            juce::String customLabel = slot.widget->get_custom_label();
+            slotData.label = (customLabel.isNotEmpty() && customLabel != defaultLabel) ? customLabel : juce::String();
+        }
+        else
+        {
+            slotData.label = (slot.label != defaultLabel) ? slot.label : juce::String();
+        }
+        
         // Basic parameters
         slotData.mode = static_cast<int>(slot.generator.get_mode());
         slotData.rate_hz = slot.generator.get_rate_hz();
@@ -1162,6 +1022,9 @@ void MainComponent::capture_lfo_state(LayerCakePresetData& data) const
         // Loop
         slotData.loop_beats = slot.generator.get_loop_beats();
         
+        // Polarity
+        slotData.bipolar = slot.generator.get_bipolar();
+        
         // Random seed
         slotData.random_seed = slot.generator.get_random_seed();
     }
@@ -1175,6 +1038,13 @@ void MainComponent::capture_lfo_state(LayerCakePresetData& data) const
         const auto& parameterId = knob->parameter_id();
         if (parameterId.isEmpty()) continue;
         data.lfo_assignments.set(juce::Identifier(parameterId), assignment);
+    }
+
+    // Save trigger button LFO assignment
+    const int trigger_lfo = m_trigger_button.get_lfo_assignment();
+    if (trigger_lfo >= 0)
+    {
+        data.lfo_assignments.set(juce::Identifier("triggerButton"), trigger_lfo);
     }
 }
 
@@ -1256,6 +1126,9 @@ void MainComponent::apply_lfo_state(const LayerCakePresetData& data)
         // Loop
         slot.generator.set_loop_beats(juce::jmax(0, slotData.loop_beats));
         
+        // Polarity
+        slot.generator.set_bipolar(slotData.bipolar);
+        
         // Random seed (restore for reproducible patterns)
         if (slotData.random_seed != 0)
             slot.generator.set_random_seed(slotData.random_seed);
@@ -1265,6 +1138,11 @@ void MainComponent::apply_lfo_state(const LayerCakePresetData& data)
         
         if (slot.widget != nullptr)
         {
+            // Restore custom label
+            slot.widget->set_custom_label(slotData.label);
+            slot.label = slotData.label.isNotEmpty() 
+                ? slotData.label 
+                : ("LFO " + juce::String(static_cast<int>(i) + 1));
             slot.widget->sync_controls_from_generator();
         }
         // LFOs are always clock-driven
@@ -1288,6 +1166,17 @@ void MainComponent::apply_lfo_state(const LayerCakePresetData& data)
             {
                 assign_lfo_to_knob(index, *knob);
             }
+        }
+    }
+
+    // Restore trigger button LFO assignment
+    m_trigger_button.clear_lfo_assignment();
+    if (const juce::var* triggerVal = data.lfo_assignments.getVarPointer(juce::Identifier("triggerButton")))
+    {
+        const int index = static_cast<int>(*triggerVal);
+        if (index >= 0 && index < static_cast<int>(m_lfo_slots.size()))
+        {
+            m_trigger_button.set_lfo_assignment(index, m_lfo_slots[static_cast<size_t>(index)].accent);
         }
     }
 

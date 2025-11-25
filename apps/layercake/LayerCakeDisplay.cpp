@@ -52,19 +52,22 @@ LayerCakeDisplay::LayerCakeDisplay(LayerCakeEngine& engine)
         juce::Colour(0xff50f2d4).darker(0.3f)   // teal
     };
 
-    m_invaders.reserve(6);
+    generate_ant_sprite_sheet();
+
+    m_ants.reserve(6);
     for (int i = 0; i < 6; ++i)
     {
-        Invader inv;
-        inv.position = { juce::Random::getSystemRandom().nextFloat() * kReferenceDisplaySize,
+        Ant ant;
+        ant.position = { juce::Random::getSystemRandom().nextFloat() * kReferenceDisplaySize,
                          juce::Random::getSystemRandom().nextFloat() * kReferenceDisplaySize };
-        inv.velocity = { juce::Random::getSystemRandom().nextFloat() * 0.6f + 0.2f,
+        ant.velocity = { juce::Random::getSystemRandom().nextFloat() * 0.6f + 0.2f,
                          juce::Random::getSystemRandom().nextFloat() * 0.6f + 0.2f };
         if (juce::Random::getSystemRandom().nextBool())
-            inv.velocity.x *= -1.0f;
+            ant.velocity.x *= -1.0f;
         if (juce::Random::getSystemRandom().nextBool())
-            inv.velocity.y *= -1.0f;
-        m_invaders.push_back(inv);
+            ant.velocity.y *= -1.0f;
+        ant.frame = juce::Random::getSystemRandom().nextInt(kAntFrameCount);
+        m_ants.push_back(ant);
     }
 
     refresh_waveforms();
@@ -80,92 +83,95 @@ void LayerCakeDisplay::paint(juce::Graphics& g)
     if (bounds.isEmpty())
         return;
 
-    const float horizontalMargin = juce::jmax(16.0f, bounds.getWidth() * kDisplayMarginRatio);
-    const float verticalMargin = juce::jmax(12.0f, bounds.getHeight() * kDisplayMarginRatio);
-    auto display = bounds.reduced(horizontalMargin, verticalMargin);
+    // NES-style sizing - use integer pixels, sharp edges
+    const int margin = 8;
+    auto display = bounds.reduced(static_cast<float>(margin)).toNearestInt().toFloat();
     if (display.isEmpty())
         return;
 
-    const float scale = display.getHeight() / kReferenceDisplaySize;
-    const float frame_corner_radius = 30.0f * scale;
-    const float screen_corner_radius = 18.0f * scale;
-    const float lane_corner_radius = 10.0f * scale;
-    const float lane_spacing = kLaneSpacing * scale;
-    const float lane_inner_padding = juce::jmax(2.0f, 4.0f * scale);
-    const float indicator_column_width = juce::jmax(24.0f, 34.0f * scale);
-    const float indicator_corner_radius = 5.0f * scale;
-    const float indicator_vertical_padding = 6.0f * scale;
-    const float separator_thickness = juce::jmax(0.6f, 1.0f * scale);
-    const float playhead_sway = kPlayheadSway * scale;
+    const int border_thickness = 2;
+    const int lane_gap = 4;
+    const int indicator_width = 20;
+    const int indicator_margin = 2;
 
-    const float frameMargin = juce::jmax(18.0f, bounds.getHeight() * kFrameMarginRatio);
-    auto frame = display.expanded(frameMargin);
-    g.setColour(juce::Colour(0xff101010));
-    g.fillRoundedRectangle(frame, frame_corner_radius);
-    g.setColour(kSoftWhite.withAlpha(0.35f));
-    g.drawRoundedRectangle(frame, frame_corner_radius, 3.0f);
+    // Outer frame - solid black with white pixel border
+    auto frame = display.expanded(4.0f);
+    g.setColour(juce::Colour(0xff000000));
+    g.fillRect(frame);
+    g.setColour(juce::Colour(0xfffcfcfc));
+    g.drawRect(frame, border_thickness);
 
-    const int texWidth = juce::jmax(32, static_cast<int>(std::ceil(display.getWidth())));
-    const int texHeight = juce::jmax(32, static_cast<int>(std::ceil(display.getHeight())));
-    if (m_funfetti_texture.isNull()
-        || m_funfetti_texture.getWidth() != texWidth
-        || m_funfetti_texture.getHeight() != texHeight)
-    {
-        regenerate_funfetti_texture(texWidth, texHeight);
-    }
-    {
-        juce::Graphics::ScopedSaveState state(g);
-        g.setTiledImageFill(m_funfetti_texture, display.getX(), display.getY(), 1.0f);
-        g.fillRoundedRectangle(display, screen_corner_radius);
-    }
+    // Inner screen area - dark blue-ish NES background
+    g.setColour(juce::Colour(0xff101820));
+    g.fillRect(display);
 
     const float position_indicator = m_position_indicator.load();
     const bool show_position = position_indicator >= 0.0f && position_indicator <= 1.0f;
 
-    const float total_lane_spacing = lane_spacing * (num_layers - 1);
-    const float lane_height = (display.getHeight() - total_lane_spacing) / static_cast<float>(num_layers);
+    const float total_lane_gap = static_cast<float>(lane_gap * (num_layers - 1));
+    const float lane_height = (display.getHeight() - total_lane_gap) / static_cast<float>(num_layers);
 
     std::array<juce::Rectangle<float>, LayerCakeEngine::kNumLayers> waveform_bounds{};
 
+    // NES-style palette (more saturated, limited colors)
+    const std::array<juce::Colour, 8> nes_palette = {
+        juce::Colour(0xfffc4040), // NES red
+        juce::Colour(0xff00b8f8), // NES cyan
+        juce::Colour(0xfff8b800), // NES yellow/gold
+        juce::Colour(0xff6888fc), // NES blue
+        juce::Colour(0xff58f858), // NES green
+        juce::Colour(0xfff878f8), // NES magenta
+        juce::Colour(0xfff87858), // NES orange
+        juce::Colour(0xff00e8d8)  // NES teal
+    };
+
     for (int layer = 0; layer < num_layers; ++layer)
     {
-        juce::Rectangle<float> lane(display.getX(),
-                                    display.getY() + layer * (lane_height + lane_spacing),
-                                    display.getWidth(),
-                                    lane_height);
+        // Snap to integer pixels
+        const int lane_y = static_cast<int>(display.getY() + layer * (lane_height + lane_gap));
+        const int lane_h = static_cast<int>(lane_height);
+        juce::Rectangle<int> lane(static_cast<int>(display.getX()),
+                                   lane_y,
+                                   static_cast<int>(display.getWidth()),
+                                   lane_h);
 
         const bool is_record_layer = layer == m_record_layer;
-        const float layer_mix = num_layers > 1 ? static_cast<float>(layer) / static_cast<float>(num_layers - 1)
-                                               : 0.0f;
-        juce::Colour layer_colour = m_palette[static_cast<size_t>(layer) % m_palette.size()];
-        juce::Colour lane_colour = layer_colour.darker(is_record_layer ? 0.35f : 0.5f).withAlpha(0.9f);
-        if (is_record_layer)
-            lane_colour = lane_colour.brighter(0.25f);
-        g.setColour(lane_colour);
-        g.fillRoundedRectangle(lane, lane_corner_radius);
+        juce::Colour layer_colour = nes_palette[static_cast<size_t>(layer) % nes_palette.size()];
+        
+        // Dark lane background
+        juce::Colour lane_bg = layer_colour.darker(0.7f);
+        g.setColour(lane_bg);
+        g.fillRect(lane);
 
-        juce::Rectangle<float> inner_lane = lane.reduced(lane_inner_padding, lane_inner_padding);
-        juce::Rectangle<float> indicator_area = inner_lane.removeFromLeft(indicator_column_width);
-        waveform_bounds[static_cast<size_t>(layer)] = inner_lane;
+        // Pixel border around lane
+        g.setColour(layer_colour.darker(0.3f));
+        g.drawRect(lane, 1);
 
-        auto indicator_rect = indicator_area.reduced(4.0f, indicator_vertical_padding);
-        const juce::Colour indicatorColour = layer_colour;
-        g.setColour(is_record_layer ? indicatorColour.brighter(0.2f) : indicatorColour.withAlpha(0.55f));
-        g.fillRoundedRectangle(indicator_rect, indicator_corner_radius);
-        g.setColour(juce::Colour(0xfff6f1d3));
-        g.drawRoundedRectangle(indicator_rect, indicator_corner_radius, 1.5f);
-        juce::String indicator_text = is_record_layer ? "r" : juce::String(layer + 1);
-        g.drawText(indicator_text, indicator_rect, juce::Justification::centred);
+        // Indicator box on left
+        juce::Rectangle<int> indicator_rect(lane.getX() + indicator_margin,
+                                             lane.getY() + indicator_margin,
+                                             indicator_width,
+                                             lane.getHeight() - indicator_margin * 2);
+        
+        g.setColour(is_record_layer ? layer_colour : layer_colour.darker(0.4f));
+        g.fillRect(indicator_rect);
+        g.setColour(juce::Colour(0xfffcfcfc));
+        g.drawRect(indicator_rect, 1);
+        
+        // Layer number text
+        juce::String indicator_text = is_record_layer ? "R" : juce::String(layer + 1);
+        g.setColour(is_record_layer ? juce::Colour(0xff000000) : juce::Colour(0xfffcfcfc));
+        g.drawText(indicator_text, indicator_rect.toFloat(), juce::Justification::centred);
+
+        // Waveform area
+        juce::Rectangle<int> wave_area(lane.getX() + indicator_width + indicator_margin * 2,
+                                        lane.getY() + 2,
+                                        lane.getWidth() - indicator_width - indicator_margin * 3,
+                                        lane.getHeight() - 4);
+        waveform_bounds[static_cast<size_t>(layer)] = wave_area.toFloat();
     }
 
-    g.setColour(kSoftWhite.withAlpha(0.08f));
-    for (int layer = 1; layer < num_layers; ++layer)
-    {
-        const float y = display.getY() + layer * (lane_height + lane_spacing) - lane_spacing * 0.5f;
-        g.drawLine(display.getX(), y, display.getRight(), y, separator_thickness);
-    }
-
-    // Waveforms per lane
+    // Waveforms - NES style stepped/blocky
     for (size_t layer = 0; layer < m_waveform_cache.size(); ++layer)
     {
         const auto& samples = m_waveform_cache[layer];
@@ -176,24 +182,39 @@ void LayerCakeDisplay::paint(juce::Graphics& g)
         if (area.isEmpty())
             continue;
 
-        juce::Colour wave_colour = juce::Colours::darkgrey.withAlpha(0.8f);
-        g.setColour(wave_colour);
+        juce::Colour layer_colour = nes_palette[layer % nes_palette.size()];
+        g.setColour(layer_colour);
 
-        juce::Path path;
-        const float dx = area.getWidth() / juce::jmax(1, static_cast<int>(samples.size() - 1));
+        const int num_bars = juce::jmin(64, static_cast<int>(samples.size())); // Limit to 64 bars for chunky look
+        const float bar_width = area.getWidth() / static_cast<float>(num_bars);
         const float center_y = area.getCentreY();
-        const float height_scale = area.getHeight() * 0.45f;
-        path.startNewSubPath(area.getX(), center_y - samples.front() * height_scale);
-        for (size_t i = 1; i < samples.size(); ++i)
+        const float height_scale = area.getHeight() * 0.4f;
+        const int samples_per_bar = juce::jmax(1, static_cast<int>(samples.size()) / num_bars);
+
+        for (int bar = 0; bar < num_bars; ++bar)
         {
-            const float x = area.getX() + dx * static_cast<float>(i);
-            const float y = center_y - samples[i] * height_scale;
-            path.lineTo(x, y);
+            // Get max sample value for this bar
+            float max_val = 0.0f;
+            const int start_idx = bar * samples_per_bar;
+            const int end_idx = juce::jmin(start_idx + samples_per_bar, static_cast<int>(samples.size()));
+            for (int i = start_idx; i < end_idx; ++i)
+            {
+                max_val = juce::jmax(max_val, std::abs(samples[static_cast<size_t>(i)]));
+            }
+
+            // Draw mirrored bar (like classic visualizer)
+            const int bar_x = static_cast<int>(area.getX() + bar * bar_width);
+            const int bar_h = juce::jmax(1, static_cast<int>(max_val * height_scale));
+            const int bar_w = juce::jmax(1, static_cast<int>(bar_width) - 1);
+
+            // Top half
+            g.fillRect(bar_x, static_cast<int>(center_y) - bar_h, bar_w, bar_h);
+            // Bottom half (mirror)
+            g.fillRect(bar_x, static_cast<int>(center_y), bar_w, bar_h);
         }
-        g.strokePath(path, juce::PathStrokeType(1.4f));
     }
 
-    // Grain highlights
+    // Grain highlights - sharp rectangles
     for (const auto& grain : m_grain_states)
     {
         if (!grain.is_active || grain.recorded_length_samples <= 0.0f)
@@ -208,59 +229,97 @@ void LayerCakeDisplay::paint(juce::Graphics& g)
         const float start_norm = juce::jlimit(0.0f, 1.0f, grain.loop_start_samples / grain.recorded_length_samples);
         const float end_norm = juce::jlimit(0.0f, 1.0f, grain.loop_end_samples / grain.recorded_length_samples);
         const float width_norm = juce::jmax(0.01f, end_norm - start_norm);
-        juce::Rectangle<float> highlight{
-            lane_area.getX() + lane_area.getWidth() * start_norm,
-            lane_area.getY() + lane_area.getHeight() * 0.1f,
-            lane_area.getWidth() * width_norm,
-            lane_area.getHeight() * 0.8f };
+        
+        juce::Rectangle<int> highlight{
+            static_cast<int>(lane_area.getX() + lane_area.getWidth() * start_norm),
+            static_cast<int>(lane_area.getY() + 1),
+            juce::jmax(2, static_cast<int>(lane_area.getWidth() * width_norm)),
+            static_cast<int>(lane_area.getHeight() - 2) };
 
-        const auto base_colour = colour_for_voice(grain.voice_index);
-        const auto grain_colour = base_colour.darker(0.35f);
-        g.setColour(grain_colour.withAlpha(kHighlightAlpha));
-        g.fillRoundedRectangle(highlight, 6.0f);
+        const auto base_colour = nes_palette[grain.voice_index % nes_palette.size()];
+        
+        // Solid highlight box with dithered pattern
+        g.setColour(base_colour.withAlpha(0.5f));
+        g.fillRect(highlight);
+        g.setColour(base_colour);
+        g.drawRect(highlight, 1);
 
-        // Squiggle playhead
-        const float playhead_x = highlight.getX() + highlight.getWidth() * grain.normalized_position;
-        const float squiggle_height = highlight.getHeight();
-        const float start_y = highlight.getY();
-        const float cycles = kBaseSquiggleCycles * juce::jlimit(0.5f, 3.5f, std::pow(2.0f, grain.rate_semitones / 12.0f));
-
-        juce::Path squiggle;
-        const int segments = 24;
-        for (int i = 0; i <= segments; ++i)
-        {
-            const float t = static_cast<float>(i) / static_cast<float>(segments);
-            const float y = start_y + t * squiggle_height;
-            const float sway = std::sin(juce::MathConstants<float>::twoPi * (t * cycles)) * playhead_sway;
-            const float x = juce::jlimit(lane_area.getX(),
-                                         lane_area.getRight(),
-                                         playhead_x + sway);
-            if (i == 0)
-                squiggle.startNewSubPath(x, y);
-            else
-                squiggle.lineTo(x, y);
-        }
-        g.setColour(grain_colour.withAlpha(0.85f));
-        g.strokePath(squiggle, juce::PathStrokeType(2.2f));
+        // Simple vertical playhead bar (no squiggle - NES style)
+        const int playhead_x = highlight.getX() + static_cast<int>(highlight.getWidth() * grain.normalized_position);
+        g.setColour(juce::Colour(0xfffcfcfc));
+        g.fillRect(playhead_x, highlight.getY(), 2, highlight.getHeight());
     }
 
     if (show_position)
     {
-        const float x = display.getX() + display.getWidth() * position_indicator;
-        g.setColour(juce::Colour(0xfff7e4c6).withAlpha(0.8f));
-        g.drawLine(x, display.getY(), x, display.getBottom(), 2.0f);
-        g.setColour(juce::Colour(0xffe06666));
-        g.fillEllipse(x - 4.0f, display.getY() - 6.0f, 8.0f, 8.0f);
+        const int x = static_cast<int>(display.getX() + display.getWidth() * position_indicator);
+        g.setColour(juce::Colour(0xfffcfcfc));
+        g.fillRect(x, static_cast<int>(display.getY()), 2, static_cast<int>(display.getHeight()));
+        // Simple square marker instead of circle
+        g.setColour(juce::Colour(0xfffc4040));
+        g.fillRect(x - 3, static_cast<int>(display.getY()) - 6, 8, 8);
     }
 
-    // Invaders / decorations
-    g.setColour(juce::Colour(0xff4cffd7));
-    for (const auto& inv : m_invaders)
+    // Ants / decorations
+    if (!m_ant_sprite_sheet.isNull())
     {
-        auto invRect = juce::Rectangle<float>(8.0f, 8.0f)
-                           .withCentre({ display.getX() + inv.position.x, display.getY() + inv.position.y });
-        g.fillRect(invRect);
+        for (const auto& ant : m_ants)
+        {
+            const int ant_x = static_cast<int>(display.getX() + ant.position.x) - kAntSpriteSize / 2;
+            const int ant_y = static_cast<int>(display.getY() + ant.position.y) - kAntSpriteSize / 2;
+            const int src_x = ant.frame * kAntSpriteSize;
+            const int src_y = ant.direction * kAntSpriteSize;
+            g.drawImage(m_ant_sprite_sheet,
+                        ant_x, ant_y,
+                        kAntSpriteSize, kAntSpriteSize,
+                        src_x, src_y,
+                        kAntSpriteSize, kAntSpriteSize);
+        }
     }
+
+    // ========== CRT OVERLAY EFFECTS (drawn last, on top of everything) ==========
+
+    // Heavy CRT scanlines - alternating dark bands
+    for (int y = static_cast<int>(display.getY()); y < static_cast<int>(display.getBottom()); y += 2)
+    {
+        g.setColour(juce::Colour(0x60000000));
+        g.drawHorizontalLine(y, display.getX(), display.getRight());
+    }
+
+    // CRT noise/static effect - random pixels that flicker
+    {
+        auto& rng = juce::Random::getSystemRandom();
+        const int noise_density = 200; // more pixels of noise
+        for (int i = 0; i < noise_density; ++i)
+        {
+            const int nx = static_cast<int>(display.getX()) + rng.nextInt(static_cast<int>(display.getWidth()));
+            const int ny = static_cast<int>(display.getY()) + rng.nextInt(static_cast<int>(display.getHeight()));
+            const juce::uint8 brightness = static_cast<juce::uint8>(rng.nextInt(80) + 40);
+            g.setColour(juce::Colour(brightness, brightness, brightness, static_cast<juce::uint8>(rng.nextInt(100) + 50)));
+            g.fillRect(nx, ny, 1, 1);
+        }
+    }
+
+    // Horizontal interference line (like a bad signal) - moves over time
+    {
+        const int display_h = static_cast<int>(display.getHeight());
+        if (display_h > 0)
+        {
+            const int interference_y = static_cast<int>(display.getY()) + 
+                (static_cast<int>(m_noise_phase * 50.0) % display_h);
+            g.setColour(juce::Colour(0x40ffffff));
+            g.fillRect(static_cast<int>(display.getX()), interference_y, static_cast<int>(display.getWidth()), 3);
+            // Secondary fainter line
+            const int interference_y2 = static_cast<int>(display.getY()) + 
+                ((static_cast<int>(m_noise_phase * 80.0) + display_h / 3) % display_h);
+            g.setColour(juce::Colour(0x25ffffff));
+            g.fillRect(static_cast<int>(display.getX()), interference_y2, static_cast<int>(display.getWidth()), 2);
+        }
+    }
+
+    // Screen edge glow / bloom (subtle bright edge on the frame)
+    g.setColour(juce::Colour(0x15ffffff));
+    g.drawRect(display.toNearestInt(), 1);
 }
 
 void LayerCakeDisplay::resized()
@@ -275,7 +334,14 @@ void LayerCakeDisplay::timerCallback()
     refresh_grains();
 
     auto display = get_display_area();
-    update_invaders(display.getWidth(), display.getHeight());
+    update_ants(display.getWidth(), display.getHeight());
+
+    // Animate ants every 4 frames (approximately 7.5 fps animation at 30 fps timer)
+    if (++m_animation_counter % 4 == 0)
+    {
+        for (auto& ant : m_ants)
+            ant.frame = (ant.frame + 1) % kAntFrameCount;
+    }
 
     if (!m_funfetti_texture.isNull())
     {
@@ -364,18 +430,176 @@ juce::Colour LayerCakeDisplay::colour_for_voice(size_t voice_index)
     return colour;
 }
 
-void LayerCakeDisplay::update_invaders(float width, float height)
+void LayerCakeDisplay::update_ants(float width, float height)
 {
-    for (auto& inv : m_invaders)
+    for (auto& ant : m_ants)
     {
-        inv.position += inv.velocity;
-        if (inv.position.x < 0.0f || inv.position.x > width)
-            inv.velocity.x *= -1.0f;
-        if (inv.position.y < 0.0f || inv.position.y > height)
-            inv.velocity.y *= -1.0f;
-        inv.position.x = juce::jlimit(0.0f, width, inv.position.x);
-        inv.position.y = juce::jlimit(0.0f, height, inv.position.y);
+        ant.position += ant.velocity;
+        if (ant.position.x < 0.0f || ant.position.x > width)
+            ant.velocity.x *= -1.0f;
+        if (ant.position.y < 0.0f || ant.position.y > height)
+            ant.velocity.y *= -1.0f;
+        ant.position.x = juce::jlimit(0.0f, width, ant.position.x);
+        ant.position.y = juce::jlimit(0.0f, height, ant.position.y);
+
+        // Update direction based on velocity (0=right, 1=down, 2=left, 3=up)
+        if (std::abs(ant.velocity.x) > std::abs(ant.velocity.y))
+            ant.direction = ant.velocity.x > 0.0f ? 0 : 2;
+        else
+            ant.direction = ant.velocity.y > 0.0f ? 1 : 3;
     }
+}
+
+void LayerCakeDisplay::generate_ant_sprite_sheet()
+{
+    const int sheet_width = kAntSpriteSize * kAntFrameCount;
+    const int sheet_height = kAntSpriteSize * kAntDirectionCount;
+    m_ant_sprite_sheet = juce::Image(juce::Image::ARGB, sheet_width, sheet_height, true);
+
+    juce::Image::BitmapData data(m_ant_sprite_sheet, juce::Image::BitmapData::writeOnly);
+
+    // NES-style limited palette
+    const juce::PixelARGB body_dark(255, 48, 24, 16);    // Dark brown
+    const juce::PixelARGB body_mid(255, 96, 56, 32);     // Mid brown  
+    const juce::PixelARGB body_light(255, 144, 88, 48);  // Highlight
+    const juce::PixelARGB leg_col(255, 32, 16, 8);       // Very dark legs
+    const juce::PixelARGB transparent(0, 0, 0, 0);
+
+    // Helper to set a pixel with bounds checking
+    auto set_pixel = [&data, sheet_width, sheet_height](int x, int y, juce::PixelARGB col) {
+        if (x >= 0 && x < sheet_width && y >= 0 && y < sheet_height)
+        {
+            auto* pixel = reinterpret_cast<juce::PixelARGB*>(data.getPixelPointer(x, y));
+            if (pixel) *pixel = col;
+        }
+    };
+
+    // Pixel art ant patterns (8x8 centered in 16x16 with room for legs)
+    // Pattern for ant facing RIGHT (direction 0): head on right, abdomen on left
+    // Each row represents y, each char represents a pixel type
+    // . = transparent, D = dark body, M = mid body, L = light (highlight), X = leg
+    
+    // Frame patterns differ by leg positions
+    // Ant body is roughly: [abdomen 3px][thorax 2px][head 2px] = 7px wide
+    
+    for (int dir = 0; dir < kAntDirectionCount; ++dir)
+    {
+        for (int frame = 0; frame < kAntFrameCount; ++frame)
+        {
+            const int base_x = frame * kAntSpriteSize;
+            const int base_y = dir * kAntSpriteSize;
+
+            // Leg animation: alternate between two positions
+            const bool legs_up = (frame % 2 == 0);
+
+            // Lambda to transform coordinates based on direction
+            // dir 0 = right, 1 = down, 2 = left, 3 = up
+            auto plot = [&](int local_x, int local_y, juce::PixelARGB col) {
+                int tx, ty;
+                switch (dir)
+                {
+                    case 0: // right: no transform
+                        tx = base_x + 4 + local_x;
+                        ty = base_y + 8 + local_y;
+                        break;
+                    case 1: // down: rotate 90 CW
+                        tx = base_x + 8 - local_y;
+                        ty = base_y + 4 + local_x;
+                        break;
+                    case 2: // left: rotate 180
+                        tx = base_x + 12 - local_x;
+                        ty = base_y + 8 - local_y;
+                        break;
+                    case 3: // up: rotate 90 CCW
+                        tx = base_x + 8 + local_y;
+                        ty = base_y + 12 - local_x;
+                        break;
+                    default:
+                        tx = base_x + 4 + local_x;
+                        ty = base_y + 8 + local_y;
+                }
+                set_pixel(tx, ty, col);
+            };
+
+            // Draw ant body (facing right in local coords)
+            // Body is 4px (abdomen) + 3px (thorax) + 3px (head) = 10px wide
+            
+            // Abdomen (back/left side): 4x3 block
+            plot(-5, -1, body_dark);
+            plot(-4, -1, body_dark);
+            plot(-3, -1, body_mid);
+            plot(-2, -1, body_mid);
+            plot(-5,  0, body_dark);
+            plot(-4,  0, body_mid);
+            plot(-3,  0, body_mid);
+            plot(-2,  0, body_light); // highlight
+            plot(-5,  1, body_dark);
+            plot(-4,  1, body_dark);
+            plot(-3,  1, body_dark);
+            plot(-2,  1, body_mid);
+
+            // Thorax (middle): 3x3 block  
+            plot(-1, -1, body_mid);
+            plot( 0, -1, body_mid);
+            plot( 1, -1, body_mid);
+            plot(-1,  0, body_mid);
+            plot( 0,  0, body_mid);
+            plot( 1,  0, body_mid);
+            plot(-1,  1, body_dark);
+            plot( 0,  1, body_dark);
+            plot( 1,  1, body_dark);
+
+            // Head (front/right): 3x3 block
+            plot(2, -1, body_mid);
+            plot(3, -1, body_mid);
+            plot(4, -1, body_mid);
+            plot(2,  0, body_mid);
+            plot(3,  0, body_light); // eye highlight
+            plot(4,  0, body_mid);
+            plot(2,  1, body_dark);
+            plot(3,  1, body_dark);
+            plot(4,  1, body_dark);
+
+            // Antennae (1 pixel each, short diagonal from head)
+            plot(5, -2, leg_col);
+            plot(5,  2, leg_col);
+
+            // Legs - 6 legs, tripod gait animation
+            if (legs_up)
+            {
+                // Tripod A up: front-left, mid-right, back-left up
+                // Front legs (at head)
+                plot(3, -3, leg_col);  // front-left UP
+                plot(3,  3, leg_col);  // front-right DOWN
+                
+                // Middle legs (at thorax) 
+                plot(0, -2, leg_col);  // mid-left DOWN
+                plot(0,  3, leg_col);  // mid-right UP
+                
+                // Back legs (at abdomen)
+                plot(-4, -3, leg_col); // back-left UP
+                plot(-4,  3, leg_col); // back-right DOWN
+            }
+            else
+            {
+                // Tripod B up: front-right, mid-left, back-right up
+                // Front legs
+                plot(3, -2, leg_col);  // front-left DOWN
+                plot(3,  4, leg_col);  // front-right UP
+                
+                // Middle legs
+                plot(0, -3, leg_col);  // mid-left UP
+                plot(0,  2, leg_col);  // mid-right DOWN
+                
+                // Back legs
+                plot(-4, -2, leg_col); // back-left DOWN
+                plot(-4,  4, leg_col); // back-right UP
+            }
+        }
+    }
+
+    DBG("LayerCakeDisplay::generate_ant_sprite_sheet created " 
+        + juce::String(sheet_width) + "x" + juce::String(sheet_height) + " NES-style sprite sheet");
 }
 
 void LayerCakeDisplay::regenerate_funfetti_texture(int width, int height)

@@ -1,6 +1,6 @@
 #include "LayerCakeKnob.h"
 #include "LayerCakeLookAndFeel.h"
-#include "LfoDragHelpers.h"
+#include "lfo/LfoDragHelpers.h"
 #include <cmath>
 
 namespace LayerCakeApp
@@ -286,11 +286,22 @@ void LayerCakeKnob::paint_cli_mode(juce::Graphics& g)
     }
     
     // LFO assignment indicator (small colored dot)
+    // Clear bounds first - will be set if indicator is drawn
+    m_lfo_indicator_bounds = {};
     if (has_lfo_assignment() && m_lfo_button_accent.has_value())
     {
         const float dotSize = 6.0f;
+        const float hitPadding = 4.0f;  // Extra padding for easier clicking
         const float dotX = bounds.getX() + 2.0f;
         const float dotY = bounds.getCentreY() - dotSize * 0.5f;
+        
+        // Store bounds for hit testing (with padding for easier clicking)
+        m_lfo_indicator_bounds = juce::Rectangle<float>(
+            dotX - hitPadding, 
+            dotY - hitPadding, 
+            dotSize + hitPadding * 2.0f, 
+            dotSize + hitPadding * 2.0f
+        );
         
         // Glow based on modulation value
         if (m_modulation_indicator_value.has_value())
@@ -450,6 +461,20 @@ void LayerCakeKnob::mouseDown(const juce::MouseEvent& event)
     {
         if (show_context_menu(event))
         return;
+    }
+
+    // Option-click on LFO indicator to clear assignment (CLI mode)
+    if (m_config.cliMode && event.mods.isAltDown() && has_lfo_assignment())
+    {
+        const auto clickPos = event.position;
+        if (!m_lfo_indicator_bounds.isEmpty() && m_lfo_indicator_bounds.contains(clickPos))
+        {
+            DBG("LayerCakeKnob::mouseDown option-click clearing LFO assignment");
+            if (m_lfo_release_handler != nullptr)
+                m_lfo_release_handler();
+            repaint();
+            return;
+        }
     }
 
     juce::Component::mouseDown(event);
@@ -742,6 +767,21 @@ bool LayerCakeKnob::show_context_menu(const juce::MouseEvent& event)
         }
     }
 
+    // LFO assignment clear option
+    if (m_config.enableLfoAssignment && has_lfo_assignment())
+    {
+        if (menu.getNumItems() > 0)
+            menu.addSeparator();
+
+        menu.addItem(juce::PopupMenu::Item("Clear LFO")
+                         .setAction([this]() {
+                             DBG("LayerCakeKnob::show_context_menu clearing LFO assignment");
+                             if (m_lfo_release_handler != nullptr)
+                                 m_lfo_release_handler();
+                             repaint();
+                         }));
+    }
+
     if (sweep_recorder_enabled())
     {
         if (menu.getNumItems() > 0)
@@ -981,6 +1021,7 @@ void LayerCakeKnob::set_lfo_assignment_index(int index)
 {
     m_lfo_assignment_index.store(index, std::memory_order_relaxed);
     refresh_lfo_button_state();
+    update_lfo_tooltip();
 }
 
 void LayerCakeKnob::set_lfo_button_accent(std::optional<juce::Colour> accent)
@@ -1023,6 +1064,20 @@ void LayerCakeKnob::refresh_lfo_button_state()
     m_lfo_button->setHasAssignment(assigned);
     m_lfo_button->setAssignmentColour(m_lfo_button_accent);
     m_lfo_button->setEnabled(assigned);
+}
+
+void LayerCakeKnob::update_lfo_tooltip()
+{
+    if (!m_config.cliMode || !m_config.enableLfoAssignment)
+    {
+        setTooltip({});
+        return;
+    }
+
+    if (has_lfo_assignment())
+        setTooltip("Option-click LFO indicator to clear");
+    else
+        setTooltip({});
 }
 
 } // namespace LayerCakeApp

@@ -4,7 +4,7 @@
 #include <flowerjuce/Components/MidiLearnManager.h>
 #include <flowerjuce/DSP/KnobSweepRecorder.h>
 #include "KnobRecorderButton.h"
-#include "LfoAssignmentButton.h"
+#include "lfo/LfoAssignmentButton.h"
 #include <functional>
 #include <optional>
 #include <atomic>
@@ -14,6 +14,7 @@ namespace LayerCakeApp
 
 class LayerCakeKnob : public juce::Component,
                       public juce::DragAndDropTarget,
+                      public juce::SettableTooltipClient,
                       private juce::Slider::Listener,
                       private juce::Timer
 {
@@ -100,6 +101,7 @@ private:
     void update_blink_state(bool force_reset);
     void sync_recorder_idle_value();
     void refresh_lfo_button_state();
+    void update_lfo_tooltip();
 
     Config m_config;
     Shared::MidiLearnManager* m_midi_manager{nullptr};
@@ -128,6 +130,7 @@ private:
     std::atomic<int> m_lfo_assignment_index{-1};
     std::optional<juce::Colour> m_custom_knob_colour;
     std::optional<juce::Colour> m_lfo_button_accent;
+    juce::Rectangle<float> m_lfo_indicator_bounds;  // For option-click hit testing in CLI mode
 };
 
 } // namespace LayerCakeApp

@@ -22,13 +22,18 @@ target_sources(LayerCakeApp PRIVATE
     LayerCakeKnob.h
     KnobRecorderButton.cpp
     KnobRecorderButton.h
-    LfoAssignmentButton.cpp
-    LfoAssignmentButton.h
-    LayerCakeLfoWidget.cpp
-    LayerCakeLfoWidget.h
-    LfoDragHelpers.h
     StartupDialog.cpp
     StartupDialog.h
+    # LFO components
+    lfo/LfoAssignmentButton.cpp
+    lfo/LfoAssignmentButton.h
+    lfo/LayerCakeLfoWidget.cpp
+    lfo/LayerCakeLfoWidget.h
+    lfo/LfoDragHelpers.h
+    lfo/LfoTriggerButton.cpp
+    lfo/LfoTriggerButton.h
+    lfo/LfoConnectionOverlay.cpp
+    lfo/LfoConnectionOverlay.h
 )
 
 target_link_libraries(LayerCakeApp PRIVATE
@@ -46,5 +51,4 @@ target_link_libraries(LayerCakeApp PRIVATE
     juce::juce_gui_basics
     juce::juce_gui_extra
 )
-
 

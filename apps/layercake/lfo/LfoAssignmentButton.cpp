@@ -1,5 +1,8 @@
 #include "LfoAssignmentButton.h"
 
+namespace LayerCakeApp
+{
+
 namespace
 {
 constexpr float kBorderThickness = 1.2f;
@@ -48,6 +51,8 @@ void LfoAssignmentButton::paint(juce::Graphics& g)
                      iconBounds.getBottom());
     g.setColour(juce::Colours::black.withAlpha(m_has_assignment ? 0.75f : 0.4f));
     g.fillPath(icon);
+
+    juce::ignoreUnused(radius);
 }
 
 void LfoAssignmentButton::resized()
@@ -131,4 +136,5 @@ void LfoAssignmentButton::trigger_click()
         onClicked();
 }
 
+} // namespace LayerCakeApp
 

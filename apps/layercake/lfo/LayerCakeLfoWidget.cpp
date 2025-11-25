@@ -65,33 +65,33 @@ void LfoParamRow::paint(juce::Graphics& g)
     // Don't paint if text editor is visible
     if (m_is_editing) return;
     
-    auto bounds = getLocalBounds().toFloat();
+    auto bounds = getLocalBounds();
     
-    // Monospace font for CLI aesthetic
+    // Monospace font for NES/CLI aesthetic
     juce::FontOptions fontOpts;
     fontOpts = fontOpts.withName(juce::Font::getDefaultMonospacedFontName())
-                       .withHeight(13.0f);
+                       .withHeight(11.0f);
     juce::Font monoFont(fontOpts);
     g.setFont(monoFont);
     
-    // Highlight if MIDI learning this parameter
+    // Highlight if MIDI learning this parameter (sharp rect)
     if (m_midi_manager != nullptr && 
         m_midi_manager->isLearning() && 
         m_midi_manager->getLearningParameterId() == m_config.parameterId)
     {
         g.setColour(m_accent.withAlpha(0.3f));
-        g.fillRoundedRectangle(bounds, 2.0f);
+        g.fillRect(bounds);
     }
     
     // Key in accent color
     g.setColour(m_accent);
     const juce::String keyText = m_config.key + ":";
-    const float keyWidth = 48.0f;  // Fixed width for alignment
+    const int keyWidth = 42;  // Fixed width for alignment
     g.drawText(keyText, bounds.removeFromLeft(keyWidth), juce::Justification::centredLeft, false);
     
-    // Value in white/light gray
-    g.setColour(m_is_dragging ? m_accent.brighter(0.3f) : juce::Colours::white.withAlpha(0.9f));
-    g.drawText(format_value(), bounds, juce::Justification::centredLeft, false);
+    // Value in white/light gray (NES white)
+    g.setColour(m_is_dragging ? m_accent : juce::Colour(0xfffcfcfc));
+    g.drawText(format_value(), bounds.toFloat(), juce::Justification::centredLeft, false);
     
     // Show MIDI CC indicator if mapped
     if (m_midi_manager != nullptr && m_config.parameterId.isNotEmpty())
@@ -100,9 +100,9 @@ void LfoParamRow::paint(juce::Graphics& g)
         if (cc >= 0)
         {
             g.setColour(m_accent.withAlpha(0.5f));
-            g.setFont(monoFont.withHeight(10.0f));
+            g.setFont(monoFont.withHeight(9.0f));
             const juce::String ccText = "CC" + juce::String(cc);
-            g.drawText(ccText, getLocalBounds().toFloat().removeFromRight(28.0f), 
+            g.drawText(ccText, getLocalBounds().removeFromRight(24), 
                        juce::Justification::centredRight, false);
         }
     }
@@ -407,14 +407,23 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
     m_title_label.setJustificationType(juce::Justification::centredLeft);
     juce::FontOptions titleOpts;
     titleOpts = titleOpts.withName(juce::Font::getDefaultMonospacedFontName())
-                         .withHeight(14.0f);
+                         .withHeight(12.0f);
     juce::Font titleFont(titleOpts);
     titleFont.setBold(true);
     m_title_label.setFont(titleFont);
     m_title_label.setColour(juce::Label::textColourId, accent);
+    m_title_label.setColour(juce::Label::backgroundWhenEditingColourId, juce::Colour(0xff202020));
+    m_title_label.setColour(juce::Label::outlineWhenEditingColourId, accent);
+    m_title_label.setColour(juce::TextEditor::textColourId, juce::Colour(0xfffcfcfc));
+    m_title_label.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff202020));
+    m_title_label.setColour(juce::TextEditor::highlightColourId, accent.withAlpha(0.4f));
+    m_title_label.setEditable(false, true, false);  // double-click to edit
+    m_title_label.addListener(this);
     addAndMakeVisible(m_title_label);
 
-    // Mode selector with all PNW waveforms
+    // Mode selector with all PNW waveforms - NES style
+    m_mode_selector.setLookAndFeel(&m_button_lnf);
+    m_mode_selector.setColour(juce::ComboBox::outlineColourId, accent);
     m_mode_selector.addItem("sin", 1);
     m_mode_selector.addItem("tri", 2);
     m_mode_selector.addItem("sq", 3);
@@ -436,6 +445,13 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
     m_next_page_button.setLookAndFeel(&m_button_lnf);
     m_next_page_button.onClick = [this]() { next_page(); };
     addAndMakeVisible(m_next_page_button);
+
+    m_preset_button.setButtonText("PRE");
+    m_preset_button.setTooltip("Save or load LFO presets");
+    m_preset_button.setLookAndFeel(&m_button_lnf);
+    m_preset_button.onClick = [this]() { show_preset_menu(); };
+    m_preset_button.setEnabled(false);
+    addAndMakeVisible(m_preset_button);
 
     m_page_label.setJustificationType(juce::Justification::centred);
     m_page_label.setFont(juce::Font(juce::FontOptions().withHeight(12.0f)));
@@ -491,8 +507,9 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
     m_params.push_back(makeParam("eRot", 0.0, 64.0, generator.get_euclidean_rotation(), 1.0, "", 0, false));
     m_params.push_back(makeParam("rSkip", 0.0, 1.0, generator.get_random_skip(), 0.01, "", 2, true));
 
-    // Page 2: loop
+    // Page 2: loop, bi (bipolar toggle)
     m_params.push_back(makeParam("loop", 0.0, 64.0, generator.get_loop_beats(), 1.0, "", 0, false));
+    m_params.push_back(makeParam("bi", 0.0, 1.0, generator.get_bipolar() ? 1.0 : 0.0, 1.0, "", 0, false));
 
     // Add all params as child components
     for (auto& param : m_params)
@@ -512,49 +529,59 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
     go_to_page(0);
     refresh_wave_preview();
     startTimerHz(10);
+    update_preset_button_state();
 }
 
 LayerCakeLfoWidget::~LayerCakeLfoWidget()
 {
+    m_mode_selector.setLookAndFeel(nullptr);
     m_prev_page_button.setLookAndFeel(nullptr);
     m_next_page_button.setLookAndFeel(nullptr);
+    m_preset_button.setLookAndFeel(nullptr);
 }
 
 void LayerCakeLfoWidget::paint(juce::Graphics& g)
 {
-    auto bounds = getLocalBounds().toFloat();
-    const float corner = juce::jmin(6.0f, bounds.getHeight() * 0.1f);
+    auto bounds = getLocalBounds();
     
-    // Dark terminal-like background
-    g.setColour(juce::Colour(0xff1a1a1a));
-    g.fillRoundedRectangle(bounds, corner);
+    // NES-style: sharp black background
+    g.setColour(juce::Colour(0xff101010));
+    g.fillRect(bounds);
     
-    // Accent border
-    g.setColour(m_accent_colour.withAlpha(0.5f));
-    g.drawRoundedRectangle(bounds.reduced(0.5f), corner, 1.0f);
+    // Pixel border - white outer, accent inner
+    g.setColour(juce::Colour(0xff404040));
+    g.drawRect(bounds, 1);
+    g.setColour(m_accent_colour.withAlpha(0.7f));
+    g.drawRect(bounds.reduced(1), 1);
     
-    // LED indicator showing current LFO value
+    // NES-style LED indicator (square, not round)
     if (!m_led_bounds.isEmpty())
     {
-        auto ledRect = m_led_bounds.toFloat();
-        
-        // Outer glow when value is high
-        if (m_current_lfo_value > 0.1f)
+        auto ledRect = m_led_bounds;
+        const float clampedValue = juce::jlimit(0.0f, 1.0f, m_current_lfo_value);
+        const float brightness = 0.2f + clampedValue * 0.8f;
+
+        // LED fill scales with LFO value
+        g.setColour(m_accent_colour.withMultipliedBrightness(brightness));
+        g.fillRect(ledRect);
+
+        // Simple highlight pixel for extra punch when active
+        if (clampedValue > 0.15f)
         {
-            const float glowAlpha = m_current_lfo_value * 0.4f;
-            g.setColour(m_accent_colour.withAlpha(glowAlpha));
-            g.fillEllipse(ledRect.expanded(2.0f));
+            g.setColour(juce::Colour(0xfffcfcfc).withAlpha(0.4f));
+            g.fillRect(ledRect.reduced(2));
         }
         
-        // LED background (dark when off)
-        const float brightness = 0.15f + m_current_lfo_value * 0.85f;
-        g.setColour(m_accent_colour.withMultipliedBrightness(brightness));
-        g.fillEllipse(ledRect);
-        
-        // Highlight for 3D effect
-        g.setColour(juce::Colours::white.withAlpha(0.3f * m_current_lfo_value));
-        g.fillEllipse(ledRect.reduced(ledRect.getWidth() * 0.3f)
-                            .translated(-ledRect.getWidth() * 0.1f, -ledRect.getHeight() * 0.1f));
+        // Pixel border on LED
+        g.setColour(juce::Colour(0xff000000));
+        g.drawRect(ledRect, 1);
+    }
+    
+    // Scanlines overlay for CRT feel
+    g.setColour(juce::Colour(0x20000000));
+    for (int y = bounds.getY(); y < bounds.getBottom(); y += 2)
+    {
+        g.drawHorizontalLine(y, static_cast<float>(bounds.getX()), static_cast<float>(bounds.getRight()));
     }
 }
 
@@ -593,8 +620,15 @@ void LayerCakeLfoWidget::resized()
     // Page navigation at bottom (no label, just < > buttons)
     auto pageNavArea = bounds.removeFromBottom(pageNavHeight);
     const int navButtonWidth = 16;
-    m_prev_page_button.setBounds(pageNavArea.removeFromLeft(navButtonWidth));
-    m_next_page_button.setBounds(pageNavArea.removeFromRight(navButtonWidth));
+    auto prevArea = pageNavArea.removeFromLeft(navButtonWidth);
+    auto nextArea = pageNavArea.removeFromRight(navButtonWidth);
+    m_prev_page_button.setBounds(prevArea);
+    m_next_page_button.setBounds(nextArea);
+    if (!pageNavArea.isEmpty())
+    {
+        auto presetArea = pageNavArea.reduced(2, 0);
+        m_preset_button.setBounds(presetArea);
+    }
     // m_page_label hidden - no "1/3" display
 
     bounds.removeFromBottom(4);
@@ -656,7 +690,61 @@ void LayerCakeLfoWidget::refresh_wave_preview()
 void LayerCakeLfoWidget::set_drag_label(const juce::String& label)
 {
     m_drag_label = label;
-    m_title_label.setText(label, juce::dontSendNotification);
+    m_title_label.setText(get_display_label(), juce::dontSendNotification);
+}
+
+void LayerCakeLfoWidget::set_custom_label(const juce::String& label)
+{
+    m_custom_label = label;
+    m_title_label.setText(get_display_label(), juce::dontSendNotification);
+}
+
+juce::String LayerCakeLfoWidget::get_display_label() const
+{
+    return m_custom_label.isNotEmpty() ? m_custom_label : m_drag_label;
+}
+
+void LayerCakeLfoWidget::set_on_label_changed(std::function<void(const juce::String&)> callback)
+{
+    m_label_changed_callback = std::move(callback);
+}
+
+void LayerCakeLfoWidget::set_preset_handlers(PresetHandlers handlers)
+{
+    m_preset_handlers = std::move(handlers);
+    update_preset_button_state();
+}
+
+void LayerCakeLfoWidget::labelTextChanged(juce::Label* labelThatHasChanged)
+{
+    if (labelThatHasChanged != &m_title_label) return;
+    
+    juce::String newLabel = m_title_label.getText().trim();
+    
+    // If empty or matches default, clear custom label
+    if (newLabel.isEmpty() || newLabel == m_drag_label)
+    {
+        m_custom_label = {};
+        m_title_label.setText(m_drag_label, juce::dontSendNotification);
+    }
+    else
+    {
+        m_custom_label = newLabel;
+    }
+    
+    if (m_label_changed_callback)
+        m_label_changed_callback(m_custom_label);
+}
+
+void LayerCakeLfoWidget::editorShown(juce::Label* label, juce::TextEditor& editor)
+{
+    if (label != &m_title_label) return;
+    
+    // Style the editor for NES look
+    juce::FontOptions opts;
+    opts = opts.withName(juce::Font::getDefaultMonospacedFontName()).withHeight(12.0f);
+    editor.setFont(juce::Font(opts));
+    editor.selectAll();
 }
 
 void LayerCakeLfoWidget::set_on_settings_changed(std::function<void()> callback)
@@ -670,8 +758,8 @@ void LayerCakeLfoWidget::sync_controls_from_generator()
     m_mode_selector.setSelectedItemIndex(index, juce::dontSendNotification);
     
     // Update all param values from generator
-    // Param order: div, depth, level, width, phase, delay, dly/, slop, eStep, eTrig, eRot, rSkip, loop
-    const std::array<double, 13> values = {
+    // Param order: div, depth, level, width, phase, delay, dly/, slop, eStep, eTrig, eRot, rSkip, loop, bi
+    const std::array<double, 14> values = {
         m_generator.get_clock_division(),
         m_generator.get_depth(),
         m_generator.get_level(),
@@ -684,7 +772,8 @@ void LayerCakeLfoWidget::sync_controls_from_generator()
         static_cast<double>(m_generator.get_euclidean_triggers()),
         static_cast<double>(m_generator.get_euclidean_rotation()),
         m_generator.get_random_skip(),
-        static_cast<double>(m_generator.get_loop_beats())
+        static_cast<double>(m_generator.get_loop_beats()),
+        m_generator.get_bipolar() ? 1.0 : 0.0
     };
 
     for (size_t i = 0; i < m_params.size() && i < values.size(); ++i)
@@ -714,6 +803,168 @@ void LayerCakeLfoWidget::set_current_value(float value)
         m_current_lfo_value = juce::jlimit(0.0f, 1.0f, value);
         repaint(m_led_bounds.expanded(2));
     }
+}
+
+void LayerCakeLfoWidget::update_preset_button_state()
+{
+    const bool hasSave = static_cast<bool>(m_preset_handlers.savePreset);
+    const bool hasLoad = static_cast<bool>(m_preset_handlers.loadPreset)
+                      && static_cast<bool>(m_preset_handlers.getPresetNames);
+    m_preset_button.setEnabled(hasSave || hasLoad);
+}
+
+void LayerCakeLfoWidget::show_preset_menu()
+{
+    if (!m_preset_button.isEnabled())
+        return;
+
+    juce::PopupMenu menu;
+    if (m_preset_handlers.savePreset)
+        menu.addItem("Save preset...", [this]() { prompt_save_preset(); });
+
+    juce::StringArray presetNames;
+    if (m_preset_handlers.getPresetNames)
+        presetNames = m_preset_handlers.getPresetNames();
+
+    if (m_preset_handlers.loadPreset && !presetNames.isEmpty())
+    {
+        if (menu.getNumItems() > 0)
+            menu.addSeparator();
+        juce::PopupMenu loadMenu;
+        for (auto& name : presetNames)
+        {
+            loadMenu.addItem(name, [this, name]() { attempt_load_preset(name); });
+        }
+        menu.addSubMenu("Load preset", loadMenu);
+    }
+
+    if (menu.getNumItems() == 0)
+        return;
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&m_preset_button));
+}
+
+void LayerCakeLfoWidget::prompt_save_preset()
+{
+    if (!m_preset_handlers.savePreset)
+        return;
+
+    auto* window = new juce::AlertWindow("Save LFO Preset",
+                                         "Enter a name for this preset:",
+                                         juce::AlertWindow::NoIcon);
+    window->addTextEditor("presetName", get_display_label().trim(), "Preset");
+    window->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    window->enterModalState(true,
+                            juce::ModalCallbackFunction::create([this, window](int result) {
+                                std::unique_ptr<juce::AlertWindow> cleanup(window);
+                                if (result == 0)
+                                    return;
+
+                                auto name = window->getTextEditorContents("presetName").trim();
+                                if (name.isEmpty())
+                                {
+                                    juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                                                                           "Save LFO Preset",
+                                                                           "Please enter a preset name.");
+                                    return;
+                                }
+
+                                if (!m_preset_handlers.savePreset)
+                                    return;
+
+                                auto slot = capture_slot_data();
+                                const bool ok = m_preset_handlers.savePreset(name, slot);
+                                if (!ok)
+                                {
+                                    juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                                                                           "Save LFO Preset",
+                                                                           "Failed to save preset \"" + name + "\".");
+                                }
+                            }),
+                            false);
+}
+
+void LayerCakeLfoWidget::attempt_load_preset(const juce::String& presetName)
+{
+    if (!m_preset_handlers.loadPreset)
+        return;
+
+    LayerCakePresetData::LfoSlotData slot;
+    if (!m_preset_handlers.loadPreset(presetName, slot))
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                                               "Load LFO Preset",
+                                               "Failed to load preset \"" + presetName + "\".");
+        return;
+    }
+
+    apply_slot_data(slot);
+}
+
+LayerCakePresetData::LfoSlotData LayerCakeLfoWidget::capture_slot_data() const
+{
+    LayerCakePresetData::LfoSlotData slot;
+    slot.label = m_custom_label;
+    slot.mode = static_cast<int>(m_generator.get_mode());
+    slot.rate_hz = m_generator.get_rate_hz();
+    slot.depth = m_generator.get_depth();
+    slot.tempo_sync = true;
+    slot.clock_division = m_generator.get_clock_division();
+    slot.pattern_length = m_generator.get_pattern_length();
+    slot.pattern_buffer = m_generator.get_pattern_buffer();
+    slot.level = m_generator.get_level();
+    slot.width = m_generator.get_width();
+    slot.phase_offset = m_generator.get_phase_offset();
+    slot.delay = m_generator.get_delay();
+    slot.delay_div = m_generator.get_delay_div();
+    slot.slop = m_generator.get_slop();
+    slot.euclidean_steps = m_generator.get_euclidean_steps();
+    slot.euclidean_triggers = m_generator.get_euclidean_triggers();
+    slot.euclidean_rotation = m_generator.get_euclidean_rotation();
+    slot.random_skip = m_generator.get_random_skip();
+    slot.loop_beats = m_generator.get_loop_beats();
+    slot.bipolar = m_generator.get_bipolar();
+    slot.random_seed = m_generator.get_random_seed();
+    return slot;
+}
+
+void LayerCakeLfoWidget::apply_slot_data(const LayerCakePresetData::LfoSlotData& data)
+{
+    const int maxMode = static_cast<int>(flower::LfoWaveform::SmoothRandom);
+    const int mode = juce::jlimit(0, maxMode, data.mode);
+    m_generator.set_mode(static_cast<flower::LfoWaveform>(mode));
+    m_generator.set_rate_hz(juce::jlimit(0.01f, 20.0f, data.rate_hz));
+    m_generator.set_depth(juce::jlimit(0.0f, 1.0f, data.depth));
+    m_generator.set_clock_division(data.clock_division);
+    m_generator.set_pattern_length(data.pattern_length);
+    m_generator.set_pattern_buffer(data.pattern_buffer);
+    m_generator.set_level(juce::jlimit(0.0f, 1.0f, data.level));
+    m_generator.set_width(juce::jlimit(0.0f, 1.0f, data.width));
+    m_generator.set_phase_offset(juce::jlimit(0.0f, 1.0f, data.phase_offset));
+    m_generator.set_delay(juce::jlimit(0.0f, 1.0f, data.delay));
+    m_generator.set_delay_div(juce::jmax(1, data.delay_div));
+    m_generator.set_slop(juce::jlimit(0.0f, 1.0f, data.slop));
+    m_generator.set_euclidean_steps(juce::jmax(0, data.euclidean_steps));
+    m_generator.set_euclidean_triggers(juce::jmax(0, data.euclidean_triggers));
+    m_generator.set_euclidean_rotation(juce::jmax(0, data.euclidean_rotation));
+    m_generator.set_random_skip(juce::jlimit(0.0f, 1.0f, data.random_skip));
+    m_generator.set_loop_beats(juce::jmax(0, data.loop_beats));
+    m_generator.set_bipolar(data.bipolar);
+    if (data.random_seed != 0)
+        m_generator.set_random_seed(data.random_seed);
+    m_generator.reset_phase();
+
+    if (data.label.isNotEmpty())
+        set_custom_label(data.label);
+    else
+        set_custom_label({});
+
+    if (m_label_changed_callback)
+        m_label_changed_callback(get_display_label());
+
+    sync_controls_from_generator();
+    notify_settings_changed();
 }
 
 void LayerCakeLfoWidget::mouseEnter(const juce::MouseEvent& /*event*/)
@@ -752,8 +1003,8 @@ void LayerCakeLfoWidget::update_generator_settings()
 {
     m_generator.set_mode(waveform_from_index(m_mode_selector.getSelectedItemIndex()));
     
-    // Param order: div, depth, level, width, phase, delay, dly/, slop, eStep, eTrig, eRot, rSkip, loop
-    if (m_params.size() >= 13)
+    // Param order: div, depth, level, width, phase, delay, dly/, slop, eStep, eTrig, eRot, rSkip, loop, bi
+    if (m_params.size() >= 14)
     {
         if (m_params[0] != nullptr)
             m_generator.set_clock_division(static_cast<float>(m_params[0]->get_value()));
@@ -781,6 +1032,8 @@ void LayerCakeLfoWidget::update_generator_settings()
             m_generator.set_random_skip(static_cast<float>(m_params[11]->get_value()));
         if (m_params[12] != nullptr)
             m_generator.set_loop_beats(static_cast<int>(m_params[12]->get_value()));
+        if (m_params[13] != nullptr)
+            m_generator.set_bipolar(m_params[13]->get_value() > 0.5);
     }
         
     notify_settings_changed();
@@ -895,36 +1148,58 @@ LayerCakeLfoWidget::WavePreview::WavePreview(LayerCakeLfoWidget& owner)
 
 void LayerCakeLfoWidget::WavePreview::paint(juce::Graphics& g)
 {
-    auto bounds = getLocalBounds().toFloat();
-    const float corner = juce::jmin(4.0f, bounds.getHeight() * 0.15f);
+    auto bounds = getLocalBounds();
     const auto accent = m_owner.get_accent_colour();
     
-    // Darker background for wave preview
-    g.setColour(juce::Colour(0xff0d0d0d));
-    g.fillRoundedRectangle(bounds, corner);
-    g.setColour(accent.withAlpha(0.3f));
-    g.drawRoundedRectangle(bounds, corner, 0.8f);
+    // NES-style: sharp black background
+    g.setColour(juce::Colour(0xff080808));
+    g.fillRect(bounds);
+    
+    // Pixel border
+    g.setColour(accent.withAlpha(0.4f));
+    g.drawRect(bounds, 1);
 
     if (m_points.empty()) return;
 
-    juce::Path wave;
-    const float midY = bounds.getCentreY();
-    const float amplitude = bounds.getHeight() * 0.4f;
-    const float stepX = bounds.getWidth() / juce::jmax<size_t>(1, m_points.size() - 1);
-
-    for (size_t i = 0; i < m_points.size(); ++i)
-    {
-        const float x = bounds.getX() + static_cast<float>(i) * stepX;
-        const float value = juce::jlimit(-1.0f, 1.0f, m_points[i]);
-        const float y = midY - value * amplitude;
-        if (i == 0)
-            wave.startNewSubPath(x, y);
-        else
-            wave.lineTo(x, y);
-    }
+    // NES-style stepped/blocky waveform
+    const int midY = bounds.getCentreY();
+    const int amplitude = bounds.getHeight() / 2 - 2;
+    const int num_cols = juce::jmin(32, static_cast<int>(m_points.size())); // Limit columns for chunky look
+    const int col_width = juce::jmax(1, bounds.getWidth() / num_cols);
+    const int samples_per_col = juce::jmax(1, static_cast<int>(m_points.size()) / num_cols);
 
     g.setColour(accent);
-    g.strokePath(wave, juce::PathStrokeType(1.5f));
+    
+    for (int col = 0; col < num_cols; ++col)
+    {
+        // Get average value for this column
+        float sum = 0.0f;
+        const int start_idx = col * samples_per_col;
+        const int end_idx = juce::jmin(start_idx + samples_per_col, static_cast<int>(m_points.size()));
+        for (int i = start_idx; i < end_idx; ++i)
+        {
+            sum += m_points[static_cast<size_t>(i)];
+        }
+        const float avg = sum / static_cast<float>(end_idx - start_idx);
+        const float value = juce::jlimit(-1.0f, 1.0f, avg);
+        
+        // Draw as vertical bar from center
+        const int x = bounds.getX() + col * col_width;
+        const int bar_height = static_cast<int>(std::abs(value) * amplitude);
+        
+        if (value >= 0)
+        {
+            g.fillRect(x, midY - bar_height, col_width - 1, bar_height);
+        }
+        else
+        {
+            g.fillRect(x, midY, col_width - 1, bar_height);
+        }
+    }
+    
+    // Center line
+    g.setColour(accent.withAlpha(0.3f));
+    g.drawHorizontalLine(midY, static_cast<float>(bounds.getX()), static_cast<float>(bounds.getRight()));
 }
 
 void LayerCakeLfoWidget::WavePreview::resized()
@@ -972,8 +1247,103 @@ void LayerCakeLfoWidget::WavePreview::begin_drag(const juce::MouseEvent& event)
 
 juce::Font LayerCakeLfoWidget::SmallButtonLookAndFeel::getTextButtonFont(juce::TextButton& button, int buttonHeight)
 {
-    auto base = juce::LookAndFeel_V4::getTextButtonFont(button, buttonHeight);
-    return base.withHeight(9.0f);
+    juce::ignoreUnused(button, buttonHeight);
+    // NES-style small monospace font
+    juce::FontOptions opts;
+    opts = opts.withName(juce::Font::getDefaultMonospacedFontName()).withHeight(10.0f);
+    return juce::Font(opts);
+}
+
+void LayerCakeLfoWidget::SmallButtonLookAndFeel::drawButtonBackground(juce::Graphics& g,
+                                                                       juce::Button& button,
+                                                                       const juce::Colour& backgroundColour,
+                                                                       bool shouldDrawButtonAsHighlighted,
+                                                                       bool shouldDrawButtonAsDown)
+{
+    juce::ignoreUnused(backgroundColour);
+    auto bounds = button.getLocalBounds();
+    
+    // NES-style sharp rectangle button
+    if (shouldDrawButtonAsDown)
+        g.setColour(juce::Colour(0xff404040));
+    else if (shouldDrawButtonAsHighlighted)
+        g.setColour(juce::Colour(0xff303030));
+    else
+        g.setColour(juce::Colour(0xff202020));
+    
+    g.fillRect(bounds);
+    
+    // Pixel border
+    g.setColour(juce::Colour(0xff606060));
+    g.drawRect(bounds, 1);
+}
+
+void LayerCakeLfoWidget::SmallButtonLookAndFeel::drawButtonText(juce::Graphics& g,
+                                                                 juce::TextButton& button,
+                                                                 bool shouldDrawButtonAsHighlighted,
+                                                                 bool shouldDrawButtonAsDown)
+{
+    juce::ignoreUnused(shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
+    auto font = getTextButtonFont(button, button.getHeight());
+    g.setFont(font);
+    g.setColour(juce::Colour(0xfffcfcfc));
+    g.drawText(button.getButtonText(), button.getLocalBounds(), juce::Justification::centred, false);
+}
+
+void LayerCakeLfoWidget::SmallButtonLookAndFeel::drawComboBox(juce::Graphics& g,
+                                                               int width, int height,
+                                                               bool isButtonDown,
+                                                               int buttonX, int buttonY,
+                                                               int buttonW, int buttonH,
+                                                               juce::ComboBox& box)
+{
+    juce::ignoreUnused(buttonX, buttonY, buttonW, buttonH);
+    auto bounds = juce::Rectangle<int>(0, 0, width, height);
+    
+    // NES-style sharp rectangle
+    if (isButtonDown)
+        g.setColour(juce::Colour(0xff303030));
+    else
+        g.setColour(juce::Colour(0xff181818));
+    
+    g.fillRect(bounds);
+    
+    // Pixel border - use accent color from parent if available
+    auto accent = box.findColour(juce::ComboBox::outlineColourId);
+    if (accent == juce::Colour())
+        accent = juce::Colour(0xff606060);
+    g.setColour(accent.withAlpha(0.6f));
+    g.drawRect(bounds, 1);
+    
+    // Small arrow indicator (NES style - just a simple triangle made of pixels)
+    const int arrowSize = 4;
+    const int arrowX = width - arrowSize - 4;
+    const int arrowY = (height - arrowSize) / 2;
+    
+    g.setColour(juce::Colour(0xfffcfcfc));
+    for (int row = 0; row < arrowSize / 2 + 1; ++row)
+    {
+        const int rowWidth = arrowSize - row * 2;
+        const int rowX = arrowX + row;
+        g.fillRect(rowX, arrowY + row, rowWidth, 1);
+    }
+}
+
+juce::Font LayerCakeLfoWidget::SmallButtonLookAndFeel::getComboBoxFont(juce::ComboBox& box)
+{
+    juce::ignoreUnused(box);
+    juce::FontOptions opts;
+    opts = opts.withName(juce::Font::getDefaultMonospacedFontName()).withHeight(10.0f);
+    return juce::Font(opts);
+}
+
+void LayerCakeLfoWidget::SmallButtonLookAndFeel::positionComboBoxText(juce::ComboBox& box, juce::Label& label)
+{
+    // Leave room for arrow on right
+    label.setBounds(2, 0, box.getWidth() - 12, box.getHeight());
+    label.setFont(getComboBoxFont(box));
+    label.setColour(juce::Label::textColourId, juce::Colour(0xfffcfcfc));
 }
 
 } // namespace LayerCakeApp
+

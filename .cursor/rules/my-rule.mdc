@@ -10,3 +10,39 @@ alwaysApply: true
 - add debug statements everytime you write an early return path. 
 
 - **UI Layout Rule**: In `resized()` and similar UI layout functions, declare all sizes, margins, and spacing values as meaningful `const` variables at the top of the function, organized into logical groups (margins, label sizes, spacing, button sizes, etc.). Then use these named constants throughout the layout code instead of magic numbers. This makes the code maintainable and easy to adjust.
+
+# documentation style guide
+
+when writing documentation (readmes, docs, guides) for this repo, please follow these guidelines to match the established voice.
+
+## voice & tone
+
+*   **lowercase headers**: all headers (`#`, `##`, `###`) should be entirely lowercase.
+*   **casual & enthusiastic**: write in a personal, slightly informal "hacker/artist" voice.
+    *   *good*: "back home? 🌻", "make your sound move when it hits", "bugs?"
+    *   *bad*: "Return to Home", "Onset Trigger Functionality", "Reporting Issues"
+*   **direct**: address the user directly ("you'll need to...", "type in what you want...").
+*   **concise**: avoid bloat. get straight to the point.
+
+## formatting
+
+*   **images**: use clear screenshots where applicable. standard markdown syntax: `![Alt Text](path/to/image.png)`.
+*   **code blocks**: use language-specific fencing for commands (e.g., `bash`).
+*   **links**: link generously to relevant project pages, releases, or external resources (like huggingface spaces).
+
+## structure
+
+1.  **title**: project/app name (lowercase if stylistic, but titles can vary).
+2.  **hero image**: if available, place a hero image near the top.
+3.  **elevator pitch**: 1-2 sentences explaining what it is. 
+4.  **download/install**: direct links to releases or simple build steps.
+5.  **features/usage**: broken down by interesting capability (e.g., "onset triggers", "backend setup").
+6.  **bugs?**: always end with a section inviting users to open an issue if they find bugs.
+
+## specific terms
+
+*   **text2sound4all**: always lowercase 't'.
+*   **layercake**: always lowercase 'l'.
+*   **CLEAT**: always uppercase (it's an acronym/proper noun for the system).
+*   **huggingface**: lowercase 'h' is fine in casual context, but capitalize properly if linking formally. (repo trend: lowercase/casual).
+

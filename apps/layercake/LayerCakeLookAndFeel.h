@@ -56,7 +56,7 @@ private:
                                      bool isActive,
                                      bool isHighlighted,
                                      bool isDown) const noexcept;
-    juce::Colour control_border_colour(ControlButtonType type, bool isEnabled) const noexcept;
+    juce::Colour control_border_colour(ControlButtonType type, bool isEnabled, bool isActive = false) const noexcept;
 
     juce::Colour m_background;
     juce::Colour m_panel;

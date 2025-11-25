@@ -130,6 +130,7 @@ LayerCakeLfoUGen& LayerCakeLfoUGen::operator=(const LayerCakeLfoUGen& other)
         m_euclidean_rotation = other.m_euclidean_rotation;
         m_random_skip = other.m_random_skip;
         m_loop_beats = other.m_loop_beats;
+        m_bipolar = other.m_bipolar;
         
         m_current_step_skipped = other.m_current_step_skipped;
         m_current_step_slop_offset = other.m_current_step_slop_offset;
@@ -224,6 +225,11 @@ void LayerCakeLfoUGen::set_random_skip(float skip)
 void LayerCakeLfoUGen::set_loop_beats(int beats)
 {
     m_loop_beats = juce::jmax(0, beats);
+}
+
+void LayerCakeLfoUGen::set_bipolar(bool bipolar)
+{
+    m_bipolar = bipolar;
 }
 
 void LayerCakeLfoUGen::set_random_seed(uint64_t seed)
@@ -347,6 +353,10 @@ float LayerCakeLfoUGen::advance_clocked(double master_beats)
     // Apply level
     raw_value *= m_level;
     
+    // Convert to unipolar if needed (0 to 1 instead of -1 to 1)
+    if (!m_bipolar)
+        raw_value = raw_value * 0.5f + 0.5f;
+    
     m_last_value = raw_value;
     return m_last_value;
 }
@@ -370,6 +380,10 @@ float LayerCakeLfoUGen::process_delta(double delta_seconds)
     
     // Apply level in free-running mode too
     raw_value *= m_level;
+    
+    // Convert to unipolar if needed (0 to 1 instead of -1 to 1)
+    if (!m_bipolar)
+        raw_value = raw_value * 0.5f + 0.5f;
     
     m_last_value = raw_value;
     return m_last_value;

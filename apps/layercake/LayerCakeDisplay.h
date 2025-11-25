@@ -32,7 +32,7 @@ private:
     juce::Rectangle<float> lane_bounds_for_index(int layer_index) const;
     bool has_supported_audio_extension(const juce::File& file) const;
     juce::Colour colour_for_voice(size_t voice_index);
-    void update_invaders(float width, float height);
+    void update_ants(float width, float height);
     void regenerate_funfetti_texture(int width, int height);
     void animate_funfetti_texture();
 
@@ -45,13 +45,21 @@ private:
     std::unordered_map<size_t, juce::Colour> m_voice_colours;
     std::atomic<float> m_position_indicator{ -1.0f };
 
-    struct Invader
+    struct Ant
     {
         juce::Point<float> position;
         juce::Point<float> velocity;
+        int frame{0};
+        int direction{0}; // 0=right, 1=down, 2=left, 3=up
     };
-    std::vector<Invader> m_invaders;
+    std::vector<Ant> m_ants;
     int m_waveform_counter{0};
+    int m_animation_counter{0};
+    juce::Image m_ant_sprite_sheet;
+    static constexpr int kAntSpriteSize = 16;
+    static constexpr int kAntFrameCount = 4;
+    static constexpr int kAntDirectionCount = 4;
+    void generate_ant_sprite_sheet();
     juce::Image m_funfetti_texture;
     juce::Point<float> m_noise_scroll{0.0f, 0.0f};
     juce::Point<float> m_noise_velocity{0.18f, -0.11f};

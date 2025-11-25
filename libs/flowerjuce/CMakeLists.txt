@@ -103,6 +103,7 @@ target_sources(flowerjuce PRIVATE
     Components/ConfigManager.cpp
     Components/VariationSelector.cpp
     Components/SinksWindow.cpp
+    Components/MultiChannelMeter.cpp
 )
 
 # Components headers
@@ -122,6 +123,7 @@ target_sources(flowerjuce PRIVATE
     Components/ModelParameterDialog.h
     Components/AudioInfoDisplay.h
     Components/SinksWindow.h
+    Components/MultiChannelMeter.h
 )
 
 # CustomLookAndFeel header

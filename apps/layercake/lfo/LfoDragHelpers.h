@@ -53,5 +53,3 @@ inline bool parse_description(const juce::var& description,
 
 } // namespace LayerCakeApp::LfoDragHelpers
 
-
-

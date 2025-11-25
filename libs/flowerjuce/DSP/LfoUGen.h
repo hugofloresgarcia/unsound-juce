@@ -82,6 +82,10 @@ public:
     void set_loop_beats(int beats);  // 0 = off, else loop length in beats
     int get_loop_beats() const noexcept { return m_loop_beats; }
 
+    // Polarity: bipolar (-1 to 1) or unipolar (0 to 1)
+    void set_bipolar(bool bipolar);
+    bool get_bipolar() const noexcept { return m_bipolar; }
+
     // Random seed for reproducible patterns
     void set_random_seed(uint64_t seed);
     uint64_t get_random_seed() const noexcept { return m_random_seed; }
@@ -145,6 +149,7 @@ private:
     int m_euclidean_rotation{0};
     float m_random_skip{0.0f};
     int m_loop_beats{0};
+    bool m_bipolar{true};  // true = -1 to 1, false = 0 to 1
     
     // Current step state
     bool m_current_step_skipped{false};

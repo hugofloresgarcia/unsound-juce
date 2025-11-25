@@ -12,6 +12,9 @@ struct LayerCakePresetData
     static constexpr size_t kNumLfos = 8;
     struct LfoSlotData
     {
+        // Custom label (empty = use default "LFO N")
+        juce::String label;
+        
         // Basic parameters
         int mode{0};
         float rate_hz{0.5f};
@@ -42,6 +45,9 @@ struct LayerCakePresetData
         // Loop
         int loop_beats{0};
         
+        // Polarity
+        bool bipolar{true};  // true = -1 to 1, false = 0 to 1
+        
         // Random seed for reproducible patterns
         uint64_t random_seed{0};
     };
@@ -69,6 +75,7 @@ public:
     const juce::StringArray& get_palettes() const { return m_palette_names; }
     const juce::StringArray& get_scenes() const { return m_scene_names; }
     const juce::StringArray& get_knobsets() const { return m_knobset_names; }
+    const juce::StringArray& get_lfo_presets() const { return m_lfo_preset_names; }
 
     bool save_palette(const juce::String& name, const LayerBufferArray& layers);
     bool load_palette(const juce::String& name, LayerBufferArray& out_layers) const;
@@ -86,13 +93,19 @@ public:
                     LayerBufferArray& out_layers) const;
     bool delete_scene(const juce::String& name);
 
+    bool save_lfo_preset(const juce::String& name, const LayerCakePresetData::LfoSlotData& slot);
+    bool load_lfo_preset(const juce::String& name, LayerCakePresetData::LfoSlotData& out_slot) const;
+    bool delete_lfo_preset(const juce::String& name);
+
 private:
     juce::File palettes_root() const;
     juce::File scenes_root() const;
     juce::File knobsets_root() const;
+    juce::File lfo_presets_root() const;
     juce::File palette_folder(const juce::String& name) const;
     juce::File scene_folder(const juce::String& name) const;
     juce::File knobset_file(const juce::String& name) const;
+    juce::File lfo_preset_file(const juce::String& name) const;
     static juce::String sanitize_name(const juce::String& name);
 
     bool write_layers(const juce::File& folder, const LayerBufferArray& layers) const;
@@ -101,9 +114,11 @@ private:
     void refresh_palettes();
     void refresh_scenes();
     void refresh_knobsets();
+    void refresh_lfo_presets();
 
     juce::StringArray m_palette_names;
     juce::StringArray m_scene_names;
     juce::StringArray m_knobset_names;
+    juce::StringArray m_lfo_preset_names;
     juce::File m_root;
 };
