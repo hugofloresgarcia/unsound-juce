@@ -1,4 +1,5 @@
 #include "LooperReadHead.h"
+#include <flowerjuce/Debug/DebugAudioRate.h>
 #include <cmath>
 
 // TODO: Remove this debug macro after fixing segmentation fault
@@ -32,19 +33,12 @@ void LooperReadHead::prepare(double sample_rate)
 
 float LooperReadHead::process_sample(bool& wrapped)
 {   
-    static int call_count = 0;
-    call_count++;
-    bool is_first_call = (call_count == 1);
-    
-    if (is_first_call)
-        DBG_SEGFAULT("ENTRY: LooperReadHead::process_sample");
+    DBG_AUDIO_RATE(2000, { DBG_SEGFAULT("ENTRY: LooperReadHead::process_sample"); });;
 
     // Interpolate sample at current position
-    if (is_first_call)
-        DBG_SEGFAULT("Calling interpolate_sample, pos=" + juce::String(m_pos.load()));
+    DBG_AUDIO_RATE(2000, { DBG_SEGFAULT("Calling interpolate_sample, pos=" + juce::String(m_pos.load())); });
     float sample_value = interpolate_sample(m_pos.load());
-    if (is_first_call)
-        DBG_SEGFAULT("interpolate_sample returned, value=" + juce::String(sample_value));
+    DBG_AUDIO_RATE(2000, { DBG_SEGFAULT("interpolate_sample returned, value=" + juce::String(sample_value)); });
     
     // Apply level gain (convert dB to linear)
     float gain = juce::Decibels::decibelsToGain(m_level_db.load());
@@ -64,8 +58,7 @@ float LooperReadHead::process_sample(bool& wrapped)
     // Advance playhead and check for wrap
     wrapped = advance_playhead();
     
-    if (is_first_call)
-        DBG_SEGFAULT("EXIT: LooperReadHead::process_sample");
+    DBG_AUDIO_RATE(2000, { DBG_SEGFAULT("EXIT: LooperReadHead::process_sample"); });
     return sample_value;
 }
 
@@ -137,39 +130,28 @@ void LooperReadHead::sync_to(float position)
 
 float LooperReadHead::interpolate_sample(float position) const
 {
-    static int call_count = 0;
-    call_count++;
-    bool is_first_call = (call_count == 1);
+    DBG_AUDIO_RATE(2000, { DBG_SEGFAULT("ENTRY: LooperReadHead::interpolate_sample, position=" + juce::String(position)); });
     
-    if (is_first_call)
-        DBG_SEGFAULT("ENTRY: LooperReadHead::interpolate_sample, position=" + juce::String(position));
-    
-    if (is_first_call)
-        DBG_SEGFAULT("Getting buffer reference");
+    DBG_AUDIO_RATE(2000, { DBG_SEGFAULT("Getting buffer reference"); });
     const auto& buffer = m_tape_loop.get_buffer();
     
-    if (is_first_call)
-        DBG_SEGFAULT("Buffer size=" + juce::String(buffer.size()));
+    DBG_AUDIO_RATE(2000, { DBG_SEGFAULT("Buffer size=" + juce::String(buffer.size())); });
     
     // Safety check: if buffer is empty, return silence
     if (buffer.empty()){
         juce::Logger::writeToLog("WARNING: Buffer is empty in interpolate_sample");
-        if (is_first_call)
-            DBG_SEGFAULT("Buffer is empty, returning 0.0f");
+        DBG_AUDIO_RATE(2000, { DBG_SEGFAULT("Buffer is empty, returning 0.0f"); });
         return 0.0f;
     }
     
-    if (is_first_call)
-        DBG_SEGFAULT("Calculating indices");
+    DBG_AUDIO_RATE(2000, { DBG_SEGFAULT("Calculating indices"); });
     size_t index0 = static_cast<size_t>(position) % buffer.size();
     size_t index1 = (index0 + 1) % buffer.size();
     float fraction = position - std::floor(position);
     
-    if (is_first_call)
-        DBG_SEGFAULT("Accessing buffer[" + juce::String(index0) + "] and buffer[" + juce::String(index1) + "]");
+    DBG_AUDIO_RATE(2000, { DBG_SEGFAULT("Accessing buffer[" + juce::String(index0) + "] and buffer[" + juce::String(index1) + "]"); });
     float result = buffer[index0] * (1.0f - fraction) + buffer[index1] * fraction;
     
-    if (is_first_call)
-        DBG_SEGFAULT("EXIT: LooperReadHead::interpolate_sample, result=" + juce::String(result));
+    DBG_AUDIO_RATE(2000, { DBG_SEGFAULT("EXIT: LooperReadHead::interpolate_sample, result=" + juce::String(result)); });
     return result;
 }

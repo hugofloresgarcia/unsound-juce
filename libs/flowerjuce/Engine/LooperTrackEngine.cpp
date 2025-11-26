@@ -148,36 +148,32 @@ bool LooperTrackEngine::process_block(const float* const* input_channel_data,
                                      int num_samples,
                                      bool should_debug)
 {
-    static int call_count = 0;
-    call_count++;
-    bool is_first_call = (call_count == 1);
-    
-    if (is_first_call)
+    if (should_debug)
         DBG_SEGFAULT("ENTRY: LooperTrackEngine::process_block, num_samples=" + juce::String(num_samples));
     
     auto& track = m_track_state;
-    if (is_first_call)
+    if (should_debug)
         DBG_SEGFAULT("Got track reference");
 
     // Safety check: if buffer is not allocated, return early
     {
         const juce::ScopedLock sl(track.m_tape_loop.m_lock);
-        if (is_first_call)
+        if (should_debug)
             DBG_SEGFAULT("Checking if buffer is empty");
         if (track.m_tape_loop.get_buffer().empty()) {
             juce::Logger::writeToLog("WARNING: TapeLoop buffer is empty in process_block");
-            if (is_first_call)
+            if (should_debug)
                 DBG_SEGFAULT("Buffer is empty, returning false");
             return false;
         }
-        if (is_first_call)
+        if (should_debug)
             DBG_SEGFAULT("Buffer is not empty, size=" + juce::String(track.m_tape_loop.get_buffer().size()));
     }
 
     bool is_playing = track.m_is_playing.load();
     bool has_existing_audio = track.m_tape_loop.m_has_recorded.load();
     
-    if (is_first_call && should_debug)
+    if (should_debug)
     {
         DBG("[LooperTrackEngine] Track state check:");
         DBG("  is_playing: " << (is_playing ? "YES" : "NO"));
@@ -249,20 +245,20 @@ bool LooperTrackEngine::process_block(const float* const* input_channel_data,
         juce::HeapBlock<float> mono_buffer(num_samples);
         const float* mono_input_channel_data[1] = { mono_buffer.getData() };
 
-        if (is_first_call)
+        if (should_debug)
             DBG_SEGFAULT("Entering sample loop, num_samples=" + juce::String(num_samples));
         
         // First pass: collect playback samples and handle recording
         float max_mono_level = 0.0f;
         for (int sample = 0; sample < num_samples; ++sample)
         {
-            if (is_first_call && sample == 0)
+            if (should_debug && sample == 0)
                 DBG_SEGFAULT("First sample iteration");
             
             float current_position = track.m_read_head.get_pos();
 
             // Handle recording (overdub or new)
-            process_recording(track, input_channel_data, num_input_channels, current_position, sample, is_first_call && sample == 0);
+            process_recording(track, input_channel_data, num_input_channels, current_position, sample, should_debug && sample == 0);
 
             // Get raw sample value BEFORE level gain/mute (pre-fader) for onset detection
             // Must hold lock since get_raw_sample() accesses tape loop buffer
@@ -285,7 +281,7 @@ bool LooperTrackEngine::process_block(const float* const* input_channel_data,
             
             // Playback (read head processes the sample AND advances) - applies level gain and mute
             bool wrapped = false;
-            float sample_value = process_playback(track, wrapped, is_first_call && sample == 0);
+            float sample_value = process_playback(track, wrapped, should_debug && sample == 0);
             
             // Store sample in mono buffer for panner processing
             mono_buffer[sample] = sample_value;
@@ -312,7 +308,7 @@ bool LooperTrackEngine::process_block(const float* const* input_channel_data,
         // Use panner to distribute mono audio to all output channels with proper gains
         track.m_panner->process_block(mono_input_channel_data, 1, output_channel_data, num_output_channels, num_samples);
         
-        if (is_first_call && should_debug)
+        if (should_debug)
         {
             DBG("[LooperTrackEngine] Panner applied - routing to all " << num_output_channels << " channels");
             DBG_SEGFAULT("Sample loop completed");

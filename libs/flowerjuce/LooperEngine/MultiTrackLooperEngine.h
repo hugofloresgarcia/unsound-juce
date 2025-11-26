@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <flowerjuce/DSP/MultiChannelLoudnessMeter.h>
+#include <flowerjuce/Debug/DebugAudioRate.h>
 #include <array>
 #include <atomic>
 
@@ -97,24 +98,12 @@ public:
                                          int num_samples,
                                          const juce::AudioIODeviceCallbackContext& context) override
     {
-        static bool first_callback = true;
-        static int callback_count = 0;
-        callback_count++;
-
-        if (first_callback)
-        {
-            DBG_SEGFAULT("ENTRY: audioDeviceIOCallbackWithContext (FIRST CALLBACK)");
-            juce::Logger::writeToLog("*** First audio callback! InputChannels: " + juce::String(num_input_channels)
+        DBG_AUDIO_RATE(10000, {
+            DBG_SEGFAULT("ENTRY: audioDeviceIOCallbackWithContext (periodic)");
+            juce::Logger::writeToLog("*** Audio callback running! InputChannels: " + juce::String(num_input_channels)
                 + " OutputChannels: " + juce::String(num_output_channels)
                 + " NumSamples: " + juce::String(num_samples));
-            first_callback = false;
-        }
-
-        // Log every 10000 callbacks to verify it's running
-        if (callback_count % 10000 == 0)
-        {
-            juce::Logger::writeToLog("Audio callback running - count: " + juce::String(callback_count));
-        }
+        });
 
         // Clear output buffers
         DBG_SEGFAULT("Clearing output buffers, num_output_channels=" + juce::String(num_output_channels));
@@ -128,17 +117,10 @@ public:
         DBG_SEGFAULT("Output buffers cleared");
 
         // Process each track
-        static int debug_counter = 0;
-        debug_counter++;
-        bool should_debug = debug_counter % 2000 == 0;
-        if (should_debug)
-        {
+        bool should_debug = false;
+        DBG_AUDIO_RATE(2000, {
+            should_debug = true;
             juce::Logger::writeToLog("\n--------------------------------");
-        }
-
-        DBG_SEGFAULT("Processing tracks, m_num_tracks=" + juce::String(m_num_tracks));
-        if (should_debug)
-        {
             auto* device = m_audio_device_manager.getCurrentAudioDevice();
             DBG("[MultiTrackLooperEngineTemplate] Processing " << m_num_tracks << " tracks");
             DBG("  num_input_channels: " << num_input_channels);
@@ -150,7 +132,10 @@ public:
                 DBG("  Active output channels: " << active_output_channels.toString(2));
                 DBG("  Number of active output channels: " << active_output_channels.countNumberOfSetBits());
             }
-        }
+        });
+
+        DBG_SEGFAULT("Processing tracks, m_num_tracks=" + juce::String(m_num_tracks));
+        
         for (int i = 0; i < m_num_tracks; ++i)
         {
             DBG_SEGFAULT("Processing track " + juce::String(i));

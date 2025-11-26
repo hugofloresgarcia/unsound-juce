@@ -139,6 +139,11 @@ target_sources(flowerjuce PRIVATE
     Sync/InternalSyncStrategy.h
 )
 
+# Debug headers
+target_sources(flowerjuce PRIVATE
+    Debug/DebugAudioRate.h
+)
+
 # CustomLookAndFeel header
 target_sources(flowerjuce PRIVATE
     CustomLookAndFeel.h

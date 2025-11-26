@@ -1,4 +1,5 @@
 #include "LooperTrackEngine.h"
+#include <flowerjuce/Debug/DebugAudioRate.h>
 #include <cmath>
 
 // TODO: Remove this debug macro after fixing segmentation fault
@@ -364,11 +365,9 @@ void LooperTrackEngine::process_recording(TrackState& track, const float* const*
             input_sample = input_channel_data[input_channel][sample];
         }
         
-        if (is_first_call)
-            DBG_SEGFAULT("Calling writeHead.process_sample");
+        DBG_AUDIO_RATE(2000, { DBG_SEGFAULT("Calling writeHead.process_sample"); });
         track.m_write_head.process_sample(input_sample, current_position);
-        if (is_first_call)
-            DBG_SEGFAULT("writeHead.process_sample completed");
+        DBG_AUDIO_RATE(2000, { DBG_SEGFAULT("writeHead.process_sample completed"); });
     }
 }
 
@@ -377,21 +376,19 @@ float LooperTrackEngine::process_playback(TrackState& track, bool& wrapped, bool
 {
     const juce::ScopedLock sl(track.m_tape_loop.m_lock);
     
-    if (is_first_call)
-    {
+    DBG_AUDIO_RATE(2000, {
         DBG_SEGFAULT("Calling readHead.process_sample");
         DBG("[LooperTrackEngine] Track playback state:");
         DBG("  is_playing: " << (track.m_is_playing.load() ? "YES" : "NO"));
         DBG("  has_recorded_audio: " << (track.m_tape_loop.m_recorded_length.load() > 0 ? "YES" : "NO"));
         DBG("  recorded_length: " << track.m_tape_loop.m_recorded_length.load());
         DBG("  readHead position: " << track.m_read_head.get_pos());
-    }
+    });
     float sample_value = track.m_read_head.process_sample(wrapped);
-    if (is_first_call)
-    {
+    DBG_AUDIO_RATE(2000, {
         DBG_SEGFAULT("readHead.process_sample completed, value=" + juce::String(sample_value) + ", wrapped=" + juce::String(wrapped ? "YES" : "NO"));
         DBG("[LooperTrackEngine] Track sample_value: " << sample_value);
-    }
+    });
     
     return sample_value;
 }
