@@ -38,7 +38,7 @@ private:
     std::unique_ptr<ableton::Link> m_link;
     ableton::link::HostTimeFilter<ableton::link::platform::Clock> m_host_time_filter;
     std::unique_ptr<ableton::Link::SessionState> m_session_state;
-
+    
     std::chrono::microseconds m_output_time;
     uint64_t m_total_samples{0};
     

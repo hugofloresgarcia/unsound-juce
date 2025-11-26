@@ -10,7 +10,7 @@ public:
 
     // Prepare the sync strategy.
     virtual void prepare(double sample_rate, int block_size) = 0;
-
+    
     // Get the current beat position.
     // For Link, this is mapped from the current system time.
     // For Internal, this is incremented by the engine.

@@ -24,7 +24,7 @@ void LinkSyncStrategy::prepare(double sample_rate, int block_size)
 }
 
 double LinkSyncStrategy::get_current_beat()
-{
+    {
     // This returns the beat at the START of the current block
     // which was calculated in process()
     return m_block_start_beat;

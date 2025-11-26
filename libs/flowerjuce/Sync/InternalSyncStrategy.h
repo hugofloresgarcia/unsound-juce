@@ -12,7 +12,7 @@ class InternalSyncStrategy : public SyncInterface
 public:
     InternalSyncStrategy();
     ~InternalSyncStrategy() override = default;
-
+    
     void prepare(double sample_rate, int block_size) override;
     double get_current_beat() override;
     double get_tempo() const override;
