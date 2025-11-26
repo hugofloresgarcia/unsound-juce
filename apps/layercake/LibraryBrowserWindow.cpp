@@ -3,7 +3,7 @@
 
 namespace
 {
-constexpr int kRowHeight = 38;
+constexpr int kRowHeight = 24;
 } // namespace
 
 class LibraryRowButtonLookAndFeel : public juce::LookAndFeel_V4
@@ -27,7 +27,7 @@ public:
     {
         addAndMakeVisible(m_name_label);
         m_name_label.setJustificationType(juce::Justification::centredLeft);
-        m_name_label.setFont(juce::Font(juce::FontOptions().withHeight(14.0f)));
+        m_name_label.setFont(juce::Font(juce::FontOptions().withHeight(12.0f)));
 
         for (auto* button : { &m_save_button, &m_load_button, &m_delete_button })
         {
@@ -64,9 +64,9 @@ public:
 
     void resized() override
     {
-        const int margin = 6;
-        const int buttonWidth = 24;
-        const int buttonSpacing = 4;
+        const int margin = 2;
+        const int buttonWidth = 20;
+        const int buttonSpacing = 2;
 
         auto bounds = getLocalBounds().reduced(margin);
         auto buttonArea = bounds.removeFromRight(3 * buttonWidth + 2 * buttonSpacing);
