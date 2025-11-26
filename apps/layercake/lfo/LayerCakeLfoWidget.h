@@ -32,6 +32,7 @@ public:
         juce::String suffix;
         int decimals{2};  // Decimal places for display
         bool displayAsPercent{false};  // If true and range is 0-1, display as 0-99
+        std::function<juce::String(double)> valueFormatter; // Optional custom formatter
     };
 
     LfoParamRow(const Config& config, Shared::MidiLearnManager* midiManager);
@@ -202,6 +203,8 @@ private:
         Slop,
         Delay,
         Phase,
+        Scale,
+        QRange,
         DelayDivision,
         EuclideanSteps,
         EuclideanTriggers,

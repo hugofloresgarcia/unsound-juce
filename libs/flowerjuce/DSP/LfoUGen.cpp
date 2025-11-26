@@ -1,5 +1,6 @@
 #include "LfoUGen.h"
 #include <cmath>
+#include <array>
 
 namespace flower
 {
@@ -82,6 +83,68 @@ float envelope_wave(float phase, float width) noexcept
     return 0.0f;
 }
 
+// Scale helper
+// Returns the closest semitone in the scale
+float snap_to_scale(float semitones, LfoScale scale)
+{
+    // Scale definitions
+    static const std::array<bool, 12> major = {1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1};
+    static const std::array<bool, 12> minor = {1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0};
+    static const std::array<bool, 12> pent_major = {1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 0};
+    static const std::array<bool, 12> pent_minor = {1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0};
+    static const std::array<bool, 12> whole_tone = {1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0};
+    static const std::array<bool, 12> diminished = {1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0};
+    
+    const std::array<bool, 12>* scale_notes = nullptr;
+    
+    switch (scale)
+    {
+        case LfoScale::Chromatic:
+            return std::round(semitones);
+            
+        case LfoScale::Major: scale_notes = &major; break;
+        case LfoScale::Minor: scale_notes = &minor; break;
+        case LfoScale::PentatonicMajor: scale_notes = &pent_major; break;
+        case LfoScale::PentatonicMinor: scale_notes = &pent_minor; break;
+        case LfoScale::WholeTone: scale_notes = &whole_tone; break;
+        case LfoScale::Diminished: scale_notes = &diminished; break;
+        case LfoScale::Off:
+        default:
+            return semitones;
+    }
+    
+    // Precise nearest neighbor search in float space
+    if (scale_notes)
+    {
+        int center = static_cast<int>(std::round(semitones));
+        float best_val = static_cast<float>(center);
+        float min_dist = 1000.0f;
+        bool found_any = false;
+        
+        // Check +/- 6 semitones to guarantee finding a scale tone (max gap is small)
+        for (int offset = -6; offset <= 6; ++offset)
+        {
+            int candidate = center + offset;
+            int note_idx = candidate % 12;
+            if (note_idx < 0) note_idx += 12;
+            
+            if ((*scale_notes)[(size_t)note_idx])
+            {
+                float dist = std::abs(semitones - static_cast<float>(candidate));
+                if (!found_any || dist < min_dist)
+                {
+                    min_dist = dist;
+                    best_val = static_cast<float>(candidate);
+                    found_any = true;
+                }
+            }
+        }
+        return best_val;
+    }
+    
+    return std::round(semitones);
+}
+
 } // namespace
 
 LayerCakeLfoUGen::LayerCakeLfoUGen()
@@ -100,6 +163,10 @@ LayerCakeLfoUGen& LayerCakeLfoUGen::operator=(const LayerCakeLfoUGen& other)
     {
         m_mode = other.m_mode;
         m_rate_hz = other.m_rate_hz;
+        
+        m_scale = other.m_scale;
+        m_quantize_range = other.m_quantize_range;
+        
         m_phase = other.m_phase;
         m_last_value = other.m_last_value;
         m_has_time_reference = other.m_has_time_reference;
@@ -146,6 +213,16 @@ void LayerCakeLfoUGen::set_rate_hz(float rate_hz)
     if (std::abs(clamped - m_rate_hz) <= 1.0e-6f)
         return;
     m_rate_hz = clamped;
+}
+
+void LayerCakeLfoUGen::set_scale(LfoScale scale)
+{
+    m_scale = scale;
+}
+
+void LayerCakeLfoUGen::set_quantize_range(float semitones)
+{
+    m_quantize_range = juce::jmax(0.0f, semitones);
 }
 
 void LayerCakeLfoUGen::set_clock_division(float div)
@@ -235,7 +312,23 @@ void LayerCakeLfoUGen::set_random_seed(uint64_t seed)
 void LayerCakeLfoUGen::reset_phase(double normalized_phase)
 {
     m_phase = juce::jlimit(0.0, 1.0, normalized_phase);
-    m_last_value = render_wave(static_cast<float>(m_phase));
+    float raw_value = render_wave(static_cast<float>(m_phase));
+    
+    // Apply level
+    raw_value *= m_level;
+    
+    
+    // Convert to unipolar if needed (0 to 1 instead of -1 to 1)
+    if (!m_bipolar)
+    raw_value = raw_value * 0.5f + 0.5f;
+
+    // Apply quantization (if enabled)
+    if (m_scale != LfoScale::Off)
+    {
+        raw_value = apply_quantization(raw_value);
+    }
+
+    m_last_value = raw_value;
     
     // Reset step tracking
     m_last_step_index = -1;
@@ -303,12 +396,9 @@ float LayerCakeLfoUGen::advance_clocked(double master_beats)
         m_current_step_skipped = should_skip_step(current_step);
     }
     
-    // If step is skipped, output 0 (or hold last value for certain modes)
+    // If step is skipped, hold the last value (sample and hold behavior)
     if (m_current_step_skipped)
     {
-        // For random/smooth random with quantization, we might want to hold
-        // For now, output 0 when skipped
-        m_last_value = 0.0f;
         return m_last_value;
     }
     
@@ -347,6 +437,13 @@ float LayerCakeLfoUGen::advance_clocked(double master_beats)
     // Convert to unipolar if needed (0 to 1 instead of -1 to 1)
     if (!m_bipolar)
         raw_value = raw_value * 0.5f + 0.5f;
+
+    // Apply quantization
+    if (m_scale != LfoScale::Off)
+    {
+        raw_value = apply_quantization(raw_value);
+    }
+    
     
     m_last_value = raw_value;
     return m_last_value;
@@ -375,9 +472,32 @@ float LayerCakeLfoUGen::process_delta(double delta_seconds)
     // Convert to unipolar if needed (0 to 1 instead of -1 to 1)
     if (!m_bipolar)
         raw_value = raw_value * 0.5f + 0.5f;
+
+    // Apply quantization
+    if (m_scale != LfoScale::Off)
+    {
+        raw_value = apply_quantization(raw_value);
+    }
     
     m_last_value = raw_value;
     return m_last_value;
+}
+
+float LayerCakeLfoUGen::apply_quantization(float raw_value) const noexcept
+{    
+    float semitones = raw_value * m_quantize_range; 
+    
+    float quantized_semitones = snap_to_scale(semitones, m_scale);
+    
+    // Convert back
+    // If semitones was 24, we want 1.0 back.
+    // Avoid division by zero
+    if (m_quantize_range < 0.001f) return raw_value;
+    
+    // show the raw value and the quantized value
+    // DBG("raw_value: " + juce::String(raw_value) + " quantized_semitones: " + juce::String(quantized_semitones));
+    
+    return quantized_semitones / m_quantize_range;
 }
 
 float LayerCakeLfoUGen::render_wave(float normalized_phase) const noexcept

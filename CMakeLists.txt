@@ -22,5 +22,8 @@ add_subdirectory(libs)
 # Add apps
 add_subdirectory(apps)
 
+# Add tests
+add_subdirectory(tests)
+
 # Add plugins
 # add_subdirectory(plugins)

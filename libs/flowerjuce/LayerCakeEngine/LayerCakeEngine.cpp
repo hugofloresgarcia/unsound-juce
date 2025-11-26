@@ -31,6 +31,8 @@ void copy_lfo_settings(const flower::LayerCakeLfoUGen& source, flower::LayerCake
     dest.set_loop_beats(source.get_loop_beats());
     dest.set_bipolar(source.get_bipolar());
     dest.set_random_seed(source.get_random_seed());
+    dest.set_scale(source.get_scale());
+    dest.set_quantize_range(source.get_quantize_range());
 }
 } // namespace
 

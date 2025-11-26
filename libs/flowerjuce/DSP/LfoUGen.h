@@ -17,6 +17,18 @@ enum class LfoWaveform
     SmoothRandom
 };
 
+enum class LfoScale
+{
+    Off = 0,
+    Chromatic,
+    Major,
+    Minor,
+    PentatonicMajor,
+    PentatonicMinor,
+    WholeTone,
+    Diminished
+};
+
 class LayerCakeLfoUGen
 {
 public:
@@ -78,6 +90,13 @@ public:
     void set_loop_beats(int beats);  // 0 = off, else loop length in beats
     int get_loop_beats() const noexcept { return m_loop_beats; }
 
+    // Scale Quantization
+    void set_scale(LfoScale scale);
+    LfoScale get_scale() const noexcept { return m_scale; }
+
+    void set_quantize_range(float semitones); // Default e.g. 24.0
+    float get_quantize_range() const noexcept { return m_quantize_range; }
+
     // Polarity: bipolar (-1 to 1) or unipolar (0 to 1)
     void set_bipolar(bool bipolar);
     bool get_bipolar() const noexcept { return m_bipolar; }
@@ -104,6 +123,7 @@ public:
 private:
     float render_wave(float normalized_phase) const noexcept;
     float apply_width_skew(float phase) const noexcept;
+    float apply_quantization(float raw_value) const noexcept;
     void handle_cycle_wrap();
     void randomize_targets();
     
@@ -114,6 +134,10 @@ private:
 
     LfoWaveform m_mode{LfoWaveform::Sine};
     float m_rate_hz{0.5f};
+    
+    // Quantization
+    LfoScale m_scale{LfoScale::Off};
+    float m_quantize_range{24.0f};
     
     // Clocked params
     float m_clock_division{1.0f}; // 1.0 = 1 step per beat (quarter note)

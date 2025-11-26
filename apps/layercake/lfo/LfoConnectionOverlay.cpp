@@ -7,7 +7,7 @@ void LfoConnectionOverlay::paint(juce::Graphics& g)
 {
     if (m_targets.empty())
     {
-        DBG("LfoConnectionOverlay::paint early return (no targets)");
+        // DBG("LfoConnectionOverlay::paint early return (no targets)");
         return;
     }
 

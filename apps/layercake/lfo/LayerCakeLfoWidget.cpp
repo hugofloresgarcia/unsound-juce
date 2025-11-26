@@ -24,20 +24,52 @@ flower::LfoWaveform waveform_from_index(int index)
     }
 }
 
-int waveform_to_index(flower::LfoWaveform waveform)
-{
-    switch (waveform)
+    int waveform_to_index(flower::LfoWaveform waveform)
     {
-        case flower::LfoWaveform::Triangle: return 1;
-        case flower::LfoWaveform::Square: return 2;
-        case flower::LfoWaveform::Gate: return 3;
-        case flower::LfoWaveform::Envelope: return 4;
-        case flower::LfoWaveform::Random: return 5;
-        case flower::LfoWaveform::SmoothRandom: return 6;
-        case flower::LfoWaveform::Sine:
-        default: return 0;
+        switch (waveform)
+        {
+            case flower::LfoWaveform::Triangle: return 1;
+            case flower::LfoWaveform::Square: return 2;
+            case flower::LfoWaveform::Gate: return 3;
+            case flower::LfoWaveform::Envelope: return 4;
+            case flower::LfoWaveform::Random: return 5;
+            case flower::LfoWaveform::SmoothRandom: return 6;
+            case flower::LfoWaveform::Sine:
+            default: return 0;
+        }
     }
-}
+
+    flower::LfoScale scale_from_index(int id)
+    {
+        switch (id)
+        {
+            case 2: return flower::LfoScale::Chromatic;
+            case 3: return flower::LfoScale::Major;
+            case 4: return flower::LfoScale::Minor;
+            case 5: return flower::LfoScale::PentatonicMajor;
+            case 6: return flower::LfoScale::PentatonicMinor;
+            case 7: return flower::LfoScale::WholeTone;
+            case 8: return flower::LfoScale::Diminished;
+            case 1:
+            default: return flower::LfoScale::Off;
+        }
+    }
+
+    int scale_to_index(flower::LfoScale scale)
+    {
+        switch (scale)
+        {
+            case flower::LfoScale::Chromatic: return 2;
+            case flower::LfoScale::Major: return 3;
+            case flower::LfoScale::Minor: return 4;
+            case flower::LfoScale::PentatonicMajor: return 5;
+            case flower::LfoScale::PentatonicMinor: return 6;
+            case flower::LfoScale::WholeTone: return 7;
+            case flower::LfoScale::Diminished: return 8;
+            case flower::LfoScale::Off:
+            default: return 1;
+        }
+    }
 } // namespace
 
 //==============================================================================
@@ -198,7 +230,11 @@ juce::String LfoParamRow::format_value() const
 {
     juce::String result;
     
-    if (is_percent_display())
+    if (m_config.valueFormatter)
+    {
+        result = m_config.valueFormatter(m_value);
+    }
+    else if (is_percent_display())
     {
         // Display 0-1 as 0-99
         const int displayValue = static_cast<int>(std::round(m_value * 99.0));
@@ -445,6 +481,8 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
     m_mode_selector.addListener(this);
     addAndMakeVisible(m_mode_selector);
 
+    // Scale selector removed (replaced by ParamRow)
+
     // Page navigation buttons
     m_prev_page_button.setButtonText("<");
     m_prev_page_button.setLookAndFeel(&m_button_lnf);
@@ -477,7 +515,8 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
                                         double step,
                                         const juce::String& suffix = "",
                                         int decimals = 2,
-                                        bool displayAsPercent = false) -> std::unique_ptr<LfoParamRow>
+                                        bool displayAsPercent = false,
+                                        std::function<juce::String(double)> formatter = nullptr) -> std::unique_ptr<LfoParamRow>
     {
         LfoParamRow::Config config;
         config.key = key;
@@ -489,6 +528,7 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
         config.suffix = suffix;
         config.decimals = decimals;
         config.displayAsPercent = displayAsPercent;
+        config.valueFormatter = formatter;
         auto row = std::make_unique<LfoParamRow>(config, m_midi_manager);
         row->set_accent_colour(m_accent_colour);
         row->set_on_value_changed([this]() { update_generator_settings(); });
@@ -514,6 +554,24 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
     assignParam(ParamSlot::Slop, makeParam("slop", 0.0, 1.0, generator.get_slop(), 0.01, "", 2, true));
     assignParam(ParamSlot::Delay, makeParam("delay", 0.0, 1.0, generator.get_delay(), 0.01, "", 2, true));
     assignParam(ParamSlot::Phase, makeParam("phase", 0.0, 1.0, generator.get_phase_offset(), 0.01, "", 2, true));
+    
+    auto scaleFormatter = [](double val) {
+        int idx = static_cast<int>(std::round(val));
+        switch (idx) {
+            case 1: return juce::String("Off");
+            case 2: return juce::String("Chr");
+            case 3: return juce::String("Maj");
+            case 4: return juce::String("Min");
+            case 5: return juce::String("PMj");
+            case 6: return juce::String("PMn");
+            case 7: return juce::String("WT");
+            case 8: return juce::String("Dim");
+            default: return juce::String("?");
+        }
+    };
+    assignParam(ParamSlot::Scale, makeParam("scale", 1.0, 8.0, static_cast<double>(scale_to_index(generator.get_scale())), 1.0, "", 0, false, scaleFormatter));
+    assignParam(ParamSlot::QRange, makeParam("grid", 1.0, 96.0, generator.get_quantize_range(), 1.0, "st", 0, false));
+    
     assignParam(ParamSlot::DelayDivision, makeParam("dly/", 1.0, 16.0, generator.get_delay_div(), 1.0, "", 0, false));
     assignParam(ParamSlot::EuclideanSteps, makeParam("eStep", 0.0, 64.0, generator.get_euclidean_steps(), 1.0, "", 0, false));
     assignParam(ParamSlot::EuclideanTriggers, makeParam("eTrig", 0.0, 64.0, generator.get_euclidean_triggers(), 1.0, "", 0, false));
@@ -812,6 +870,10 @@ void LayerCakeLfoWidget::sync_controls_from_generator()
         row->set_value(m_generator.get_delay(), false);
     if (auto* row = paramFor(ParamSlot::Phase))
         row->set_value(m_generator.get_phase_offset(), false);
+    if (auto* row = paramFor(ParamSlot::Scale))
+        row->set_value(static_cast<double>(scale_to_index(m_generator.get_scale())), false);
+    if (auto* row = paramFor(ParamSlot::QRange))
+        row->set_value(static_cast<double>(m_generator.get_quantize_range()), false);
     if (auto* row = paramFor(ParamSlot::DelayDivision))
         row->set_value(static_cast<double>(m_generator.get_delay_div()), false);
     if (auto* row = paramFor(ParamSlot::EuclideanSteps))
@@ -1077,6 +1139,10 @@ void LayerCakeLfoWidget::update_generator_settings()
         m_generator.set_delay(static_cast<float>(row->get_value()));
     if (auto* row = paramFor(ParamSlot::Phase))
         m_generator.set_phase_offset(static_cast<float>(row->get_value()));
+    if (auto* row = paramFor(ParamSlot::Scale))
+        m_generator.set_scale(scale_from_index(static_cast<int>(row->get_value())));
+    if (auto* row = paramFor(ParamSlot::QRange))
+        m_generator.set_quantize_range(static_cast<float>(row->get_value()));
     if (auto* row = paramFor(ParamSlot::DelayDivision))
         m_generator.set_delay_div(static_cast<int>(row->get_value()));
     if (auto* row = paramFor(ParamSlot::EuclideanSteps))
