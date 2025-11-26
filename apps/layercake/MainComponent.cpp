@@ -334,7 +334,29 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
     addAndMakeVisible(m_link_button);
 
     auto captureLayers = [this]() { return capture_layer_buffers(); };
-    auto applyLayers = [this](const LayerBufferArray& buffers) { apply_layer_buffers(buffers); };
+    auto applyLayers = [this](const LayerBufferArray& buffers) { 
+        // If normalize setting is on, normalize the incoming buffers
+        LayerBufferArray processedBuffers = buffers;
+        if (m_engine.get_normalize_on_load())
+        {
+            for (auto& buffer : processedBuffers)
+            {
+                if (!buffer.has_audio || buffer.samples.empty()) continue;
+                
+                float max_val = 0.0f;
+                for (size_t i = 0; i < buffer.recorded_length; ++i)
+                    max_val = juce::jmax(max_val, std::abs(buffer.samples[i]));
+
+                if (max_val > 0.0001f)
+                {
+                    const float scale = 1.0f / max_val;
+                    juce::FloatVectorOperations::multiply(buffer.samples.data(), scale, static_cast<int>(buffer.recorded_length));
+                    DBG("MainComponent::applyLayers normalized peak=" + juce::String(max_val));
+                }
+            }
+        }
+        apply_layer_buffers(processedBuffers); 
+    };
     auto captureKnobset = [this]() { return capture_knobset_data(); };
     auto applyKnobset = [this](const LayerCakePresetData& data) { apply_knobset(data); };
 
@@ -369,6 +391,9 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
     if (m_midi_mappings_file.existsAsFile())
         m_midi_learn_manager.loadMappings(m_midi_mappings_file);
 
+    m_settings_file = appDataDir.getChildFile("settings.xml");
+    load_settings();
+
     setSize(900, 880);
     configure_audio_device(std::move(initialDeviceSetup));
     startTimerHz(30);
@@ -400,6 +425,7 @@ MainComponent::~MainComponent()
         m_midi_mappings_file.getParentDirectory().createDirectory();
         m_midi_learn_manager.saveMappings(m_midi_mappings_file);
     }
+    save_settings();
     removeKeyListener(&m_midi_learn_overlay);
     removeKeyListener(this);
     m_device_manager.removeAudioCallback(this);
@@ -646,14 +672,14 @@ void MainComponent::open_settings_window()
 {
     if (m_settings_window == nullptr)
     {
-        m_settings_window = std::make_unique<LayerCakeSettingsWindow>(m_device_manager);
+        m_settings_window = std::make_unique<LayerCakeSettingsWindow>(m_device_manager, m_engine);
     }
     m_settings_window->setVisible(true);
     m_settings_window->toFront(true);
 }
 
-SettingsComponent::SettingsComponent(juce::AudioDeviceManager& deviceManager)
-    : m_device_manager(deviceManager)
+SettingsComponent::SettingsComponent(juce::AudioDeviceManager& deviceManager, LayerCakeEngine& engine)
+    : m_device_manager(deviceManager), m_engine(engine)
 {
     m_input_label.setText("Input Channel:", juce::dontSendNotification);
     addAndMakeVisible(m_input_label);
@@ -661,8 +687,15 @@ SettingsComponent::SettingsComponent(juce::AudioDeviceManager& deviceManager)
     m_input_selector.onChange = [this] { apply_selected_input_channels(); };
     addAndMakeVisible(m_input_selector);
     
+    m_normalize_toggle.setButtonText("Normalize Audio on Import");
+    m_normalize_toggle.setToggleState(m_engine.get_normalize_on_load(), juce::dontSendNotification);
+    m_normalize_toggle.onClick = [this] {
+        m_engine.set_normalize_on_load(m_normalize_toggle.getToggleState());
+    };
+    addAndMakeVisible(m_normalize_toggle);
+
     refresh_input_channel_selector();
-    setSize(300, 200);
+    setSize(300, 250);
 }
 
 void SettingsComponent::paint(juce::Graphics& g)
@@ -673,10 +706,14 @@ void SettingsComponent::paint(juce::Graphics& g)
 void SettingsComponent::resized()
 {
     auto area = getLocalBounds().reduced(20);
+    
     auto inputRow = area.removeFromTop(30);
     m_input_label.setBounds(inputRow.removeFromLeft(100));
     inputRow.removeFromLeft(10);
     m_input_selector.setBounds(inputRow);
+
+    area.removeFromTop(10);
+    m_normalize_toggle.setBounds(area.removeFromTop(30));
 }
 
 void SettingsComponent::refresh_input_channel_selector()
@@ -1554,6 +1591,24 @@ void MainComponent::update_lfo_connection_overlay(int lfo_index, bool hovered)
     }
 
     m_lfo_connection_overlay.repaint();
+}
+
+void MainComponent::load_settings()
+{
+    if (!m_settings_file.existsAsFile()) return;
+
+    juce::XmlDocument xmlDoc(m_settings_file);
+    std::unique_ptr<juce::XmlElement> root = xmlDoc.getDocumentElement();
+    if (root == nullptr || !root->hasTagName("LayerCakeSettings")) return;
+
+    m_engine.set_normalize_on_load(root->getBoolAttribute("normalizeOnLoad", false));
+}
+
+void MainComponent::save_settings()
+{
+    juce::XmlElement root("LayerCakeSettings");
+    root.setAttribute("normalizeOnLoad", m_engine.get_normalize_on_load());
+    root.writeTo(m_settings_file);
 }
 
 } // namespace LayerCakeApp

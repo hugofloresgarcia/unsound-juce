@@ -33,7 +33,7 @@ using namespace layercake; // Import new namespace
 class SettingsComponent : public juce::Component
 {
 public:
-    SettingsComponent(juce::AudioDeviceManager& deviceManager);
+    SettingsComponent(juce::AudioDeviceManager& deviceManager, LayerCakeEngine& engine);
     void paint(juce::Graphics& g) override;
     void resized() override;
 
@@ -42,10 +42,13 @@ public:
 
 private:
     juce::AudioDeviceManager& m_device_manager;
+    LayerCakeEngine& m_engine;
 
     juce::Label m_input_label;
     juce::ComboBox m_input_selector;
     juce::StringArray m_input_channel_names;
+    
+    juce::ToggleButton m_normalize_toggle;
 };
 
 class SettingsButtonLookAndFeel : public LayerCakeLookAndFeel
@@ -57,14 +60,14 @@ public:
 class LayerCakeSettingsWindow : public juce::DialogWindow
 {
 public:
-    LayerCakeSettingsWindow(juce::AudioDeviceManager& deviceManager)
+    LayerCakeSettingsWindow(juce::AudioDeviceManager& deviceManager, LayerCakeEngine& engine)
         : juce::DialogWindow("settings", juce::Colours::darkgrey, true, true)
     {
         setUsingNativeTitleBar(true);
-        auto* content = new SettingsComponent(deviceManager);
+        auto* content = new SettingsComponent(deviceManager, engine);
         setContentOwned(content, true);
         setResizable(false, false);
-        centreWithSize(300, 200);
+        centreWithSize(300, 250);
     }
 
     void closeButtonPressed() override { setVisible(false); }
@@ -132,6 +135,8 @@ private:
     void apply_lfo_state(const LayerCakePresetData& data);
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
     void open_settings_window();
+    void load_settings();
+    void save_settings();
 
     LayerCakeEngine m_engine;
     juce::AudioDeviceManager m_device_manager;
@@ -171,6 +176,7 @@ private:
     bool m_preset_panel_visible{true};
     GrainState m_manual_state;
     juce::File m_midi_mappings_file;
+    juce::File m_settings_file;
     bool m_loading_knob_values{false};
     struct LfoSlot
     {

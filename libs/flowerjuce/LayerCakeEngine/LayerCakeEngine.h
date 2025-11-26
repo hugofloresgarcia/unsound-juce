@@ -52,6 +52,9 @@ public:
     float get_master_gain_db() const { return m_master_gain_db.load(); }
     double get_sample_rate() const { return m_sample_rate; }
 
+    void set_normalize_on_load(bool normalize) { m_normalize_on_load.store(normalize); }
+    bool get_normalize_on_load() const { return m_normalize_on_load.load(); }
+
     // Clock / Transport
     void set_sync_strategy(std::unique_ptr<flower::SyncInterface> sync);
     flower::SyncInterface* get_sync_strategy() const { return m_sync.get(); }
@@ -136,6 +139,7 @@ private:
     std::atomic<bool> m_is_prepared{false};
     std::atomic<bool> m_record_enabled{false};
     std::atomic<float> m_master_gain_db{0.0f};
+    std::atomic<bool> m_normalize_on_load{false};
 
     double m_sample_rate{44100.0};
     int m_block_size{0};

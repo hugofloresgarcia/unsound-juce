@@ -782,6 +782,21 @@ bool LayerCakeEngine::load_layer_from_file(int layer_index, const juce::File& au
     if (samples_to_copy < max_samples)
         std::fill(buffer.begin() + static_cast<ptrdiff_t>(samples_to_copy), buffer.end(), 0.0f);
 
+    // Optional Normalization
+    if (m_normalize_on_load.load())
+    {
+        float max_val = 0.0f;
+        for (size_t i = 0; i < samples_to_copy; ++i)
+            max_val = juce::jmax(max_val, std::abs(buffer[i]));
+
+        if (max_val > 0.0001f)
+        {
+            const float scale = 1.0f / max_val;
+            juce::FloatVectorOperations::multiply(buffer.data(), scale, static_cast<int>(samples_to_copy));
+            DBG("LayerCakeEngine::load_layer_from_file normalized peak=" + juce::String(max_val));
+        }
+    }
+
     loop.m_recorded_length.store(samples_to_copy);
     loop.m_has_recorded.store(true);
 
