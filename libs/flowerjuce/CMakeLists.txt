@@ -71,23 +71,27 @@ target_sources(flowerjuce PRIVATE
 
 # Panners source files
 target_sources(flowerjuce PRIVATE
-    Panners/PanningUtils.cpp
-    Panners/StereoPanner.cpp
-    Panners/QuadPanner.cpp
-    Panners/CLEATPanner.cpp
-    Panners/Panner2DComponent.cpp
-    Panners/PathGeneratorButtons.cpp
+    Panners/DSP/PanningUtils.cpp
+    Panners/DSP/StereoPanner.cpp
+    Panners/DSP/StereoPanner2D.cpp
+    Panners/DSP/QuadPanner.cpp
+    Panners/DSP/CLEATPanner.cpp
+    Panners/DSP/PathPlayer.cpp
+    Panners/Components/Panner2DComponent.cpp
+    Panners/Components/PathGeneratorButtons.cpp
 )
 
 # Panners headers
 target_sources(flowerjuce PRIVATE
-    Panners/Panner.h
-    Panners/PanningUtils.h
-    Panners/StereoPanner.h
-    Panners/QuadPanner.h
-    Panners/CLEATPanner.h
-    Panners/Panner2DComponent.h
-    Panners/PathGeneratorButtons.h
+    Panners/DSP/Panner.h
+    Panners/DSP/PanningUtils.h
+    Panners/DSP/StereoPanner.h
+    Panners/DSP/StereoPanner2D.h
+    Panners/DSP/QuadPanner.h
+    Panners/DSP/CLEATPanner.h
+    Panners/DSP/PathPlayer.h
+    Panners/Components/Panner2DComponent.h
+    Panners/Components/PathGeneratorButtons.h
 )
 
 # Components source files (renamed from Shared)

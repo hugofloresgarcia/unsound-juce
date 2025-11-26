@@ -4,7 +4,7 @@
 #include "LayerCakeTypes.h"
 #include <flowerjuce/LooperEngine/LooperReadHead.h>
 #include <flowerjuce/LooperEngine/TapeLoop.h>
-#include <flowerjuce/Panners/PanningUtils.h>
+#include <flowerjuce/Panners/DSP/PanningUtils.h>
 #include <juce_core/juce_core.h>
 #include <memory>
 #include <array>

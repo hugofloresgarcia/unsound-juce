@@ -64,7 +64,7 @@ flowerjuce/LFO/
 
 **goal:** separate panner DSP from UI, extract trajectory playback into reusable `PathPlayer` class.
 
-**status:** not started
+**status:** complete
 
 ### current structure
 
@@ -97,26 +97,26 @@ flowerjuce/Panners/
 
 ### tasks
 
-- [ ] create `flowerjuce/Panners/DSP/` directory
-- [ ] move DSP files into `Panners/DSP/`:
-  - [ ] `Panner.h`
-  - [ ] `StereoPanner.h/.cpp`
-  - [ ] `QuadPanner.h/.cpp`
-  - [ ] `CLEATPanner.h/.cpp`
-  - [ ] `PanningUtils.h/.cpp`
-- [ ] create `flowerjuce/Panners/Components/` directory
-- [ ] move UI files into `Panners/Components/`:
-  - [ ] `Panner2DComponent.h/.cpp`
-  - [ ] `PathGeneratorButtons.h/.cpp`
-- [ ] create `PathPlayer` class (extract from `Panner2DComponent`):
-  - [ ] trajectory storage and playback index
-  - [ ] `start_playback()`, `stop_playback()`, `advance()`
-  - [ ] `get_current_position()` with interpolation
-  - [ ] speed and scale parameters
-  - [ ] smoothing logic
-- [ ] refactor `Panner2DComponent` to use `PathPlayer`
-- [ ] update `flowerjuce/CMakeLists.txt`
-- [ ] update all includes across apps
+- [x] create `flowerjuce/Panners/DSP/` directory
+- [x] move DSP files into `Panners/DSP/`:
+  - [x] `Panner.h`
+  - [x] `StereoPanner.h/.cpp`
+  - [x] `QuadPanner.h/.cpp`
+  - [x] `CLEATPanner.h/.cpp`
+  - [x] `PanningUtils.h/.cpp`
+- [x] create `flowerjuce/Panners/Components/` directory
+- [x] move UI files into `Panners/Components/`:
+  - [x] `Panner2DComponent.h/.cpp`
+  - [x] `PathGeneratorButtons.h/.cpp`
+- [x] create `PathPlayer` class (extract from `Panner2DComponent`):
+  - [x] trajectory storage and playback index
+  - [x] `start_playback()`, `stop_playback()`, `advance()`
+  - [x] `get_current_position()` with interpolation
+  - [x] speed and scale parameters
+  - [x] smoothing logic
+- [x] refactor `Panner2DComponent` to use `PathPlayer`
+- [x] update `flowerjuce/CMakeLists.txt`
+- [x] update all includes across apps
 
 ### pathplayer interface
 

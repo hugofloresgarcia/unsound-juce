@@ -10,11 +10,11 @@
 #include <flowerjuce/Components/LevelControl.h>
 #include <flowerjuce/Components/InputSelector.h>
 #include <flowerjuce/Components/MidiLearnManager.h>
-#include <flowerjuce/Panners/Panner.h>
-#include <flowerjuce/Panners/StereoPanner.h>
-#include <flowerjuce/Panners/QuadPanner.h>
-#include <flowerjuce/Panners/CLEATPanner.h>
-#include <flowerjuce/Panners/Panner2DComponent.h>
+#include <flowerjuce/Panners/DSP/Panner.h>
+#include <flowerjuce/Panners/DSP/StereoPanner.h>
+#include <flowerjuce/Panners/DSP/QuadPanner.h>
+#include <flowerjuce/Panners/DSP/CLEATPanner.h>
+#include <flowerjuce/Panners/Components/Panner2DComponent.h>
 #include <memory>
 
 namespace Basic

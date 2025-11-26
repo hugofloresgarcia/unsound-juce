@@ -1,7 +1,7 @@
 #include "LooperTrack.h"
 #include <flowerjuce/Components/GradioUtilities.h>
 #include <flowerjuce/Components/ConfigManager.h>
-#include <flowerjuce/Panners/PanningUtils.h>
+#include <flowerjuce/Panners/DSP/PanningUtils.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 
 using namespace Text2Sound;

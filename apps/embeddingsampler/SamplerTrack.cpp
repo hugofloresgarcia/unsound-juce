@@ -1,5 +1,5 @@
 #include "SamplerTrack.h"
-#include <flowerjuce/Panners/PanningUtils.h>
+#include <flowerjuce/Panners/DSP/PanningUtils.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <cmath>
 

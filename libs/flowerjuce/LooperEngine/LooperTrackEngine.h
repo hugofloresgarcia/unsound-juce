@@ -7,7 +7,7 @@
 #include "LooperWriteHead.h"
 #include "LooperReadHead.h"
 #include "OutputBus.h"
-#include <flowerjuce/Panners/Panner.h>
+#include <flowerjuce/Panners/DSP/Panner.h>
 #include <flowerjuce/DSP/LowPassFilter.h>
 #include <flowerjuce/DSP/PeakMeter.h>
 #include <atomic>

@@ -70,8 +70,8 @@ private:
 class AudioWriter
 {
 public:
-    AudioWriter(const juce::String& filename, double sampleRate = 44100.0)
-        : m_sampleRate(sampleRate)
+    AudioWriter(const juce::String& filename, int numChannels = 1, double sampleRate = 44100.0)
+        : m_sampleRate(sampleRate), m_numChannels(numChannels)
     {
         juce::File outputDir = juce::File::getCurrentWorkingDirectory().getChildFile("tests/output");
         if (!outputDir.exists())
@@ -80,21 +80,20 @@ public:
         m_file.deleteFile(); // overwrite
     }
 
+    // Expects interleaved samples
     void write(const std::vector<float>& samples)
     {
-        // Simple manual WAV writing to avoid module dependencies if possible
-        // but relying on juce_audio_formats is cleaner if linked.
-        // Let's do manual simple 16-bit mono WAV to be safe and dependency-light
-        // effectively replicating what typical raw writers do.
-        
         std::ofstream f(m_file.getFullPathName().toStdString(), std::ios::binary);
         
-        int numSamples = static_cast<int>(samples.size());
-        int numChannels = 1;
+        // Total number of samples across all channels
+        int totalSamples = static_cast<int>(samples.size());
+        // Number of frames (samples per channel)
+        int numFrames = totalSamples / m_numChannels;
+        
         int bitsPerSample = 16;
-        int byteRate = static_cast<int>(m_sampleRate * numChannels * bitsPerSample / 8);
-        int blockAlign = numChannels * bitsPerSample / 8;
-        int dataSize = numSamples * numChannels * bitsPerSample / 8;
+        int byteRate = static_cast<int>(m_sampleRate * m_numChannels * bitsPerSample / 8);
+        int blockAlign = m_numChannels * bitsPerSample / 8;
+        int dataSize = totalSamples * bitsPerSample / 8;
         int chunkSize = 36 + dataSize;
 
         // Header
@@ -104,7 +103,7 @@ public:
         f.write("fmt ", 4);
         writeInternal<int32_t>(f, 16); // Subchunk1Size (16 for PCM)
         writeInternal<int16_t>(f, 1); // AudioFormat (1 for PCM)
-        writeInternal<int16_t>(f, (int16_t)numChannels);
+        writeInternal<int16_t>(f, (int16_t)m_numChannels);
         writeInternal<int32_t>(f, (int32_t)m_sampleRate);
         writeInternal<int32_t>(f, byteRate);
         writeInternal<int16_t>(f, (int16_t)blockAlign);
@@ -133,6 +132,7 @@ private:
 
     juce::File m_file;
     double m_sampleRate;
+    int m_numChannels;
 };
 
 // Helper for floating point comparisons

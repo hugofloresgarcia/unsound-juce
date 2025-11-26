@@ -27,6 +27,33 @@ def plot_stereo_sweep():
     plt.close()
     print("Generated stereo_sweep.png")
 
+def plot_stereo_2d_sweep():
+    file_path = 'tests/output/stereo_panner_2d_sweep.csv'
+    if not os.path.exists(file_path):
+        print(f"File not found: {file_path}")
+        return
+
+    df = pd.read_csv(file_path)
+    
+    plt.figure(figsize=(10, 6))
+    plt.plot(df['Y'], df['Left_RMS'], label='Left Channel')
+    plt.plot(df['Y'], df['Right_RMS'], label='Right Channel')
+    
+    plt.title('Stereo Panner 2D Sweep (Y-Axis: Depth)')
+    plt.xlabel('Y Position (-1=Back/Distant, 0=Center, 1=Front/Close)')
+    plt.ylabel('RMS Level')
+    plt.axvline(x=0, color='k', linestyle='--', alpha=0.3, label='Center (Dry)')
+    plt.text(-0.8, df['Left_RMS'].max()*0.9, 'Back: Filtered + Reverb', fontsize=9)
+    plt.text(0.2, df['Left_RMS'].max()*0.9, 'Front: Boosted + Dry', fontsize=9)
+    
+    plt.grid(True)
+    plt.legend()
+    
+    os.makedirs('tests/plots/panner', exist_ok=True)
+    plt.savefig('tests/plots/panner/stereo_2d_sweep.png')
+    plt.close()
+    print("Generated stereo_2d_sweep.png")
+
 def plot_quad_sweep():
     file_path = 'tests/output/quad_panner_sweep.csv'
     if not os.path.exists(file_path):
@@ -95,6 +122,6 @@ def plot_cleat_sweep():
 if __name__ == "__main__":
     print("Generating panner plots...")
     plot_stereo_sweep()
+    plot_stereo_2d_sweep()
     plot_quad_sweep()
     plot_cleat_sweep()
-

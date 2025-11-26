@@ -29,9 +29,23 @@ target_link_libraries(PannerTests PRIVATE
     juce::juce_audio_formats
 )
 
+# Define the PathPlayerTests executable
+add_executable(PathPlayerTests PathPlayerTests.cpp)
+
+# Link against flowerjuce and JUCE modules
+target_link_libraries(PathPlayerTests PRIVATE
+    flowerjuce
+    juce::juce_core
+    juce::juce_events
+    juce::juce_data_structures
+    juce::juce_audio_basics
+    juce::juce_audio_formats
+)
+
 # Enable C++17
 target_compile_features(LfoTests PRIVATE cxx_std_17)
 target_compile_features(PannerTests PRIVATE cxx_std_17)
+target_compile_features(PathPlayerTests PRIVATE cxx_std_17)
 
 # Include directories
 target_include_directories(LfoTests PRIVATE
@@ -40,6 +54,11 @@ target_include_directories(LfoTests PRIVATE
 )
 
 target_include_directories(PannerTests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${PROJECT_SOURCE_DIR}/libs
+)
+
+target_include_directories(PathPlayerTests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${PROJECT_SOURCE_DIR}/libs
 )

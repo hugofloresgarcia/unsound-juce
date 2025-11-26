@@ -5,19 +5,14 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <functional>
 #include <vector>
+#include "../DSP/PathPlayer.h"
 
 // 2D panning control component (Kaoss-pad style XY pad)
 // Provides visual feedback and mouse interaction for 2D panning
 class Panner2DComponent : public juce::Component, public juce::Timer
 {
 public:
-    // Trajectory point structure
-    struct TrajectoryPoint
-    {
-        float x;
-        float y;
-        double time; // Time in seconds relative to start of recording
-    };
+    using TrajectoryPoint = PathPlayer::TrajectoryPoint;
 
     Panner2DComponent();
     ~Panner2DComponent() override;
@@ -70,11 +65,11 @@ public:
     
     // Set playback speed multiplier (0.1 to 2.0, default 1.0)
     void set_playback_speed(float speed);
-    float get_playback_speed() const { return m_playback_speed; }
+    float get_playback_speed() const { return m_path_player.get_playback_speed(); }
     
     // Set trajectory scale (0.0 to 2.0, default 1.0) - scales radially from center (0.5, 0.5)
     void set_trajectory_scale(float scale);
-    float get_trajectory_scale() const { return m_trajectory_scale; }
+    float get_trajectory_scale() const { return m_path_player.get_scale(); }
     
     // Timer callback for playback animation
     void timerCallback() override;
@@ -96,33 +91,28 @@ private:
     RecordingState m_recording_state{Idle};
     bool m_trajectory_recording_enabled{false};
     bool m_onset_triggering_enabled{false};
-    std::vector<TrajectoryPoint> m_trajectory;
-    std::vector<TrajectoryPoint> m_original_trajectory; // Store unscaled trajectory for scaling operations
+    
+    // Recording buffer
+    std::vector<TrajectoryPoint> m_recording_buffer;
+    
     double m_recording_start_time{0.0};
     double m_last_record_time{0.0};
     static constexpr double m_record_interval{0.1}; // 100ms = 10fps
     
-    // Playback state
-    size_t m_current_playback_index{0};
+    // Playback state managed by PathPlayer
+    PathPlayer m_path_player;
+    
     double m_playback_start_time{0.0};
     double m_last_playback_time{0.0};
     static constexpr double m_base_playback_interval{0.1}; // 100ms = 10fps base interval
     double m_playback_interval{m_base_playback_interval}; // Actual interval adjusted by speed
-    float m_playback_speed{1.0f}; // Speed multiplier (0.1 to 2.0)
-    float m_trajectory_scale{1.0f}; // Scale factor for trajectory (0.0 to 2.0)
     
     // Smoothing for trajectory playback
     double m_smoothing_time{0.0}; // Smoothing time in seconds (0 = no smoothing)
-    juce::SmoothedValue<float> m_smoothed_pan_x{0.5f};
-    juce::SmoothedValue<float> m_smoothed_pan_y{0.5f};
-    double m_last_sample_rate{44100.0};
     
     // Counter for periodic repaints when onset triggering is enabled
     int m_repaint_counter{0};
     
-    // Global offset for trajectory playback (applied to all trajectory points)
-    float m_trajectory_offset_x{0.0f};
-    float m_trajectory_offset_y{0.0f};
     juce::Point<float> m_drag_start_position; // Initial mouse position when starting drag during playback
     bool m_is_adjusting_offset{false}; // True when dragging to adjust offset during playback
 
@@ -135,15 +125,5 @@ private:
     // Clamp pan coordinates to valid range
     void clamp_pan(float& x, float& y) const;
     
-    // Interpolate between two trajectory points
-    TrajectoryPoint interpolate_trajectory(const TrajectoryPoint& p1, const TrajectoryPoint& p2, float t) const;
-    
-    // Update pan position with smoothing applied
-    void update_pan_position_with_smoothing(float x, float y);
-    
-    // Apply scale to trajectory points (scales radially from center)
-    void apply_trajectory_scale();
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Panner2DComponent)
 };
-

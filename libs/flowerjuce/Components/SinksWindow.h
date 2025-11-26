@@ -2,8 +2,8 @@
 
 #include <juce_core/juce_core.h>
 #include <juce_gui_basics/juce_gui_basics.h>
-#include <flowerjuce/Panners/CLEATPanner.h>
-#include <flowerjuce/Panners/PanningUtils.h>
+#include <flowerjuce/Panners/DSP/CLEATPanner.h>
+#include <flowerjuce/Panners/DSP/PanningUtils.h>
 #include <array>
 #include <atomic>
 
