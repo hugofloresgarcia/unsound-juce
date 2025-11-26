@@ -4,6 +4,7 @@
 #include "LayerCakeTypes.h"
 #include <flowerjuce/DSP/LfoUGen.h>
 #include <flowerjuce/LooperEngine/LooperWriteHead.h>
+#include <flowerjuce/Sync/SyncInterface.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <array>
 #include <atomic>
@@ -52,11 +53,14 @@ public:
     double get_sample_rate() const { return m_sample_rate; }
 
     // Clock / Transport
+    void set_sync_strategy(std::unique_ptr<flower::SyncInterface> sync);
+    flower::SyncInterface* get_sync_strategy() const { return m_sync.get(); }
+
     void set_bpm(float bpm);
-    float get_bpm() const { return static_cast<float>(m_bpm.load()); }
-    double get_master_beats() const { return m_master_beats.load(std::memory_order_relaxed); }
+    float get_bpm() const;
+    double get_master_beats() const;
     void set_transport_playing(bool playing);
-    bool is_transport_playing() const { return m_transport_playing.load(); }
+    bool is_transport_playing() const;
     void reset_transport();
 
     std::array<TapeLoop, kNumLayers>& get_layers() { return m_layers; }
@@ -144,10 +148,8 @@ private:
     juce::Random m_random;
     juce::AudioFormatManager m_audio_format_manager;
     
-    // Clock
-    std::atomic<double> m_bpm{120.0};
-    std::atomic<double> m_master_beats{0.0};
-    std::atomic<bool> m_transport_playing{true};
+    // Sync
+    std::unique_ptr<flower::SyncInterface> m_sync;
 
     // LFO runtime + UI mirrors
     std::array<LfoSnapshot, kNumLfoSlots> m_lfo_pending_configs;

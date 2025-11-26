@@ -126,6 +126,19 @@ target_sources(flowerjuce PRIVATE
     Components/MultiChannelMeter.h
 )
 
+# Sync source files
+target_sources(flowerjuce PRIVATE
+    Sync/LinkSyncStrategy.cpp
+    Sync/InternalSyncStrategy.cpp
+)
+
+# Sync headers
+target_sources(flowerjuce PRIVATE
+    Sync/SyncInterface.h
+    Sync/LinkSyncStrategy.h
+    Sync/InternalSyncStrategy.h
+)
+
 # CustomLookAndFeel header
 target_sources(flowerjuce PRIVATE
     CustomLookAndFeel.h
@@ -146,6 +159,10 @@ target_include_directories(flowerjuce PUBLIC
     ${PROJECT_ROOT}/libs
 )
 
+if(NOT TARGET Ableton::Link)
+    include(${PROJECT_ROOT}/third_party/link/AbletonLinkConfig.cmake)
+endif()
+
 # Link JUCE modules
 target_link_libraries(flowerjuce PUBLIC
     juce::juce_audio_basics
@@ -160,5 +177,6 @@ target_link_libraries(flowerjuce PUBLIC
     juce::juce_graphics
     juce::juce_gui_basics
     juce::juce_gui_extra
+    Ableton::Link
 )
 

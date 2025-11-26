@@ -1,4 +1,5 @@
 #include "LayerCakeEngine.h"
+#include <flowerjuce/Sync/LinkSyncStrategy.h>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <algorithm>
@@ -82,6 +83,9 @@ void LayerCakeEngine::GrainTriggerQueue::clear()
 LayerCakeEngine::LayerCakeEngine()
 {
     DBG("LayerCakeEngine ctor");
+    // Initialize with LinkSyncStrategy enabled by default or ready to be enabled
+    m_sync = std::make_unique<flower::LinkSyncStrategy>(120.0);
+    
     m_audio_format_manager.registerBasicFormats();
     for (size_t voice = 0; voice < kNumVoices; ++voice)
     {
@@ -111,6 +115,9 @@ void LayerCakeEngine::prepare(double sample_rate, int block_size, int num_output
     m_sample_rate = sample_rate;
     m_block_size = block_size;
     m_num_output_channels = num_output_channels;
+
+    if (m_sync)
+        m_sync->prepare(sample_rate, block_size);
 
     allocate_layers(sample_rate);
 
@@ -329,19 +336,59 @@ void LayerCakeEngine::set_record_enable(bool should_record)
     }
 }
 
+void LayerCakeEngine::set_sync_strategy(std::unique_ptr<flower::SyncInterface> sync)
+{
+    if (sync)
+    {
+        m_sync = std::move(sync);
+        if (m_is_prepared)
+        {
+            m_sync->prepare(m_sample_rate, m_block_size);
+        }
+    }
+}
+
 void LayerCakeEngine::set_bpm(float bpm)
 {
-    m_bpm.store(juce::jlimit(10.0f, 300.0f, bpm));
+    if (m_sync)
+        m_sync->set_tempo(static_cast<double>(bpm));
+}
+
+float LayerCakeEngine::get_bpm() const
+{
+    if (m_sync)
+        return static_cast<float>(m_sync->get_tempo());
+    return 120.0f;
+}
+
+double LayerCakeEngine::get_master_beats() const
+{
+    if (m_sync)
+        return m_sync->get_current_beat();
+    return 0.0;
 }
 
 void LayerCakeEngine::set_transport_playing(bool playing)
 {
-    m_transport_playing.store(playing);
+    if (m_sync)
+        m_sync->set_playing(playing);
+}
+
+bool LayerCakeEngine::is_transport_playing() const
+{
+    if (m_sync)
+        return m_sync->is_playing();
+    return false;
 }
 
 void LayerCakeEngine::reset_transport()
 {
-    m_master_beats.store(0.0);
+    // With Link, we might not want to reset unless explicitly asked via session
+    // But if this is called from UI to 'stop and reset'
+    if (m_sync)
+    {
+        m_sync->request_reset();
+    }
 }
 
 void LayerCakeEngine::process_block(const float* const* input_channel_data,
@@ -363,6 +410,9 @@ void LayerCakeEngine::process_block(const float* const* input_channel_data,
     }
 
     sync_lfo_configs();
+    
+    if (m_sync)
+        m_sync->process(num_samples, m_sample_rate);
 
     int manual_requests = m_manual_trigger_requests.exchange(0, std::memory_order_acq_rel);
     while (manual_requests-- > 0)
@@ -376,11 +426,22 @@ void LayerCakeEngine::process_block(const float* const* input_channel_data,
             juce::FloatVectorOperations::clear(output_channel_data[channel], num_samples);
     }
 
-    const bool transport_playing = m_transport_playing.load();
-    const double bpm = m_bpm.load();
-    const double samples_per_second = m_sample_rate > 0 ? m_sample_rate : 44100.0;
-    const double beats_per_sample = transport_playing ? (bpm / 60.0) / samples_per_second : 0.0;
-    double master_beats = m_master_beats.load(std::memory_order_relaxed);
+    // Calculate beat progression for this block
+    double current_beat = 0.0;
+    double beats_per_sample = 0.0;
+    bool transport_playing = false;
+
+    if (m_sync)
+    {
+        transport_playing = m_sync->is_playing();
+        current_beat = m_sync->get_current_beat();
+        const double bpm = m_sync->get_tempo();
+        const double samples_per_second = m_sample_rate > 0 ? m_sample_rate : 44100.0;
+        if (transport_playing)
+        {
+             beats_per_sample = (bpm / 60.0) / samples_per_second;
+        }
+    }
 
     const float master_gain = decibels_to_gain(m_master_gain_db.load());
 
@@ -389,10 +450,15 @@ void LayerCakeEngine::process_block(const float* const* input_channel_data,
 
     for (int sample = 0; sample < num_samples; ++sample)
     {
+        // Advance beat for LFOs
+        // We start at current_beat (start of block) and increment
+        double sample_beat = current_beat;
         if (transport_playing)
-            master_beats += beats_per_sample;
+        {
+            sample_beat += static_cast<double>(sample) * beats_per_sample;
+        }
 
-        process_lfo_sample(master_beats);
+        process_lfo_sample(sample_beat);
 
         if (m_record_enabled.load())
         {
@@ -431,8 +497,6 @@ void LayerCakeEngine::process_block(const float* const* input_channel_data,
 
     if (recorded_samples > 0)
         m_record_cursor.store(block_cursor + recorded_samples);
-
-    m_master_beats.store(master_beats, std::memory_order_relaxed);
 }
 
 void LayerCakeEngine::process_recording_sample(const float* const* input_channel_data,

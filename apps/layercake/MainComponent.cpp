@@ -47,6 +47,7 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
       m_record_status_label("recordStatus", ""),
       m_record_button("rec"),
       m_clock_button("play"),
+      m_link_button("Link"),
       m_display(m_engine),
       m_midi_learn_overlay(m_midi_learn_manager),
       m_command_router(m_focus_registry),
@@ -324,6 +325,14 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
     m_clock_button.onClick = [this]() { handle_clock_button(); };
     addAndMakeVisible(m_clock_button);
 
+    configureControlButton(m_link_button,
+                           "Link",
+                           LayerCakeLookAndFeel::ControlButtonType::Clock,
+                           true);
+    m_link_button.setTooltip("Enable Ableton Link");
+    m_link_button.onClick = [this]() { handle_link_button(); };
+    addAndMakeVisible(m_link_button);
+
     auto captureLayers = [this]() { return capture_layer_buffers(); };
     auto applyLayers = [this](const LayerBufferArray& buffers) { apply_layer_buffers(buffers); };
     auto captureKnobset = [this]() { return capture_knobset_data(); };
@@ -419,7 +428,7 @@ void MainComponent::resized()
     const int buttonHeight = 22;
     const int buttonColumnWidth = 60;
     const int buttonVerticalSpacing = 6;
-    const int buttonStackTotal = (buttonHeight * 3) + (buttonVerticalSpacing * 2);
+    const int buttonStackTotal = (buttonHeight * 3) + (buttonVerticalSpacing * 2); // 3 buttons: clock, trigger, record
     const int meterWidth = 40;
     const int meterHeight = 80;
     const int meterSpacing = 12;
@@ -488,7 +497,11 @@ void MainComponent::resized()
     
     // Title area
     auto titleArea = displayColumn.removeFromTop(titleHeight);
-    m_title_label.setBounds(titleArea.removeFromLeft(displayPanelWidth - 120));
+    const int titleButtonWidth = 60;
+    const int titleButtonSpacing = 4;
+    m_title_label.setBounds(titleArea.removeFromLeft(displayPanelWidth - (titleButtonWidth * 2) - titleButtonSpacing - 4));
+    m_link_button.setBounds(titleArea.removeFromLeft(titleButtonWidth).reduced(2));
+    titleArea.removeFromLeft(titleButtonSpacing);
     m_settings_button.setBounds(titleArea.reduced(2));
     displayColumn.removeFromTop(rowSpacing);
     
@@ -903,6 +916,23 @@ void MainComponent::timerCallback()
     bool running = m_engine.is_transport_playing();
     if (m_clock_button.getToggleState() != running)
         m_clock_button.setToggleState(running, juce::dontSendNotification);
+
+    if (auto* sync = m_engine.get_sync_strategy())
+    {
+        const bool linkEnabled = sync->is_link_enabled();
+        if (m_link_button.getToggleState() != linkEnabled)
+             m_link_button.setToggleState(linkEnabled, juce::dontSendNotification);
+        
+        if (linkEnabled)
+        {
+            int peers = sync->get_num_peers();
+            m_link_button.setButtonText("Link (" + juce::String(peers) + ")");
+        }
+        else
+        {
+            m_link_button.setButtonText("Link");
+        }
+    }
 }
 
 void MainComponent::adjust_record_layer(int delta)
@@ -999,6 +1029,16 @@ void MainComponent::handle_clock_button()
         // m_engine.reset_transport(); 
     }
     m_clock_button.setToggleState(shouldPlay, juce::dontSendNotification);
+}
+
+void MainComponent::handle_link_button()
+{
+    if (auto* sync = m_engine.get_sync_strategy())
+    {
+        const bool enable = !sync->is_link_enabled();
+        sync->enable_link(enable);
+        m_link_button.setToggleState(enable, juce::dontSendNotification);
+    }
 }
 
 void MainComponent::open_library_window()

@@ -19,12 +19,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUILD_DIR="${PROJECT_ROOT}/build"
 
-# Define all apps: target_name:app_name:bundle_id:app_dir
-declare -A APPS=(
-    ["BasicApp"]="Basic Tape Looper:com.unsound.basic:basic"
-    ["Text2SoundApp"]="Text2Sound Tape Looper:com.unsound.text2sound:text2sound"
-    ["Text2Sound4AllApp"]="Text2Sound4All Tape Looper:com.unsound.text2sound4all:text2sound4all"
-    ["EmbeddingSpaceSamplerApp"]="Embedding Space Sampler:com.unsound.embeddingsampler:embeddingsampler"
+# Define all apps manually to avoid associative array issues in older bash versions
+# Format: target_name:app_name:bundle_id:app_dir
+APPS_LIST=(
+    "LayerCakeApp:LayerCake:com.unsound.layercake:layercake"
+    "BasicApp:Basic Tape Looper:com.unsound.basic:basic"
+    "Text2SoundApp:Text2Sound Tape Looper:com.unsound.text2sound:text2sound"
+    "Text2Sound4AllApp:Text2Sound4All Tape Looper:com.unsound.text2sound4all:text2sound4all"
+    "EmbeddingSpaceSamplerApp:Embedding Space Sampler:com.unsound.embeddingsampler:embeddingsampler"
 )
 
 # Extract version from CMakeLists.txt (single source of truth)
@@ -517,13 +519,16 @@ main() {
     local failed_apps=()
     
     # Process each app
-    for target_name in "${!APPS[@]}"; do
+    for entry in "${APPS_LIST[@]}"; do
+        # Parse entry: target_name:app_name:bundle_id:app_dir
+        IFS=':' read -r target_name app_name bundle_id app_dir <<< "$entry"
+        local app_info="${app_name}:${bundle_id}:${app_dir}"
+        
         # Skip if building single app and this isn't it
         if [[ -n "$BUILD_SINGLE_APP" && "$target_name" != "$BUILD_SINGLE_APP" ]]; then
             continue
         fi
         
-        local app_info="${APPS[$target_name]}"
         local assets
         if assets=$(process_app "$target_name" "$app_info"); then
             # Add assets to list (format: dmg_path|zip_path)
@@ -559,4 +564,3 @@ main() {
 
 # Run main function
 main "$@"
-

@@ -16,6 +16,7 @@ add_compile_definitions(JUCE_MODAL_LOOPS_PERMITTED)
 add_subdirectory(JUCE)
 
 # Add libraries
+add_subdirectory(third_party)
 add_subdirectory(libs)
 
 # Add apps

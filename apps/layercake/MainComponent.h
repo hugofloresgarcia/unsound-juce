@@ -116,6 +116,7 @@ private:
     void sync_manual_state_from_controls();
     double get_layer_recorded_seconds(int layer_index) const;
     void handle_clock_button();
+    void handle_link_button();
     void register_knob_for_lfo(LayerCakeKnob* knob);
     void handle_knob_hover(LayerCakeKnob* knob, bool hovered);
     void handle_trigger_hover(bool hovered);
@@ -158,6 +159,7 @@ private:
     LfoTriggerButton m_trigger_button;
     juce::TextButton m_record_button;
     juce::TextButton m_clock_button; // Transport Play/Stop
+    juce::TextButton m_link_button;  // Ableton Link toggle
     double m_last_pattern_bpm{-1.0};
 
     LayerCakeDisplay m_display;

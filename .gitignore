@@ -26,7 +26,6 @@ Makefile
 .DS_Store
 
 scratch/
-third_party/
 
 # Environment files with sensitive credentials
 .env
@@ -34,3 +33,5 @@ third_party/
 .envs/
 .ssh_config
 .ssh_known_hosts
+
+third_party/onnxruntime-osx-universal2-1.23.2/
