@@ -33,6 +33,7 @@ public:
         int decimals{2};  // Decimal places for display
         bool displayAsPercent{false};  // If true and range is 0-1, display as 0-99
         std::function<juce::String(double)> valueFormatter; // Optional custom formatter
+        std::function<double(double)> valueQuantizer; // Optional value snapper/quantizer
     };
 
     LfoParamRow(const Config& config, Shared::MidiLearnManager* midiManager);

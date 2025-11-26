@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <flowerjuce/LayerCakeEngine/Metro.h>
+#include "LayerCakeSettings.h"
 #include <cmath>
 
 namespace LayerCakeApp
@@ -241,7 +242,7 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
     m_position_knob = makeCliKnob({ "pos", 0.0, 1.0, 0.5, 0.001, "", "layercake_position", false, true, true, true, true, 2 });
     bindManualKnob(m_position_knob.get());
 
-    m_duration_knob = makeCliKnob({ "dur", 10.0, 5000.0, 300.0, 1.0, " ms", "layercake_duration", false, true, true, true, false, 0 });
+    m_duration_knob = makeCliKnob({ "dur", 10.0, 5000.0, 300.0, 1.0, " ms", "layercake_duration", false, true, true, true, false, 0, 0.3 });
     bindManualKnob(m_duration_knob.get());
 
     m_rate_knob = makeCliKnob({ "rate", -24.0, 24.0, 0.0, 0.1, " st", "layercake_rate", false, true, true, true, false, 1 });
@@ -694,8 +695,30 @@ SettingsComponent::SettingsComponent(juce::AudioDeviceManager& deviceManager, La
     };
     addAndMakeVisible(m_normalize_toggle);
 
+    // Main Sensitivity
+    m_main_sens_label.setText("Main Knob Sensitivity", juce::dontSendNotification);
+    addAndMakeVisible(m_main_sens_label);
+
+    m_main_sens_slider.setRange(10.0, 1000.0, 10.0);
+    m_main_sens_slider.setValue(LayerCakeSettings::mainKnobSensitivity, juce::dontSendNotification);
+    m_main_sens_slider.onValueChange = [this] {
+        LayerCakeSettings::mainKnobSensitivity = m_main_sens_slider.getValue();
+    };
+    addAndMakeVisible(m_main_sens_slider);
+
+    // LFO Sensitivity
+    m_lfo_sens_label.setText("LFO Drag Sensitivity", juce::dontSendNotification);
+    addAndMakeVisible(m_lfo_sens_label);
+
+    m_lfo_sens_slider.setRange(10.0, 1000.0, 10.0);
+    m_lfo_sens_slider.setValue(LayerCakeSettings::lfoKnobSensitivity, juce::dontSendNotification);
+    m_lfo_sens_slider.onValueChange = [this] {
+        LayerCakeSettings::lfoKnobSensitivity = m_lfo_sens_slider.getValue();
+    };
+    addAndMakeVisible(m_lfo_sens_slider);
+
     refresh_input_channel_selector();
-    setSize(300, 250);
+    setSize(300, 350);
 }
 
 void SettingsComponent::paint(juce::Graphics& g)
@@ -714,6 +737,14 @@ void SettingsComponent::resized()
 
     area.removeFromTop(10);
     m_normalize_toggle.setBounds(area.removeFromTop(30));
+
+    area.removeFromTop(10);
+    m_main_sens_label.setBounds(area.removeFromTop(24));
+    m_main_sens_slider.setBounds(area.removeFromTop(24));
+
+    area.removeFromTop(10);
+    m_lfo_sens_label.setBounds(area.removeFromTop(24));
+    m_lfo_sens_slider.setBounds(area.removeFromTop(24));
 }
 
 void SettingsComponent::refresh_input_channel_selector()
@@ -1602,12 +1633,16 @@ void MainComponent::load_settings()
     if (root == nullptr || !root->hasTagName("LayerCakeSettings")) return;
 
     m_engine.set_normalize_on_load(root->getBoolAttribute("normalizeOnLoad", false));
+    LayerCakeSettings::mainKnobSensitivity = root->getDoubleAttribute("mainKnobSensitivity", 250.0);
+    LayerCakeSettings::lfoKnobSensitivity = root->getDoubleAttribute("lfoKnobSensitivity", 200.0);
 }
 
 void MainComponent::save_settings()
 {
     juce::XmlElement root("LayerCakeSettings");
     root.setAttribute("normalizeOnLoad", m_engine.get_normalize_on_load());
+    root.setAttribute("mainKnobSensitivity", LayerCakeSettings::mainKnobSensitivity);
+    root.setAttribute("lfoKnobSensitivity", LayerCakeSettings::lfoKnobSensitivity);
     root.writeTo(m_settings_file);
 }
 

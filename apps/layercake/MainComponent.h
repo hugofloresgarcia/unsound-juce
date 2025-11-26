@@ -49,6 +49,11 @@ private:
     juce::StringArray m_input_channel_names;
     
     juce::ToggleButton m_normalize_toggle;
+
+    juce::Label m_main_sens_label;
+    juce::Slider m_main_sens_slider;
+    juce::Label m_lfo_sens_label;
+    juce::Slider m_lfo_sens_slider;
 };
 
 class SettingsButtonLookAndFeel : public LayerCakeLookAndFeel
@@ -67,7 +72,7 @@ public:
         auto* content = new SettingsComponent(deviceManager, engine);
         setContentOwned(content, true);
         setResizable(false, false);
-        centreWithSize(300, 250);
+        centreWithSize(300, 350);
     }
 
     void closeButtonPressed() override { setVisible(false); }

@@ -1,6 +1,7 @@
 #include "LayerCakeKnob.h"
 #include "LayerCakeLookAndFeel.h"
 #include "lfo/LfoDragHelpers.h"
+#include "LayerCakeSettings.h"
 #include <cmath>
 
 namespace LayerCakeApp
@@ -27,6 +28,12 @@ LayerCakeKnob::LayerCakeKnob(const Config& config, Shared::MidiLearnManager* mid
     m_slider.setSliderStyle(juce::Slider::RotaryVerticalDrag);
     m_slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     m_slider.setRange(config.minValue, config.maxValue, config.interval);
+    if (config.skewFactor != 1.0)
+    {
+        m_slider.setSkewFactor(config.skewFactor);
+    }
+    m_slider.setMouseDragSensitivity(static_cast<int>(LayerCakeSettings::mainKnobSensitivity));
+
     m_slider.setValue(config.defaultValue, juce::dontSendNotification);
     m_slider.setWantsKeyboardFocus(false);
     m_slider.setDoubleClickReturnValue(true, config.defaultValue);
@@ -715,6 +722,7 @@ void LayerCakeKnob::sliderDragStarted(juce::Slider* slider)
 {
     if (slider == &m_slider)
     {
+        m_slider.setMouseDragSensitivity(static_cast<int>(LayerCakeSettings::mainKnobSensitivity));
         m_show_base_value = true;
         repaint();
         handle_touch_begin(false);

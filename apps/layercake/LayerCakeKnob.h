@@ -37,6 +37,7 @@ public:
         bool cliMode{false};  // CLI-style "key: value" display instead of rotary knob
         bool displayAsPercent{false};  // For 0-1 ranges, display as 0-99
         int decimals{2};  // Decimal places for CLI mode
+        double skewFactor{1.0}; // logarithmic scale if != 1.0
     };
 
     LayerCakeKnob(const Config& config, Shared::MidiLearnManager* midiManager);

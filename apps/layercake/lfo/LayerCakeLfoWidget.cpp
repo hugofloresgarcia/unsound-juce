@@ -1,5 +1,6 @@
 #include "LayerCakeLfoWidget.h"
 #include "LfoDragHelpers.h"
+#include "../LayerCakeSettings.h"
 #include <cmath>
 
 namespace LayerCakeApp
@@ -69,6 +70,57 @@ flower::LfoWaveform waveform_from_index(int index)
             case flower::LfoScale::Off:
             default: return 1;
         }
+    }
+
+    struct MusicalDivision {
+        double value;
+        const char* label;
+    };
+
+    const std::vector<MusicalDivision> kMusicalDivisions = {
+        { 1.0/64.0, "1/64" }, { 1.0/32.0, "1/32" }, { 1.0/24.0, "1/24" }, { 1.0/16.0, "1/16" },
+        { 1.0/12.0, "1/12" }, { 1.0/8.0, "1/8" }, { 1.0/7.0, "1/7" }, { 1.0/6.0, "1/6" },
+        { 1.0/5.0, "1/5" }, { 1.0/4.0, "1/4" }, { 1.0/3.0, "1/3" }, { 3.0/8.0, "3/8" },
+        { 2.0/5.0, "2/5" }, { 1.0/2.0, "1/2" }, { 3.0/5.0, "3/5" }, { 2.0/3.0, "2/3" },
+        { 3.0/4.0, "3/4" }, { 4.0/5.0, "4/5" }, { 1.0, "1" },
+        { 5.0/4.0, "5/4" }, { 4.0/3.0, "4/3" }, { 3.0/2.0, "3/2" }, { 5.0/3.0, "5/3" }, { 7.0/4.0, "7/4" },
+        { 2.0, "2" }, { 5.0/2.0, "5/2" }, { 3.0, "3" }, { 4.0, "4" }, { 5.0, "5" },
+        { 6.0, "6" }, { 7.0, "7" }, { 8.0, "8" }, { 12.0, "12" },
+        { 16.0, "16" }, { 24.0, "24" }, { 32.0, "32" }, { 48.0, "48" }, { 64.0, "64" }
+    };
+
+    double snap_to_musical(double input)
+    {
+        double bestVal = input;
+        double minDiff = 1e9;
+        
+        // Find closest match
+        for (const auto& div : kMusicalDivisions)
+        {
+            // Use logarithmic distance for better feel across wide range
+            double diff = std::abs(std::log2(input) - std::log2(div.value));
+            if (diff < minDiff)
+            {
+                minDiff = diff;
+                bestVal = div.value;
+            }
+        }
+        return bestVal;
+    }
+
+    juce::String format_musical(double input)
+    {
+        // Find exact match with small tolerance
+        for (const auto& div : kMusicalDivisions)
+        {
+            if (std::abs(input - div.value) < 0.001)
+                return juce::String(div.label);
+        }
+        
+        // Fallback formatting
+        if (input < 1.0)
+            return juce::String(input, 3);
+        return juce::String(input, 2);
     }
 } // namespace
 
@@ -179,8 +231,8 @@ void LfoParamRow::mouseDrag(const juce::MouseEvent& event)
     const int deltaY = m_drag_start_y - event.y;  // Up = positive
     const double range = m_config.maxValue - m_config.minValue;
     
-    // Sensitivity: full range over ~200 pixels, shift for fine control
-    double sensitivity = range / 200.0;
+    // Sensitivity: full range over configured pixels, shift for fine control
+    double sensitivity = range / juce::jmax(10.0, LayerCakeSettings::lfoKnobSensitivity);
     if (event.mods.isShiftDown())
         sensitivity *= 0.1;
     
@@ -189,6 +241,10 @@ void LfoParamRow::mouseDrag(const juce::MouseEvent& event)
     // Snap to interval
     if (m_config.interval > 0.0)
         newValue = std::round(newValue / m_config.interval) * m_config.interval;
+
+    // Apply custom quantizer if present
+    if (m_config.valueQuantizer)
+        newValue = m_config.valueQuantizer(newValue);
     
     set_value(newValue);
 }
@@ -516,7 +572,8 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
                                         const juce::String& suffix = "",
                                         int decimals = 2,
                                         bool displayAsPercent = false,
-                                        std::function<juce::String(double)> formatter = nullptr) -> std::unique_ptr<LfoParamRow>
+                                        std::function<juce::String(double)> formatter = nullptr,
+                                        std::function<double(double)> quantizer = nullptr) -> std::unique_ptr<LfoParamRow>
     {
         LfoParamRow::Config config;
         config.key = key;
@@ -529,6 +586,7 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
         config.decimals = decimals;
         config.displayAsPercent = displayAsPercent;
         config.valueFormatter = formatter;
+        config.valueQuantizer = quantizer;
         auto row = std::make_unique<LfoParamRow>(config, m_midi_manager);
         row->set_accent_colour(m_accent_colour);
         row->set_on_value_changed([this]() { update_generator_settings(); });
@@ -546,7 +604,7 @@ LayerCakeLfoWidget::LayerCakeLfoWidget(int lfo_index,
         m_params[index] = std::move(param);
     };
 
-    assignParam(ParamSlot::Div, makeParam("div", 0.015625, 64.0, generator.get_clock_division(), 0.0001, "x", 3, false));
+    assignParam(ParamSlot::Div, makeParam("div", 0.015625, 64.0, generator.get_clock_division(), 0.0, "", 0, false, format_musical, snap_to_musical));
     assignParam(ParamSlot::Level, makeParam("level", 0.0, 1.0, generator.get_level(), 0.01, "", 2, true));
     assignParam(ParamSlot::Width, makeParam("width", 0.0, 1.0, generator.get_width(), 0.01, "", 2, true));
     assignParam(ParamSlot::Loop, makeParam("loop", 0.0, 64.0, generator.get_loop_beats(), 1.0, "", 0, false));
