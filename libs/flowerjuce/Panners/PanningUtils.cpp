@@ -130,11 +130,11 @@ namespace PanningUtils
         float scaled_y = juce::jmap(y, 0.0f, 1.0f, 0.275f, 1.0f);
         
         
-        // Column offsets (left to right): -0.75, -0.5, -0.25, 0.0
-        constexpr float column_offsets[4] = {-0.75f, -0.5f, -0.25f, 0.0f};
+        // Column offsets (left to right): 0.0, -0.25, -0.5, -0.75
+        constexpr float column_offsets[4] = {0.0f, -0.25f, -0.5f, -0.75f};
         
-        // Row offsets (bottom to top): -0.75, -0.5, -0.25, 0.0
-        constexpr float row_offsets[4] = {-0.75f, -0.5f, -0.25f, 0.0f};
+        // Row offsets (bottom to top): 0.0, -0.25, -0.5, -0.75
+        constexpr float row_offsets[4] = {0.0f, -0.25f, -0.5f, -0.75f};
         
         std::array<float, 16> gains = {0.0f};
         
