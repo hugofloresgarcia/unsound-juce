@@ -94,6 +94,8 @@ private:
         Looping
     };
 
+    static constexpr int kPlotHistorySize = 60; // 1s at 60Hz
+
     void register_midi_parameter();
     void sliderValueChanged(juce::Slider* slider) override;
     void sliderDragStarted(juce::Slider* slider) override;
@@ -159,6 +161,9 @@ private:
     bool m_is_editing{false};
     bool m_is_keyboard_focused{false};
     std::unique_ptr<juce::TextEditor> m_text_editor;
+    
+    std::vector<float> m_plot_history;
+    int m_plot_write_index{0};
 };
 
 } // namespace LayerCakeApp

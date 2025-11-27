@@ -476,7 +476,8 @@ void MainComponent::resized()
     // CLI param row layout
     const int paramRowHeight = 20;
     const int paramRowSpacing = 4;
-    const int paramColumnWidth = 140;
+    const int paramColumnWidth = 165;
+    const int paramColumnSpacing = 16;
     const int paramColumnsPerRow = 3;
 
     auto bounds = getLocalBounds();
@@ -544,10 +545,16 @@ void MainComponent::resized()
     
     auto layoutParamRow = [&](std::initializer_list<LayerCakeKnob*> knobs) {
         auto rowArea = paramWalker.removeFromTop(paramRowHeight);
+        size_t idx = 0;
         for (auto* knob : knobs)
         {
+            auto slot = rowArea.removeFromLeft(paramColumnWidth);
             if (knob != nullptr)
-                knob->setBounds(rowArea.removeFromLeft(paramColumnWidth));
+                knob->setBounds(slot);
+            
+            if (idx < knobs.size() - 1)
+                rowArea.removeFromLeft(paramColumnSpacing);
+            idx++;
         }
         paramWalker.removeFromTop(paramRowSpacing);
     };
@@ -558,13 +565,17 @@ void MainComponent::resized()
     // Third row: env, dir, pan
     auto row3Area = paramWalker.removeFromTop(paramRowHeight);
     m_env_knob->setBounds(row3Area.removeFromLeft(paramColumnWidth));
+    row3Area.removeFromLeft(paramColumnSpacing);
     m_direction_knob->setBounds(row3Area.removeFromLeft(paramColumnWidth));
+    row3Area.removeFromLeft(paramColumnSpacing);
     m_pan_knob->setBounds(row3Area.removeFromLeft(paramColumnWidth));
 
     // Stack transport buttons and meter to the right of the control section
     {
         auto controlStrip = paramAreaFull;
-        const int knobsWidth = paramColumnWidth * paramColumnsPerRow + sectionSpacing;
+        const int knobsWidth = (paramColumnWidth * paramColumnsPerRow) + 
+                               (paramColumnSpacing * (paramColumnsPerRow - 1)) + 
+                               sectionSpacing;
         controlStrip.removeFromLeft(knobsWidth);
         const int controlsRequiredWidth = meterWidth + meterSpacing + buttonColumnWidth;
 

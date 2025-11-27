@@ -92,6 +92,15 @@ LayerCakeKnob::LayerCakeKnob(const Config& config, Shared::MidiLearnManager* mid
     m_sweep_recorder.prepare(44100.0);
     m_sweep_recorder.set_idle_value(static_cast<float>(m_slider.getValue()));
 
+    m_plot_history.resize(kPlotHistorySize, 0.0f);
+    // Initialize plot with current value
+    const float initialNorm = static_cast<float>((config.defaultValue - config.minValue) / (config.maxValue - config.minValue));
+    std::fill(m_plot_history.begin(), m_plot_history.end(), juce::jlimit(0.0f, 1.0f, initialNorm));
+    
+    // Always start timer for plot updates in CLI mode
+    if (config.cliMode)
+        startTimerHz(60);
+
     register_midi_parameter();
     update_value_label();
     apply_look_and_feel_colours();
@@ -359,7 +368,7 @@ void LayerCakeKnob::paint_cli_mode(juce::Graphics& g)
         : accent;
     g.setColour(keyColour);
     const juce::String keyText = m_config.labelText + ":";
-    const float keyWidth = 60.0f;  // Fixed width for alignment
+    const float keyWidth = 55.0f;  // Fixed width for alignment
     g.drawText(keyText, bounds.removeFromLeft(keyWidth), juce::Justification::centredLeft, false);
     
     // Value color: use LFO color when assigned and not editing, otherwise default
@@ -368,8 +377,79 @@ void LayerCakeKnob::paint_cli_mode(juce::Graphics& g)
     {
         valueColour = m_lfo_button_accent.value();
     }
-    g.setColour(valueColour);
-    g.drawText(format_cli_value(), bounds, juce::Justification::centredLeft, false);
+
+    // Draw live plot history
+    if (!m_plot_history.empty())
+    {
+        const float plotHeight = bounds.getHeight() * 0.6f;
+        // Position after key, before value (or behind value)
+        
+        // Actually, request was "right next to the number value"
+        // So let's reserve space for value text first
+        const float valueWidth = 50.0f;
+        auto plotArea = bounds.removeFromRight(bounds.getWidth() - valueWidth); // Remaining space after value
+        
+        // If we want it next to number, maybe we draw number first then plot
+        // Let's redraw value text with specific width
+        g.setColour(valueColour);
+        g.drawText(format_cli_value(), bounds.removeFromLeft(valueWidth), juce::Justification::centredLeft, false);
+        
+        // Now draw plot in remaining space
+        if (plotArea.getWidth() > 10.0f)
+        {
+            plotArea = plotArea.reduced(4.0f, 0.0f); // Some padding
+            
+            g.setColour(keyColour.withAlpha(0.3f));
+            // g.drawRect(plotArea, 1.0f); // Debug bounds
+
+            juce::Path plotPath;
+            const float stepX = plotArea.getWidth() / static_cast<float>(m_plot_history.size() - 1);
+            
+            // Start from write index (oldest) to end, then 0 to write index (newest)
+            // This creates a scrolling effect from right to left
+            bool firstPoint = true;
+            
+            auto addPoint = [&](int index, float x) {
+                const float normalized = m_plot_history[static_cast<size_t>(index)];
+                // Invert Y so 1.0 is top
+                const float y = plotArea.getBottom() - (normalized * plotHeight) - (plotArea.getHeight() - plotHeight) * 0.5f;
+                
+                if (firstPoint)
+                {
+                    plotPath.startNewSubPath(x, y);
+                    firstPoint = false;
+                }
+                else
+                {
+                    plotPath.lineTo(x, y);
+                }
+            };
+
+            // Draw ring buffer in order
+            float x = plotArea.getX();
+            
+            // Oldest to newest
+            for (int i = 0; i < static_cast<int>(m_plot_history.size()); ++i)
+            {
+                int index = (m_plot_write_index + i) % static_cast<int>(m_plot_history.size());
+                addPoint(index, x);
+                x += stepX;
+            }
+            
+            g.setColour(keyColour.withAlpha(0.6f));
+            g.strokePath(plotPath, juce::PathStrokeType(1.2f));
+            
+            // Draw current value dot at end
+            auto currentPos = plotPath.getCurrentPosition();
+            g.setColour(valueColour);
+            g.fillEllipse(currentPos.x - 2.0f, currentPos.y - 2.0f, 4.0f, 4.0f);
+        }
+    }
+    else
+    {
+        g.setColour(valueColour);
+        g.drawText(format_cli_value(), bounds, juce::Justification::centredLeft, false);
+    }
     
     // Show MIDI CC indicator if mapped (rightmost)
     if (m_midi_manager != nullptr && m_config.parameterId.isNotEmpty())
@@ -805,6 +885,41 @@ void LayerCakeKnob::apply_look_and_feel_colours()
 
 void LayerCakeKnob::timerCallback()
 {
+    // Update plot history if in CLI mode
+    if (m_config.cliMode && !m_plot_history.empty())
+    {
+        double currentValue = m_slider.getValue();
+        
+        // If modulated, calculate actual effective value for plot
+        if (has_lfo_assignment() && m_modulation_indicator_value.has_value() && !m_show_base_value)
+        {
+            const double span = m_config.maxValue - m_config.minValue;
+            if (span > 0.0)
+            {
+                const double lfoNormalized = static_cast<double>(m_modulation_indicator_value.value());
+                const double lfoOffset = (lfoNormalized * 2.0) - 1.0;
+                const double baseValue = m_slider.getValue();
+                const double baseNormalized = juce::jlimit(0.0, 1.0, (baseValue - m_config.minValue) / span);
+                const double modNormalized = juce::jlimit(0.0, 1.0, baseNormalized + lfoOffset * 0.5);
+                currentValue = m_config.minValue + modNormalized * span;
+            }
+        }
+
+        // Normalize for plot
+        const double range = m_config.maxValue - m_config.minValue;
+        float normalized = 0.0f;
+        if (range != 0.0)
+        {
+            normalized = static_cast<float>((currentValue - m_config.minValue) / range);
+            normalized = juce::jlimit(0.0f, 1.0f, normalized);
+        }
+        
+        m_plot_history[static_cast<size_t>(m_plot_write_index)] = normalized;
+        m_plot_write_index = (m_plot_write_index + 1) % static_cast<int>(m_plot_history.size());
+        
+        repaint();
+    }
+
     const bool shouldLoop = (m_recorder_state == RecorderState::Looping) && m_sweep_recorder.is_playing();
     if (shouldLoop)
     {
@@ -830,7 +945,7 @@ void LayerCakeKnob::timerCallback()
         repaint();
     }
 
-    if (!shouldLoop)
+    if (!shouldLoop && !m_config.cliMode) // Keep timer running for CLI plot
         update_timer_activity();
 }
 
@@ -1044,6 +1159,14 @@ void LayerCakeKnob::update_recorder_button()
 
 void LayerCakeKnob::update_timer_activity()
 {
+    // Always keep timer running in CLI mode for plot updates
+    if (m_config.cliMode)
+    {
+        if (!isTimerRunning())
+            startTimerHz(60);
+        return;
+    }
+
     if (sweep_recorder_enabled())
     {
         const bool needsTimer = (m_recorder_state == RecorderState::Armed)
