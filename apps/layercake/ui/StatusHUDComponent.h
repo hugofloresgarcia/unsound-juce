@@ -12,6 +12,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../focus/FocusRegistry.h"
+#include <functional>
 
 namespace layercake {
 
@@ -24,6 +25,13 @@ public:
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseDown(const juce::MouseEvent& event) override;
+    
+    // Audio status updates
+    void set_audio_status(bool enabled, const juce::String& deviceName);
+    
+    // Callback when audio status area is clicked
+    std::function<void()> onAudioStatusClicked;
     
     // ChangeListener callback
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
@@ -34,6 +42,11 @@ private:
     juce::String focusName;
     juce::String valueText;
     juce::String helpText;
+    
+    // Audio status
+    bool audioEnabled{false};
+    juce::String audioDeviceName{"No Device"};
+    juce::Rectangle<int> audioStatusArea;
 
     void updateStatus();
 
@@ -41,4 +54,3 @@ private:
 };
 
 } // namespace layercake
-

@@ -42,7 +42,7 @@ void configureControlButton(juce::TextButton& button,
 }
 }
 
-MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDeviceSetup> initialDeviceSetup)
+MainComponent::MainComponent()
     : m_title_label("title", "layercake"),
       m_record_layer_label("recordLayer", ""),
       m_record_status_label("recordStatus", ""),
@@ -89,6 +89,8 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
     
     // HUD
     addAndMakeVisible(m_status_hud);
+    m_status_hud.onAudioStatusClicked = [this]() { open_settings_window(); };
+    m_status_hud.set_audio_status(false, "Not Started");
     addAndMakeVisible(m_command_palette);
     m_command_palette.setVisible(false);
     addAndMakeVisible(m_help_overlay);
@@ -187,6 +189,22 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
             slot.widget->set_on_hover_changed([this, index = static_cast<int>(i)](bool hovered)
             {
                 update_lfo_connection_overlay(index, hovered);
+            });
+            slot.widget->set_on_selected_callback([this](int index)
+            {
+                // Deselect if already selected, otherwise select
+                int new_selection = (m_selected_lfo_index == index) ? -1 : index;
+                m_selected_lfo_index = new_selection;
+                
+                // Update visual state of all widgets
+                for (auto& s : m_lfo_slots)
+                {
+                    if (s.widget)
+                        s.widget->set_selected(s.widget->get_lfo_index() == m_selected_lfo_index);
+                }
+                
+                // Refresh overlay - pass true if we have a selection
+                update_lfo_connection_overlay(m_selected_lfo_index, m_selected_lfo_index >= 0);
             });
             slot.widget->refresh_wave_preview();
             addAndMakeVisible(slot.widget.get());
@@ -396,7 +414,7 @@ MainComponent::MainComponent(std::optional<juce::AudioDeviceManager::AudioDevice
     load_settings();
 
     setSize(900, 880);
-    configure_audio_device(std::move(initialDeviceSetup));
+    initialize_audio_device();  // Initialize but don't enable audio yet
     startTimerHz(30);
     m_manual_state.loop_start_seconds = 0.0f;
     m_manual_state.duration_ms = 250.0f;
@@ -429,7 +447,8 @@ MainComponent::~MainComponent()
     save_settings();
     removeKeyListener(&m_midi_learn_overlay);
     removeKeyListener(this);
-    m_device_manager.removeAudioCallback(this);
+    if (m_audio_enabled)
+        m_device_manager.removeAudioCallback(this);
     m_device_manager.closeAudioDevice();
     m_settings_button.setLookAndFeel(nullptr);
     setLookAndFeel(nullptr);
@@ -684,7 +703,17 @@ void MainComponent::open_settings_window()
 {
     if (m_settings_window == nullptr)
     {
-        m_settings_window = std::make_unique<LayerCakeSettingsWindow>(m_device_manager, m_engine);
+        m_settings_window = std::make_unique<LayerCakeSettingsWindow>(
+            m_device_manager, 
+            m_engine,
+            [this](bool enabled) { set_audio_enabled(enabled); },
+            [this]() { return is_audio_enabled(); }
+        );
+    }
+    else
+    {
+        // Update audio state when reopening
+        m_settings_window->update_audio_state(m_audio_enabled);
     }
     m_settings_window->setVisible(true);
     m_settings_window->toFront(true);
@@ -693,12 +722,41 @@ void MainComponent::open_settings_window()
 SettingsComponent::SettingsComponent(juce::AudioDeviceManager& deviceManager, LayerCakeEngine& engine)
     : m_device_manager(deviceManager), m_engine(engine)
 {
-    m_input_label.setText("Input Channel:", juce::dontSendNotification);
+    // Audio section label
+    m_audio_section_label.setText("Audio Device", juce::dontSendNotification);
+    m_audio_section_label.setFont(juce::Font(juce::FontOptions(16.0f)).boldened());
+    addAndMakeVisible(m_audio_section_label);
+    
+    // Audio enable toggle
+    m_audio_enable_toggle.setButtonText("Enable Audio");
+    m_audio_enable_toggle.onClick = [this] {
+        if (onAudioEnableChanged)
+            onAudioEnableChanged(m_audio_enable_toggle.getToggleState());
+    };
+    addAndMakeVisible(m_audio_enable_toggle);
+    
+    // Audio device selector (shows input/output device selection)
+    // minInputChannels, maxInputChannels, minOutputChannels, maxOutputChannels,
+    // showMidiInputOptions, showMidiOutputSelector, showChannelsAsStereoPairs, hideAdvancedOptions
+    m_device_selector = std::make_unique<juce::AudioDeviceSelectorComponent>(
+        m_device_manager,
+        0, 256,   // min/max input channels
+        0, 256,   // min/max output channels
+        false,    // show MIDI input options
+        false,    // show MIDI output selector
+        true,     // show channels as stereo pairs
+        false     // hide advanced options
+    );
+    addAndMakeVisible(m_device_selector.get());
+    
+    // Input channel selector (for mono input)
+    m_input_label.setText("Record Input:", juce::dontSendNotification);
     addAndMakeVisible(m_input_label);
 
     m_input_selector.onChange = [this] { apply_selected_input_channels(); };
     addAndMakeVisible(m_input_selector);
     
+    // Normalize toggle
     m_normalize_toggle.setButtonText("Normalize Audio on Import");
     m_normalize_toggle.setToggleState(m_engine.get_normalize_on_load(), juce::dontSendNotification);
     m_normalize_toggle.onClick = [this] {
@@ -729,7 +787,12 @@ SettingsComponent::SettingsComponent(juce::AudioDeviceManager& deviceManager, La
     addAndMakeVisible(m_lfo_sens_slider);
 
     refresh_input_channel_selector();
-    setSize(300, 350);
+    setSize(500, 600);
+}
+
+void SettingsComponent::set_audio_enabled(bool enabled)
+{
+    m_audio_enable_toggle.setToggleState(enabled, juce::dontSendNotification);
 }
 
 void SettingsComponent::paint(juce::Graphics& g)
@@ -739,21 +802,45 @@ void SettingsComponent::paint(juce::Graphics& g)
 
 void SettingsComponent::resized()
 {
-    auto area = getLocalBounds().reduced(20);
+    const int margin = 20;
+    const int rowHeight = 30;
+    const int sectionSpacing = 16;
+    const int rowSpacing = 8;
+    const int deviceSelectorHeight = 280;
     
-    auto inputRow = area.removeFromTop(30);
+    auto area = getLocalBounds().reduced(margin);
+    
+    // Audio section header
+    m_audio_section_label.setBounds(area.removeFromTop(rowHeight));
+    area.removeFromTop(rowSpacing);
+    
+    // Audio enable toggle
+    m_audio_enable_toggle.setBounds(area.removeFromTop(rowHeight));
+    area.removeFromTop(rowSpacing);
+    
+    // Audio device selector
+    if (m_device_selector != nullptr)
+    {
+        m_device_selector->setBounds(area.removeFromTop(deviceSelectorHeight));
+    }
+    area.removeFromTop(sectionSpacing);
+    
+    // Input channel selector
+    auto inputRow = area.removeFromTop(rowHeight);
     m_input_label.setBounds(inputRow.removeFromLeft(100));
     inputRow.removeFromLeft(10);
     m_input_selector.setBounds(inputRow);
+    area.removeFromTop(rowSpacing);
 
-    area.removeFromTop(10);
-    m_normalize_toggle.setBounds(area.removeFromTop(30));
+    // Normalize toggle
+    m_normalize_toggle.setBounds(area.removeFromTop(rowHeight));
+    area.removeFromTop(sectionSpacing);
 
-    area.removeFromTop(10);
+    // Sensitivity sliders
     m_main_sens_label.setBounds(area.removeFromTop(24));
     m_main_sens_slider.setBounds(area.removeFromTop(24));
+    area.removeFromTop(rowSpacing);
 
-    area.removeFromTop(10);
     m_lfo_sens_label.setBounds(area.removeFromTop(24));
     m_lfo_sens_slider.setBounds(area.removeFromTop(24));
 }
@@ -833,52 +920,54 @@ void SettingsComponent::apply_selected_input_channels()
     }
 }
 
-void MainComponent::configure_audio_device(std::optional<juce::AudioDeviceManager::AudioDeviceSetup> initialSetup)
+void MainComponent::initialize_audio_device()
 {
-    juce::String error = m_device_manager.initialise(1, 2, nullptr, true);
+    // Initialize the device manager but DON'T add the audio callback yet
+    // Audio starts OFF by default - user enables via settings
+    juce::String error = m_device_manager.initialise(2, 2, nullptr, true);
     if (error.isNotEmpty())
     {
-        DBG("Audio device init error: " + error);
+        DBG("[MainComponent] Audio device init error: " + error);
+        return;
+    }
+    DBG("[MainComponent] Audio device initialized (audio OFF by default)");
+    m_audio_enabled = false;
+}
+
+void MainComponent::set_audio_enabled(bool enabled)
+{
+    if (enabled == m_audio_enabled)
+    {
+        DBG("[MainComponent] set_audio_enabled: already " << (enabled ? "enabled" : "disabled"));
         return;
     }
 
-    if (initialSetup.has_value())
+    if (enabled)
     {
-        const auto findDeviceType = [this](const juce::AudioDeviceManager::AudioDeviceSetup& setup)
-        {
-            juce::String deviceType;
-            const auto& deviceTypes = m_device_manager.getAvailableDeviceTypes();
-            for (int i = 0; i < deviceTypes.size(); ++i)
-            {
-                auto* type = deviceTypes[i];
-                if (type == nullptr) continue;
-
-                const auto outputDevices = type->getDeviceNames(false);
-                const auto inputDevices = type->getDeviceNames(true);
-
-                bool foundDevice = setup.outputDeviceName.isNotEmpty()
-                                   && outputDevices.contains(setup.outputDeviceName);
-                if (!foundDevice && setup.inputDeviceName.isNotEmpty())
-                    foundDevice = inputDevices.contains(setup.inputDeviceName);
-
-                if (foundDevice)
-                {
-                    deviceType = type->getTypeName();
-                    break;
-                }
-            }
-            return deviceType;
-        };
-
-        const auto deviceType = findDeviceType(*initialSetup);
-        if (deviceType.isNotEmpty())
-        {
-            m_device_manager.setCurrentAudioDeviceType(deviceType, false);
-        }
-        m_device_manager.setAudioDeviceSetup(*initialSetup, true);
+        // Start audio
+        m_device_manager.addAudioCallback(this);
+        m_audio_enabled = true;
+        DBG("[MainComponent] Audio ENABLED");
     }
+    else
+    {
+        // Stop audio
+        m_device_manager.removeAudioCallback(this);
+        m_device_ready = false;
+        m_audio_enabled = false;
+        // Clear meters
+        for (auto& meter_level : m_meter_levels)
+            meter_level.store(0.0f, std::memory_order_relaxed);
+        DBG("[MainComponent] Audio DISABLED");
+    }
+}
 
-    m_device_manager.addAudioCallback(this);
+juce::String MainComponent::get_current_device_name() const
+{
+    auto* device = m_device_manager.getCurrentAudioDevice();
+    if (device == nullptr)
+        return "No Device";
+    return device->getName();
 }
 
 void MainComponent::audioDeviceAboutToStart(juce::AudioIODevice* device)
@@ -975,6 +1064,9 @@ void MainComponent::timerCallback()
     update_record_labels();
     update_meter();
     m_display.set_record_layer(m_engine.get_record_layer());
+    
+    // Update audio status in HUD
+    m_status_hud.set_audio_status(m_audio_enabled, get_current_device_name());
     
     // Update LFO LED indicators
     for (size_t i = 0; i < m_lfo_slots.size(); ++i)
@@ -1511,6 +1603,7 @@ void MainComponent::changeListenerCallback(juce::ChangeBroadcaster* source)
         if (auto* settings = dynamic_cast<SettingsComponent*>(m_settings_window->getContentComponent()))
         {
             settings->refresh_input_channel_selector();
+            settings->set_audio_enabled(m_audio_enabled);
         }
     }
 }
@@ -1579,26 +1672,38 @@ void MainComponent::push_lfo_to_engine(int lfo_index)
     m_engine.update_lfo_slot(lfo_index, slot.generator, slot.enabled);
 }
 
-void MainComponent::update_lfo_connection_overlay(int lfo_index, bool hovered)
+void MainComponent::update_lfo_connection_overlay(int lfo_index, bool active)
 {
     m_lfo_connection_overlay.clear();
 
-    if (!hovered || lfo_index < 0 || lfo_index >= static_cast<int>(m_lfo_slots.size()))
+    // Prefer selected index if active, otherwise fall back to passed index (hover)
+    int effective_index = m_selected_lfo_index >= 0 ? m_selected_lfo_index : lfo_index;
+    bool effective_active = m_selected_lfo_index >= 0 ? true : active;
+
+    if (!effective_active || effective_index < 0 || effective_index >= static_cast<int>(m_lfo_slots.size()))
     {
-        m_hovered_lfo_index = -1;
-        return;
+        // If nothing is active, clear
+        if (m_selected_lfo_index < 0)
+        {
+            m_hovered_lfo_index = -1;
+            return;
+        }
     }
 
-    m_hovered_lfo_index = lfo_index;
+    // If we are just hovering something else while one is selected, maybe we want to show the selected one?
+    // For now, let's say selection overrides hover.
+    
+    int target_index = effective_index;
+    m_hovered_lfo_index = target_index;
 
     // Get the LFO widget center in MainComponent coordinates
-    auto* widget = m_lfo_slots[static_cast<size_t>(lfo_index)].widget.get();
+    auto* widget = m_lfo_slots[static_cast<size_t>(target_index)].widget.get();
     if (widget == nullptr)
         return;
 
     auto widgetBounds = widget->getBoundsInParent();
     auto sourceCenter = widgetBounds.getCentre();
-    auto lfoColour = m_lfo_slots[static_cast<size_t>(lfo_index)].accent;
+    auto lfoColour = m_lfo_slots[static_cast<size_t>(target_index)].accent;
 
     m_lfo_connection_overlay.set_source(sourceCenter, lfoColour);
 
@@ -1609,7 +1714,7 @@ void MainComponent::update_lfo_connection_overlay(int lfo_index, bool hovered)
             continue;
 
         const int assignment = knob->lfo_assignment_index();
-        if (assignment == lfo_index)
+        if (assignment == target_index)
         {
             // Get knob center in MainComponent coordinates
             auto knobCenter = knob->getBounds().getCentre();
@@ -1626,7 +1731,7 @@ void MainComponent::update_lfo_connection_overlay(int lfo_index, bool hovered)
     }
 
     // Also check the trigger button
-    if (m_trigger_button.get_lfo_assignment() == lfo_index)
+    if (m_trigger_button.get_lfo_assignment() == target_index)
     {
         auto trigBounds = m_trigger_button.getBoundsInParent();
         m_lfo_connection_overlay.add_target(trigBounds.getCentre());

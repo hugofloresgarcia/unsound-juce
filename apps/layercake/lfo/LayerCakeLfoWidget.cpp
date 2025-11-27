@@ -684,6 +684,12 @@ void LayerCakeLfoWidget::paint(juce::Graphics& g)
         g.drawRect(bounds, 2);
     }
 
+    if (m_is_selected)
+    {
+        g.setColour(m_accent_colour);
+        g.drawRect(bounds, 2);
+    }
+
     // NES-style LED indicator (square, not round)
     if (!m_led_bounds.isEmpty())
     {
@@ -955,6 +961,20 @@ void LayerCakeLfoWidget::set_on_hover_changed(std::function<void(bool)> callback
     m_hover_changed_callback = std::move(callback);
 }
 
+void LayerCakeLfoWidget::set_on_selected_callback(std::function<void(int)> callback)
+{
+    m_selected_callback = std::move(callback);
+}
+
+void LayerCakeLfoWidget::set_selected(bool selected)
+{
+    if (m_is_selected != selected)
+    {
+        m_is_selected = selected;
+        repaint();
+    }
+}
+
 void LayerCakeLfoWidget::mouseDown(const juce::MouseEvent& event)
 {
     if (m_led_bounds.contains(event.getPosition()))
@@ -962,6 +982,10 @@ void LayerCakeLfoWidget::mouseDown(const juce::MouseEvent& event)
         set_enabled(!m_enabled);
         return;
     }
+
+    // Notify selection on touch/click
+    if (m_selected_callback)
+        m_selected_callback(m_lfo_index);
 
     juce::Component::mouseDown(event);
 }

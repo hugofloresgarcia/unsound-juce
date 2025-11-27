@@ -952,6 +952,15 @@ void LayerCakeKnob::timerCallback()
 bool LayerCakeKnob::show_context_menu(const juce::MouseEvent& event)
 {
     juce::PopupMenu menu;
+
+    // Add "Enter Value" option for manual entry
+    if (m_config.cliMode)
+    {
+        menu.addItem(juce::PopupMenu::Item("Enter Value...")
+                         .setAction([this]() { show_text_editor(); }));
+        menu.addSeparator();
+    }
+
     if (m_midi_manager != nullptr && m_config.parameterId.isNotEmpty())
     {
         const int currentCc = m_midi_manager->getMappingForParameter(m_config.parameterId);

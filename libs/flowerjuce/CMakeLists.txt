@@ -168,6 +168,10 @@ if(NOT TARGET Ableton::Link)
     include(${PROJECT_ROOT}/third_party/link/AbletonLinkConfig.cmake)
 endif()
 
+if(IOS)
+    target_compile_definitions(flowerjuce PUBLIC LINK_PLATFORM_IOS=1)
+endif()
+
 # Link JUCE modules
 target_link_libraries(flowerjuce PUBLIC
     juce::juce_audio_basics

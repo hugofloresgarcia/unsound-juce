@@ -118,7 +118,9 @@ public:
     void sync_controls_from_generator();
     void set_tempo_provider(std::function<double()> tempo_bpm_provider);
     void set_on_hover_changed(std::function<void(bool)> callback);
+    void set_on_selected_callback(std::function<void(int)> callback);
     void set_current_value(float value);  // 0-1 for LED display
+    void set_selected(bool selected);
 
     // layercake::FocusableTarget
     juce::String getFocusID() const override;
@@ -234,8 +236,10 @@ private:
     static constexpr int kParamsPerPage = 8;
     std::function<double()> m_tempo_bpm_provider;
     std::function<void(bool)> m_hover_changed_callback;
+    std::function<void(int)> m_selected_callback;
     bool m_is_hovered{false};
     bool m_is_keyboard_focused{false};
+    bool m_is_selected{false};
     float m_current_lfo_value{0.0f};  // For LED display
     juce::Rectangle<int> m_led_bounds;
     

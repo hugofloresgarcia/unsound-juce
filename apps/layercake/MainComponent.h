@@ -21,9 +21,9 @@
 #include "ui/CommandPaletteOverlay.h"
 #include "ui/HelpOverlay.h"
 #include <array>
-#include <optional>
 #include <vector>
 #include <atomic>
+#include <functional>
 
 namespace LayerCakeApp
 {
@@ -39,15 +39,26 @@ public:
 
     void refresh_input_channel_selector();
     void apply_selected_input_channels();
+    
+    // Audio enable callback - set by parent to enable/disable audio
+    std::function<void(bool)> onAudioEnableChanged;
+    void set_audio_enabled(bool enabled);
 
 private:
     juce::AudioDeviceManager& m_device_manager;
     LayerCakeEngine& m_engine;
 
+    // Audio device selector
+    std::unique_ptr<juce::AudioDeviceSelectorComponent> m_device_selector;
+    juce::ToggleButton m_audio_enable_toggle;
+    juce::Label m_audio_section_label;
+    
+    // Input channel selector (mono input selection)
     juce::Label m_input_label;
     juce::ComboBox m_input_selector;
     juce::StringArray m_input_channel_names;
     
+    // Other settings
     juce::ToggleButton m_normalize_toggle;
 
     juce::Label m_main_sens_label;
@@ -65,17 +76,28 @@ public:
 class LayerCakeSettingsWindow : public juce::DialogWindow
 {
 public:
-    LayerCakeSettingsWindow(juce::AudioDeviceManager& deviceManager, LayerCakeEngine& engine)
+    LayerCakeSettingsWindow(juce::AudioDeviceManager& deviceManager, LayerCakeEngine& engine,
+                            std::function<void(bool)> audioEnableCallback,
+                            std::function<bool()> audioEnabledGetter)
         : juce::DialogWindow("settings", juce::Colours::darkgrey, true, true)
     {
         setUsingNativeTitleBar(true);
         auto* content = new SettingsComponent(deviceManager, engine);
+        content->onAudioEnableChanged = audioEnableCallback;
+        if (audioEnabledGetter)
+            content->set_audio_enabled(audioEnabledGetter());
         setContentOwned(content, true);
-        setResizable(false, false);
-        centreWithSize(300, 350);
+        setResizable(true, true);
+        centreWithSize(500, 600);
     }
 
     void closeButtonPressed() override { setVisible(false); }
+    
+    void update_audio_state(bool enabled)
+    {
+        if (auto* settings = dynamic_cast<SettingsComponent*>(getContentComponent()))
+            settings->set_audio_enabled(enabled);
+    }
 };
 
 class MainComponent : public juce::Component,
@@ -86,11 +108,16 @@ class MainComponent : public juce::Component,
                       private juce::ChangeListener
 {
 public:
-    explicit MainComponent(std::optional<juce::AudioDeviceManager::AudioDeviceSetup> initialDeviceSetup = std::nullopt);
+    MainComponent();
     ~MainComponent() override;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+
+    // Audio control - starts/stops audio processing
+    bool is_audio_enabled() const { return m_audio_enabled; }
+    void set_audio_enabled(bool enabled);
+    juce::String get_current_device_name() const;
 
     // juce::AudioIODeviceCallback
     void audioDeviceAboutToStart(juce::AudioIODevice* device) override;
@@ -107,7 +134,7 @@ public:
 private:
     void timerCallback() override;
 
-    void configure_audio_device(std::optional<juce::AudioDeviceManager::AudioDeviceSetup> initialSetup);
+    void initialize_audio_device();
     void adjust_record_layer(int delta);
     void toggle_record_enable();
     void trigger_manual_grain();
@@ -176,6 +203,7 @@ private:
     std::array<std::atomic<float>, Shared::MultiChannelMeter::kMaxChannels> m_meter_levels;
     std::atomic<int> m_meter_channel_count{1};
     bool m_device_ready{false};
+    bool m_audio_enabled{false};
     LayerCakeLibraryManager m_library_manager;
     std::unique_ptr<LibraryBrowserComponent> m_preset_panel;
     bool m_preset_panel_visible{true};
@@ -199,6 +227,7 @@ private:
     std::unique_ptr<LayerCakeSettingsWindow> m_settings_window;
     LfoConnectionOverlay m_lfo_connection_overlay;
     int m_hovered_lfo_index{-1};
+    int m_selected_lfo_index{-1};
 
     // Keyboard Control
     FocusRegistry m_focus_registry;

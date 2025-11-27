@@ -4,7 +4,21 @@ juce_add_gui_app(LayerCakeApp
     COMPANY_NAME "Unsound"
     PRODUCT_NAME "LayerCake"
     VERSION 0.1.0
+    BUNDLE_ID "com.unsound.layercake"
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "LayerCake needs microphone access for audio input"
+    REQUIRES_FULL_SCREEN TRUE
+    IPAD_SCREEN_ORIENTATIONS UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
 )
+
+if(IOS)
+    set_target_properties(LayerCakeApp PROPERTIES
+        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "2"
+        XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "15.0"
+        XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Apple Development"
+        XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
+    )
+endif()
 
 target_sources(LayerCakeApp PRIVATE
     Main.cpp
@@ -22,8 +36,6 @@ target_sources(LayerCakeApp PRIVATE
     LayerCakeKnob.h
     KnobRecorderButton.cpp
     KnobRecorderButton.h
-    StartupDialog.cpp
-    StartupDialog.h
     # LFO components
     lfo/LfoAssignmentButton.cpp
     lfo/LfoAssignmentButton.h

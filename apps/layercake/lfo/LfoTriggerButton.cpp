@@ -7,6 +7,9 @@ namespace LayerCakeApp
 LfoTriggerButton::LfoTriggerButton()
 {
     addAndMakeVisible(m_button);
+    // Let touch/mouse events pass through the button to this component
+    // so DragAndDropTarget can receive drops
+    m_button.setInterceptsMouseClicks(false, false);
 }
 
 void LfoTriggerButton::paint(juce::Graphics& g)
@@ -34,6 +37,7 @@ void LfoTriggerButton::resized()
 
 void LfoTriggerButton::mouseDown(const juce::MouseEvent& event)
 {
+    // Handle right-click (or long-press on iOS) to clear LFO assignment
     if (event.mods.isRightButtonDown() && m_lfo_index >= 0)
     {
         juce::PopupMenu menu;
@@ -44,6 +48,22 @@ void LfoTriggerButton::mouseDown(const juce::MouseEvent& event)
         });
         menu.showMenuAsync(juce::PopupMenu::Options()
             .withTargetScreenArea({event.getScreenX(), event.getScreenY(), 1, 1}));
+        return;
+    }
+    
+    // Show pressed state
+    m_button.setState(juce::Button::buttonDown);
+}
+
+void LfoTriggerButton::mouseUp(const juce::MouseEvent& event)
+{
+    m_button.setState(juce::Button::buttonNormal);
+    
+    // If released inside the button, trigger the click
+    if (getLocalBounds().contains(event.getPosition()))
+    {
+        if (m_button.onClick)
+            m_button.onClick();
     }
 }
 

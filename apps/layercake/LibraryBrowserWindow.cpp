@@ -3,7 +3,7 @@
 
 namespace
 {
-constexpr int kRowHeight = 24;
+constexpr int kRowHeight = 44; // Increased from 24 for touch targets
 } // namespace
 
 class LibraryRowButtonLookAndFeel : public juce::LookAndFeel_V4
@@ -12,7 +12,7 @@ public:
     juce::Font getTextButtonFont(juce::TextButton& button, int buttonHeight) override
     {
         juce::ignoreUnused(button, buttonHeight);
-        return juce::Font(juce::FontOptions().withHeight(10.0f));
+        return juce::Font(juce::FontOptions().withHeight(14.0f)); // Increased font size
     }
 };
 
@@ -65,8 +65,8 @@ public:
     void resized() override
     {
         const int margin = 2;
-        const int buttonWidth = 20;
-        const int buttonSpacing = 2;
+        const int buttonWidth = 44; // Increased from 20
+        const int buttonSpacing = 4; // Increased from 2
 
         auto bounds = getLocalBounds().reduced(margin);
         auto buttonArea = bounds.removeFromRight(3 * buttonWidth + 2 * buttonSpacing);
@@ -258,12 +258,12 @@ void LibraryBrowserComponent::resized()
 {
     const int marginOuter = 8;
     const int rowSpacing = 8;
-    const int titleHeight = 18;
-    const int titleVerticalPadding = 2;
-    const int editorHeight = 22;
-    const int editorSpacing = 4;
+    const int titleHeight = 24; // Increased from 18
+    const int titleVerticalPadding = 4;
+    const int editorHeight = 32; // Increased from 22
+    const int editorSpacing = 8; // Increased from 4
     const int listSpacing = 4;
-    const int minListHeight = 60;
+    const int minListHeight = 100; // Increased from 60
 
     auto bounds = getLocalBounds().reduced(marginOuter);
     if (bounds.isEmpty())
@@ -282,7 +282,7 @@ void LibraryBrowserComponent::resized()
         widgets.title.setBounds(title_area.reduced(0, titleVerticalPadding));
         row_area.removeFromTop(editorSpacing);
         auto editorRow = row_area.removeFromTop(editorHeight);
-        const int buttonWidth = 36;
+        const int buttonWidth = 60; // Increased from 36
         auto buttonArea = editorRow.removeFromRight(buttonWidth);
         widgets.save_button.setBounds(buttonArea);
         widgets.name_editor.setBounds(editorRow.reduced(0, 1));
