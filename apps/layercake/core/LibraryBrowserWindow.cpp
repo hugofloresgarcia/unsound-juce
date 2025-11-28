@@ -1,18 +1,25 @@
 #include "LibraryBrowserWindow.h"
+#include "LayerCakeLookAndFeel.h"
 #include <utility>
 
 namespace
 {
-constexpr int kRowHeight = 44; // Increased from 24 for touch targets
+constexpr int kRowHeight = 24; // Revert to compact height for consistent theming
 } // namespace
 
-class LibraryRowButtonLookAndFeel : public juce::LookAndFeel_V4
+class LibraryRowButtonLookAndFeel : public LayerCakeLookAndFeel // Inherit from main LNF
 {
 public:
     juce::Font getTextButtonFont(juce::TextButton& button, int buttonHeight) override
     {
         juce::ignoreUnused(button, buttonHeight);
-        return juce::Font(juce::FontOptions().withHeight(14.0f)); // Increased font size
+        // We need to access makeMonoFont, but it's private in LayerCakeLookAndFeel.
+        // However, we can just use the public method from base class if we made it protected/public,
+        // or replicate it. Let's use the public methods that are available or recreate FontOptions.
+        
+        // Since makeMonoFont is private, we recreate the font logic here to match the style
+        juce::FontOptions options(juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::bold);
+        return juce::Font(options);
     }
 };
 
@@ -27,7 +34,9 @@ public:
     {
         addAndMakeVisible(m_name_label);
         m_name_label.setJustificationType(juce::Justification::centredLeft);
-        m_name_label.setFont(juce::Font(juce::FontOptions().withHeight(12.0f)));
+        
+        juce::FontOptions options(juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain);
+        m_name_label.setFont(juce::Font(options));
 
         for (auto* button : { &m_save_button, &m_load_button, &m_delete_button })
         {
@@ -65,8 +74,8 @@ public:
     void resized() override
     {
         const int margin = 2;
-        const int buttonWidth = 44; // Increased from 20
-        const int buttonSpacing = 4; // Increased from 2
+        const int buttonWidth = 24; // Compact button width
+        const int buttonSpacing = 2;
 
         auto bounds = getLocalBounds().reduced(margin);
         auto buttonArea = bounds.removeFromRight(3 * buttonWidth + 2 * buttonSpacing);
@@ -473,6 +482,8 @@ void LibraryBrowserComponent::handle_row_action(ColumnType type,
         {
             if (action == RowAction::Save)
             {
+                // For Scene, we capture both knobset (pattern) and layers
+                // NOTE: m_capture_pattern_fn was passed the knobset capture function in MainComponent/LayerCakeComponent
                 if (!m_capture_pattern_fn || !m_capture_layers_fn)
                 {
                     DBG("LibraryBrowserComponent missing capture callbacks for scene");
@@ -498,10 +509,11 @@ void LibraryBrowserComponent::handle_row_action(ColumnType type,
                     DBG("LibraryBrowserComponent failed loading scene " + name);
                     return;
                 }
-                if (m_apply_pattern_fn)
+                if (m_apply_pattern_fn) // Maps to apply_knobset in Component
                     m_apply_pattern_fn(data);
                 else
                     DBG("LibraryBrowserComponent missing apply_pattern_fn");
+                
                 if (m_apply_layers_fn)
                     m_apply_layers_fn(layers);
                 else

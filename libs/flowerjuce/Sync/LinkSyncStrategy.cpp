@@ -137,3 +137,4 @@ double LinkSyncStrategy::get_phase(double quantum) const
 }
 
 } // namespace flower
+

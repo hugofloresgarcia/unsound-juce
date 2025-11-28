@@ -25,6 +25,9 @@ add_subdirectory(apps)
 # Add tests (skip for iOS builds)
 if(NOT IOS)
     add_subdirectory(tests)
+    
+    # Build AudioPluginHost for testing plugins
+    add_subdirectory(JUCE/extras/AudioPluginHost)
 endif()
 
 # Add plugins
